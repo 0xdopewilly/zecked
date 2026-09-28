@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<sc-if value="{{ boxed }}" hint-placeholder-val="{{ false }}"><div role="timer" style="display:inline-flex;align-items:center;gap:var(--zk-space-4);font:{{ font }};color:{{ fg }}"><sc-for list="{{ segs }}" as="g" hint-placeholder-count="5"><sc-if value="{{ g.num }}" hint-placeholder-val="{{ true }}"><span style="background:var(--zk-surface-raised);padding:var(--zk-space-6) var(--zk-space-8);border-radius:var(--zk-radius-sm);min-width:1.4em;text-align:center">{{ g.v }}</span></sc-if><sc-if value="{{ g.colon }}" hint-placeholder-val="{{ false }}"><span>:</span></sc-if></sc-for></div></sc-if>
+<sc-if value="{{ flat }}" hint-placeholder-val="{{ true }}"><span role="timer" style="display:inline-flex;align-items:center;white-space:nowrap;font:{{ font }};color:{{ fg }};background:{{ bg }};padding:{{ pad }};border-radius:var(--zk-radius-md);letter-spacing:.04em">{{ text }}</span></sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:240,&quot;height&quot;:60},&quot;seconds&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4965,&quot;tsType&quot;:&quot;number&quot;},&quot;live&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;format&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;hms&quot;,&quot;ms&quot;],&quot;default&quot;:&quot;hms&quot;,&quot;tsType&quot;:&quot;'hms'|'ms'&quot;},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:null,&quot;tsType&quot;:&quot;string&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;inline&quot;,&quot;pill&quot;,&quot;boxed&quot;],&quot;default&quot;:&quot;inline&quot;,&quot;tsType&quot;:&quot;'inline'|'pill'|'boxed'&quot;},&quot;tone&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;urgent&quot;,&quot;gold&quot;,&quot;muted&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;sm&quot;,&quot;md&quot;,&quot;lg&quot;],&quot;default&quot;:&quot;md&quot;,&quot;tsType&quot;:&quot;'sm'|'md'|'lg'&quot;}}">
+const pad = n => String(n).padStart(2, '0');
+class Component extends DCLogic {
+  state = { rem: this.props.seconds ?? 4965 };
+  componentDidMount() { if (this.props.live !== false) this.t = setInterval(() => this.setState(s => ({ rem: Math.max(0, s.rem - 1) })), 1000); }
+  componentDidUpdate(prev) { if (prev.seconds !== this.props.seconds) this.setState({ rem: this.props.seconds ?? 0 }); }
+  componentWillUnmount() { clearInterval(this.t); }
+  renderVals() {
+    const p = this.props, s = this.state.rem, fmt = p.format ?? 'hms';
+    const text = p.text ?? (fmt === 'ms' ? `${pad(Math.floor(s / 60))}:${pad(s % 60)}` : `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`);
+    const tone = p.tone ?? 'default', v = p.variant ?? 'inline';
+    const segs = []; text.split(':').forEach((x, i) => { if (i) segs.push({ colon: true, num: false }); segs.push({ num: true, colon: false, v: x }); });
+    return {
+      text, segs, boxed: v === 'boxed', flat: v !== 'boxed',
+      font: p.size === 'sm' ? 'var(--zk-type-mono-sm)' : p.size === 'lg' ? 'var(--zk-type-mono-lg)' : 'var(--zk-type-mono)',
+      fg: tone === 'urgent' ? 'var(--zk-red)' : tone === 'gold' ? 'var(--zk-gold)' : tone === 'muted' ? 'var(--zk-text-muted)' : 'var(--zk-text)',
+      bg: v === 'pill' ? 'var(--zk-bg)' : 'transparent', pad: v === 'pill' ? 'var(--zk-space-4) var(--zk-space-10)' : '0'
+    };
+  }
+}
+</script>
+</body>
+</html>

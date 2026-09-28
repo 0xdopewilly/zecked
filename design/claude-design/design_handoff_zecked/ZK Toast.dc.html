@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="status" style="display:flex;align-items:center;gap:var(--zk-space-12);padding:var(--zk-space-12) var(--zk-space-14);border-radius:var(--zk-radius-xl);background:var(--zk-surface-raised);border:1px solid var(--zk-border);box-shadow:var(--zk-shadow-float)">
+<div style="width:36px;height:36px;border-radius:var(--zk-radius-md);background:{{ tileBg }};color:{{ tileFg }};display:flex;align-items:center;justify-content:center;flex:none"><dc-import name="ZK Icon" icon="{{ icon }}" size="{{ 18 }}" stroke="{{ 2.4 }}" hint-size="18px,18px"></dc-import></div>
+<div style="flex:1;min-width:0;font:var(--zk-type-small);color:var(--zk-text);text-wrap:pretty">{{ text }}</div>
+<sc-if value="{{ hasMeta }}" hint-placeholder-val="{{ true }}"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted);flex:none">{{ meta }}</span></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:90},&quot;text&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;@nightowl just ZECKED 0.02 ZEC&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;meta&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;12s&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;success&quot;,&quot;error&quot;,&quot;gold&quot;],&quot;default&quot;:&quot;success&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;icon&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const T = {
+  default: ['var(--zk-purple-tint)', 'var(--zk-purple-light)', 'bell'],
+  success: ['var(--zk-mint-tint)', 'var(--zk-mint)', 'unlock'],
+  error: ['var(--zk-red-tint)', 'var(--zk-red)', 'close'],
+  gold: ['var(--zk-gold-tint)', 'var(--zk-gold)', 'coin']
+};
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props, t = T[p.variant] || T.success;
+    return { tileBg: t[0], tileFg: t[1], icon: p.icon || t[2], text: p.text ?? '@nightowl just ZECKED 0.02 ZEC', meta: p.meta, hasMeta: !!p.meta };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-6);animation:{{ anim }}">
+<sc-if value="{{ hasLabel }}" hint-placeholder-val="{{ false }}"><label style="font:var(--zk-type-small);color:var(--zk-text-muted)">{{ label }}</label></sc-if>
+<div style="position:relative">
+<sc-if value="{{ single }}" hint-placeholder-val="{{ true }}"><input value="{{ value }}" placeholder="{{ placeholder }}" disabled="{{ dis }}" aria-invalid="{{ invalid }}" onChange="{{ change }}" onKeyDown="{{ keyDown }}" onFocus="{{ focus }}" onBlur="{{ blur }}" style="width:100%;box-sizing:border-box;height:{{ h }};border-radius:{{ r }};background:{{ bg }};border:{{ bd }};box-shadow:{{ sh }};padding:0 {{ pr }} 0 var(--zk-space-18);font:{{ font }};color:{{ fg }};opacity:{{ op }};outline:none;text-decoration:{{ td }};text-decoration-color:var(--zk-red);transition:border-color var(--zk-dur-fast) var(--zk-ease-out),box-shadow var(--zk-dur-fast) var(--zk-ease-out)"></input></sc-if>
+<sc-if value="{{ multi }}" hint-placeholder-val="{{ false }}"><textarea value="{{ value }}" placeholder="{{ placeholder }}" disabled="{{ dis }}" onChange="{{ change }}" onFocus="{{ focus }}" onBlur="{{ blur }}" style="width:100%;box-sizing:border-box;height:{{ mh }}px;resize:none;display:block;border-radius:{{ r }};background:{{ bg }};border:{{ bd }};box-shadow:{{ sh }};padding:var(--zk-space-14) var(--zk-space-16);font:{{ font }};color:{{ fg }};opacity:{{ op }};outline:none;transition:border-color var(--zk-dur-fast) var(--zk-ease-out),box-shadow var(--zk-dur-fast) var(--zk-ease-out)"></textarea></sc-if>
+<sc-if value="{{ hasTrail }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:var(--zk-space-14);top:50%;margin-top:-15px;width:30px;height:30px;border-radius:50%;background:{{ trailBg }};color:{{ trailFg }};display:flex;align-items:center;justify-content:center;pointer-events:none"><dc-import name="ZK Icon" icon="{{ trailIcon }}" size="{{ 16 }}" stroke="{{ 3 }}" hint-size="16px,16px"></dc-import></div></sc-if>
+</div>
+<sc-if value="{{ hasMsg }}" hint-placeholder-val="{{ false }}"><span style="font:var(--zk-type-caption);color:{{ msgC }}">{{ message }}</span></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:120},&quot;value&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;placeholder&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Type your answer…&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;focus&quot;,&quot;error&quot;,&quot;success&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;'default'|'focus'|'error'|'success'|'disabled'&quot;},&quot;message&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;lg&quot;,&quot;md&quot;,&quot;sm&quot;],&quot;default&quot;:&quot;lg&quot;,&quot;tsType&quot;:&quot;'lg'|'md'|'sm'&quot;},&quot;font&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;body&quot;,&quot;mono&quot;,&quot;display&quot;],&quot;default&quot;:&quot;body&quot;,&quot;tsType&quot;:&quot;'body'|'mono'|'display'&quot;},&quot;trailing&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;none&quot;,&quot;eyeOff&quot;],&quot;default&quot;:&quot;auto&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;multiline&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;height&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:132,&quot;tsType&quot;:&quot;number&quot;},&quot;strike&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;shake&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;number&quot;},&quot;shakeLoop&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onChange&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(e) =&gt; void&quot;},&quot;onKeyDown&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(e) =&gt; void&quot;}}">
+const FONTS = {
+  body: 'var(--zk-fw-semibold) var(--zk-fs-18)/1.2 var(--zk-font-body)',
+  mono: 'var(--zk-fw-medium) var(--zk-fs-14)/1.2 var(--zk-font-mono)',
+  display: 'var(--zk-fw-black) var(--zk-fs-20)/1.25 var(--zk-font-display)'
+};
+class Component extends DCLogic {
+  state = { focused: false };
+  renderVals() {
+    const p = this.props;
+    const st = p.state && p.state !== 'default' ? p.state : this.state.focused ? 'focus' : 'default';
+    const err = st === 'error', ok = st === 'success', foc = st === 'focus', dis = st === 'disabled';
+    const trail = p.trailing ?? 'auto';
+    const trailIcon = trail === 'auto' ? (err ? 'close' : ok ? 'check' : null) : trail === 'none' ? null : trail;
+    const sm = p.size === 'sm', md = p.size === 'md';
+    const shakeN = p.shake ?? 0;
+    return {
+      label: p.label, hasLabel: !!p.label, value: p.value ?? '', placeholder: p.placeholder ?? '',
+      single: !p.multiline, multi: !!p.multiline, mh: p.height ?? 132,
+      h: sm ? '50px' : md ? 'var(--zk-h-input-md)' : 'var(--zk-h-input-lg)',
+      r: sm ? 'var(--zk-radius-lg)' : 'var(--zk-radius-xl)',
+      font: sm ? FONTS[p.font] || 'var(--zk-fw-semibold) var(--zk-fs-15)/1.2 var(--zk-font-body)' : FONTS[p.font] || FONTS.body,
+      bg: err ? 'var(--zk-red-tint)' : 'var(--zk-surface)',
+      bd: err ? '2px solid var(--zk-red)' : ok ? '2px solid var(--zk-mint)' : foc ? '2px solid var(--zk-purple)' : '1.5px solid var(--zk-border-strong)',
+      sh: err ? 'var(--zk-ring-error)' : ok ? 'var(--zk-ring-success)' : foc ? 'var(--zk-ring-focus)' : 'none',
+      fg: err ? 'var(--zk-red-soft)' : 'var(--zk-text)', op: dis ? '.45' : '1', td: p.strike ? 'line-through' : 'none',
+      pr: trailIcon ? '56px' : 'var(--zk-space-18)', dis, invalid: err ? 'true' : 'false',
+      hasTrail: !!trailIcon && !p.multiline, trailIcon: trailIcon || 'close',
+      trailBg: err ? 'var(--zk-red)' : ok ? 'var(--zk-mint)' : 'transparent',
+      trailFg: err ? 'var(--zk-text)' : ok ? 'var(--zk-mint-ink)' : 'var(--zk-text-muted)',
+      message: p.message, hasMsg: !!p.message, msgC: err ? 'var(--zk-red)' : ok ? 'var(--zk-mint)' : 'var(--zk-text-muted)',
+      anim: p.shakeLoop ? 'zk-shake-loop 2.4s var(--zk-ease-in-out) infinite' : shakeN > 0 ? `${shakeN % 2 ? 'zk-shake-a' : 'zk-shake-b'} var(--zk-dur-shake) var(--zk-ease-in-out)` : 'none',
+      change: e => p.onChange && p.onChange(e), keyDown: e => p.onKeyDown && p.onKeyDown(e),
+      focus: () => this.setState({ focused: true }), blur: () => this.setState({ focused: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

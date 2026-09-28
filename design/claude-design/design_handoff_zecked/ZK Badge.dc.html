@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="img" aria-label="{{ aria }}" style="width:{{ s }}px;height:{{ s }}px;position:relative;flex:none">
+<svg viewBox="0 0 100 100" width="{{ s }}" height="{{ s }}" style="position:absolute;inset:0;overflow:visible"><defs><linearGradient id="{{ gid }}" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" style="stop-color:{{ hi }}"></stop><stop offset="0.55" style="stop-color:{{ mid }}"></stop><stop offset="1" style="stop-color:{{ lo }}"></stop></linearGradient></defs>
+<path d="{{ rays }}" style="fill:{{ ray }}"></path>
+<circle cx="50" cy="54" r="37" style="fill:{{ edge }}"></circle>
+<circle cx="50" cy="50" r="37" fill="url(#{{ gid }})"></circle>
+<circle cx="50" cy="50" r="30" style="fill:none;stroke:rgb(var(--zk-white-rgb) / {{ ringA }});stroke-width:2.5"></circle>
+<ellipse cx="45" cy="25" rx="17" ry="5.5" style="fill:rgb(var(--zk-white-rgb) / {{ hl }})"></ellipse>
+</svg>
+<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:{{ ink }};filter:{{ gf }}"><dc-import name="ZK Icon" icon="{{ glyph }}" size="{{ gs }}" stroke="{{ 2.4 }}" hint-size="36px,36px"></dc-import></div>
+<sc-if value="{{ locked }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:4%;bottom:4%;width:{{ ls }}px;height:{{ ls }}px;border-radius:50%;background:var(--zk-surface-raised);border:2px solid var(--zk-bg);display:flex;align-items:center;justify-content:center;color:var(--zk-text-muted)"><dc-import name="ZK Icon" icon="lock" size="{{ lis }}" stroke="{{ 2.4 }}" hint-size="12px,12px"></dc-import></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:140,&quot;height&quot;:140},&quot;badge&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;first&quot;,&quot;uncrackable&quot;,&quot;oracle&quot;,&quot;speed&quot;,&quot;whale&quot;,&quot;shielded&quot;,&quot;bday&quot;],&quot;default&quot;:&quot;first&quot;,&quot;tsType&quot;:&quot;'first'|'uncrackable'|'oracle'|'speed'|'whale'|'shielded'|'bday'&quot;},&quot;locked&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:80,&quot;min&quot;:24,&quot;max&quot;:200,&quot;tsType&quot;:&quot;number&quot;}}">
+const B = {
+  first: { glyph: 'unlock', name: 'First Crack' }, uncrackable: { glyph: 'shield', name: 'Uncrackable' }, oracle: { glyph: 'orb', name: 'Oracle' },
+  speed: { glyph: 'bolt', name: 'Speed Demon' }, whale: { glyph: 'whale', name: 'Whale Hider' }, shielded: { glyph: 'mask', name: 'Shielded' }, bday: { glyph: 'cake', name: 'Birthday OG' }
+};
+let RAYS = '';
+for (let i = 0; i < 18; i++) {
+  const a = i * 20 * Math.PI / 180, d = 4.5 * Math.PI / 180;
+  const p = t => `${(50 + 50 * Math.cos(t)).toFixed(1)} ${(50 + 50 * Math.sin(t)).toFixed(1)}`;
+  RAYS += `M50 50L${p(a - d)}L${p(a + d)}Z`;
+}
+class Component extends DCLogic {
+  gid = 'zkb' + Math.random().toString(36).slice(2, 8);
+  renderVals() {
+    const id = B[this.props.badge] ? this.props.badge : 'first', b = B[id];
+    const L = !!this.props.locked, key = L ? 'locked' : id, s = this.props.size ?? 80;
+    const v = n => `var(--zk-badge-${key}-${n})`, r = (x, m = 1) => Math.max(m, Math.round(x));
+    return {
+      gid: this.gid, aria: `${b.name} badge${L ? ' (locked)' : ''}`, s, rays: RAYS,
+      hi: v('hi'), mid: v('mid'), lo: v('lo'), edge: v('edge'), ray: v('ray'),
+      ringA: L ? '.06' : '.45', hl: L ? '.06' : '.6',
+      ink: L ? 'var(--zk-text-faint)' : 'var(--zk-text)', gf: L ? 'none' : 'drop-shadow(0 2px 0 rgb(0 0 0 / .3))',
+      glyph: b.glyph, gs: r(s * 0.38), locked: L, ls: r(s * 0.32, 18), lis: r(s * 0.16, 10)
+    };
+  }
+}
+</script>
+</body>
+</html>

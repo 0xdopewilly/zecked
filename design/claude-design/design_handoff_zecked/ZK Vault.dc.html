@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="img" aria-label="Vault door" style="position:relative;width:{{ s }}px;height:{{ s }}px;flex:none">
+<div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,var(--zk-vault-core) 0%,var(--zk-gold) 38%,var(--zk-vault-core-lo) 68%,var(--zk-surface-raised) 71%);box-shadow:0 0 {{ glow }}px rgb(var(--zk-gold-rgb) / .6),inset 0 0 0 {{ rim }}px var(--zk-surface-raised);animation:{{ coreAnim }}"></div>
+<svg viewBox="0 0 100 100" width="{{ s }}" height="{{ s }}" style="position:absolute;inset:0"><g style="stroke:var(--zk-gold-deep);stroke-width:1.2"><ellipse cx="50" cy="66" rx="21" ry="6.5" style="fill:var(--zk-gold-deep)"></ellipse><ellipse cx="50" cy="64" rx="21" ry="6.5" style="fill:var(--zk-gold-light)"></ellipse><ellipse cx="50" cy="59" rx="18" ry="6" style="fill:var(--zk-gold-deep)"></ellipse><ellipse cx="50" cy="57" rx="18" ry="6" style="fill:var(--zk-gold-light)"></ellipse><ellipse cx="50" cy="52.5" rx="15" ry="5.5" style="fill:var(--zk-gold-deep)"></ellipse><ellipse cx="50" cy="50.5" rx="15" ry="5.5" style="fill:var(--zk-gold-pale)"></ellipse></g><text x="50" y="53" text-anchor="middle" style="font:800 7px var(--zk-font-display);fill:var(--zk-gold-deep)">Z</text></svg>
+<div style="position:absolute;inset:0;transform-origin:0% 50%;will-change:transform;transform:{{ doorTf }};animation:{{ doorAnim }};filter:drop-shadow(0 {{ ds }}px {{ dsb }}px rgb(var(--zk-black-rgb) / .5))">
+<svg viewBox="0 0 100 100" width="{{ s }}" height="{{ s }}" style="display:block;overflow:visible"><defs><radialGradient id="{{ gid }}f" cx="0.35" cy="0.28" r="0.8"><stop offset="0" style="stop-color:var(--zk-vault-face-hi)"></stop><stop offset="1" style="stop-color:var(--zk-vault-face-lo)"></stop></radialGradient><linearGradient id="{{ gid }}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--zk-gold-pale)"></stop><stop offset="1" style="stop-color:var(--zk-vault-bolt)"></stop></linearGradient></defs>
+<circle cx="50" cy="50" r="49.5" style="fill:var(--zk-vault-rim)"></circle>
+<circle cx="50" cy="50" r="47" style="fill:var(--zk-gold)"></circle>
+<circle cx="50" cy="50" r="44" fill="url(#{{ gid }}f)"></circle>
+<path d="{{ bolts }}" fill="url(#{{ gid }}g)" style="stroke:var(--zk-vault-bolt-edge);stroke-width:.6"></path>
+<circle cx="50" cy="50" r="29" style="fill:none;stroke:rgb(var(--zk-gold-rgb) / .35);stroke-width:1.5;stroke-dasharray:3 3"></circle>
+<g style="transform-origin:50px 50px;animation:{{ dialAnim }}">
+<rect x="23" y="47.3" width="54" height="5.4" rx="2.7" fill="url(#{{ gid }}g)"></rect>
+<rect x="23" y="47.3" width="54" height="5.4" rx="2.7" transform="rotate(60 50 50)" fill="url(#{{ gid }}g)"></rect>
+<rect x="23" y="47.3" width="54" height="5.4" rx="2.7" transform="rotate(120 50 50)" fill="url(#{{ gid }}g)"></rect>
+<circle cx="50" cy="50" r="11.5" fill="url(#{{ gid }}g)" style="stroke:var(--zk-gold-deep);stroke-width:1.2"></circle>
+<text x="50" y="54.5" text-anchor="middle" style="font:800 13px var(--zk-font-display);fill:var(--zk-vault-hub-ink)">Z</text>
+</g>
+</svg>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:300,&quot;height&quot;:300},&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;loop&quot;,&quot;closed&quot;,&quot;open&quot;,&quot;spin&quot;],&quot;default&quot;:&quot;loop&quot;,&quot;tsType&quot;:&quot;'loop'|'closed'|'open'|'spin'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:260,&quot;min&quot;:60,&quot;max&quot;:400,&quot;tsType&quot;:&quot;number&quot;}}">
+let BOLTS = '';
+for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 - Math.PI / 2, x = 50 + 37 * Math.cos(a), y = 50 + 37 * Math.sin(a); BOLTS += `M${(x - 3.2).toFixed(2)} ${y.toFixed(2)}a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0`; }
+class Component extends DCLogic {
+  gid = 'zkv' + Math.random().toString(36).slice(2, 8);
+  renderVals() {
+    const m = this.props.mode ?? 'loop', s = this.props.size ?? 260, r = x => Math.round(x);
+    return {
+      gid: this.gid, s, bolts: BOLTS, glow: r(s * 0.35), rim: r(s * 0.04), ds: r(s * 0.1), dsb: r(s * 0.12),
+      doorTf: m === 'open' ? 'perspective(1000px) rotateY(-118deg)' : 'none',
+      doorAnim: m === 'loop' ? 'zk-door var(--zk-dur-vault-cycle) var(--zk-ease-in-out) infinite' : 'none',
+      dialAnim: m === 'loop' ? 'zk-dial var(--zk-dur-vault-cycle) var(--zk-ease-in-out) infinite' : m === 'spin' ? 'zk-dial 3s var(--zk-ease-in-out) infinite' : 'none',
+      coreAnim: m === 'loop' ? 'zk-glow var(--zk-dur-vault-cycle) ease-in-out infinite' : 'none'
+    };
+  }
+}
+</script>
+</body>
+</html>

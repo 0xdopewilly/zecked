@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="09-hide-a-stash" data-screen-label="09 Hide a stash" style="display:flex;gap:var(--zk-space-64);align-items:flex-start;padding:var(--zk-space-14)">
+
+<div id="09-1-type" data-screen-label="09.1 Hide · type" style="display:flex;flex-direction:column;gap:var(--zk-space-18)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">09.1</span>Pick a stash type</header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:calc(var(--zk-statusbar-h) + var(--zk-space-8)) var(--zk-screen-pad) var(--zk-space-40)">
+<div style="display:flex;align-items:center;justify-content:space-between"><div role="button" aria-label="Close" style="width:40px;height:40px;border-radius:var(--zk-radius-md);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="close" size="{{ 18 }}" stroke="{{ 2.6 }}" hint-size="18px,18px"></dc-import></div><span style="font:var(--zk-type-mono-sm);color:var(--zk-text-muted)">STEP 1 / 4</span><div style="width:40px"></div></div>
+<div role="progressbar" aria-valuenow="1" aria-valuemax="4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-6)"><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span></div>
+<h1 style="margin:var(--zk-space-8) 0 0;font:var(--zk-type-h1)">What are you hiding?</h1>
+<div role="radio" aria-checked="{{ isRiddle }}" onClick="{{ pickRiddle }}" style="position:relative;height:250px;border-radius:var(--zk-radius-3xl);overflow:hidden;background:radial-gradient(circle at 75% 30%,var(--zk-purple-light) 0%,var(--zk-purple-vivid) 40%,var(--zk-purple-shade) 100%);box-shadow:{{ rShadow }};cursor:pointer">
+<div aria-hidden="true" style="position:absolute;right:-30px;top:-30px;width:220px;height:220px;border-radius:50%;background:repeating-conic-gradient(rgb(var(--zk-white-rgb) / .1) 0 10deg,transparent 10deg 22deg);will-change:transform;animation:zk-spin 30s linear infinite"></div>
+<div aria-hidden="true" style="position:absolute;right:40px;top:30px;width:110px;height:110px;border-radius:var(--zk-radius-3xl);background:var(--zk-grad-tile-gold);box-shadow:inset 0 4px 0 rgb(var(--zk-white-rgb) / .5),0 8px 0 var(--zk-gold-deep),var(--zk-glow-gold);color:var(--zk-gold-ink);display:flex;align-items:center;justify-content:center;transform:rotate(6deg);animation:zk-bob 3s ease-in-out infinite;--zk-tilt:6deg"><dc-import name="ZK Icon" icon="lock" size="{{ 60 }}" stroke="{{ 2.4 }}" hint-size="60px,60px"></dc-import></div>
+<div style="position:absolute;left:20px;top:20px;padding:var(--zk-space-4) var(--zk-space-10);border-radius:var(--zk-radius-sm);background:var(--zk-pink);font:var(--zk-type-label);letter-spacing:.06em;transform:rotate(-4deg);box-shadow:var(--zk-shadow-sticker-pink)">FIRST RIGHT ANSWER WINS</div>
+<div style="position:absolute;left:20px;bottom:20px;right:64px"><div style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Riddle</div><div style="font:var(--zk-type-body);font-weight:var(--zk-fw-semibold);color:rgb(var(--zk-white-rgb) / .85);margin-top:var(--zk-space-6)">Write a riddle. Hide the answer. Watch them sweat.</div></div>
+<sc-if value="{{ isRiddle }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;right:16px;bottom:18px;width:34px;height:34px;border-radius:50%;background:var(--zk-gold);color:var(--zk-gold-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--zk-shadow-chip-active)"><dc-import name="ZK Icon" icon="check" size="{{ 18 }}" stroke="{{ 3 }}" hint-size="18px,18px"></dc-import></div></sc-if>
+</div>
+<div role="radio" aria-checked="{{ isPred }}" onClick="{{ pickPred }}" style="position:relative;height:250px;border-radius:var(--zk-radius-3xl);overflow:hidden;background:radial-gradient(circle at 75% 30%,var(--zk-aqua-light) 0%,var(--zk-aqua) 40%,var(--zk-sky-mid) 100%);box-shadow:{{ pShadow }};cursor:pointer">
+<div aria-hidden="true" style="position:absolute;right:-30px;top:-30px;width:220px;height:220px;border-radius:50%;background:repeating-conic-gradient(rgb(var(--zk-white-rgb) / .12) 0 10deg,transparent 10deg 22deg);will-change:transform;animation:zk-spin 30s linear infinite reverse"></div>
+<div aria-hidden="true" style="position:absolute;right:40px;top:30px;width:110px;height:110px;border-radius:50%;background:var(--zk-text);box-shadow:inset 0 -6px 0 rgb(var(--zk-black-rgb) / .12),0 8px 0 rgb(var(--zk-black-rgb) / .25);color:var(--zk-sky-ink);display:flex;align-items:center;justify-content:center;animation:zk-bob 3.4s ease-in-out .5s infinite"><dc-import name="ZK Icon" icon="ball" size="{{ 76 }}" stroke="{{ 1.8 }}" hint-size="76px,76px"></dc-import></div>
+<div style="position:absolute;left:20px;top:20px;padding:var(--zk-space-4) var(--zk-space-10);border-radius:var(--zk-radius-sm);background:var(--zk-bg);font:var(--zk-type-label);letter-spacing:.06em;transform:rotate(3deg)">BAR vs CHE · 2–1?</div>
+<div style="position:absolute;left:20px;bottom:20px;right:64px;color:var(--zk-sky-ink)"><div style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Prediction</div><div style="font:var(--zk-type-body);font-weight:var(--zk-fw-semibold);margin-top:var(--zk-space-6)">Pick a real match. First correct call takes it.</div></div>
+<sc-if value="{{ isPred }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:16px;bottom:18px;width:34px;height:34px;border-radius:50%;background:var(--zk-gold);color:var(--zk-gold-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--zk-shadow-chip-active)"><dc-import name="ZK Icon" icon="check" size="{{ 18 }}" stroke="{{ 3 }}" hint-size="18px,18px"></dc-import></div></sc-if>
+</div>
+<div style="margin-top:auto"><dc-import name="ZK Button" label="Continue" variant="primary" size="lg" hint-size="100%,62px"></dc-import></div>
+</div>
+</div>
+</div>
+
+<div id="09-2a-riddle" data-screen-label="09.2a Hide · riddle" style="display:flex;flex-direction:column;gap:var(--zk-space-18)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">09.2a</span>Write the riddle<span style="color:var(--zk-text-faint)">· edit to see strength</span></header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:calc(var(--zk-statusbar-h) + var(--zk-space-8)) var(--zk-screen-pad) var(--zk-space-40)">
+<div style="display:flex;align-items:center;justify-content:space-between"><div role="button" aria-label="Back" style="width:40px;height:40px;border-radius:var(--zk-radius-md);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="back" size="{{ 20 }}" stroke="{{ 2.6 }}" hint-size="20px,20px"></dc-import></div><span style="font:var(--zk-type-mono-sm);color:var(--zk-text-muted)">STEP 2 / 4</span><div style="width:40px"></div></div>
+<div role="progressbar" aria-valuenow="2" aria-valuemax="4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-6)"><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span></div>
+<h1 style="margin:var(--zk-space-8) 0 0;font:var(--zk-type-h1)">Make it tricky.</h1>
+<dc-import name="ZK Input" label="Your riddle" multiline="{{ true }}" height="{{ 132 }}" font="display" value="{{ riddle }}" state="focus" message="{{ riddleCount }}" on-change="{{ onRiddle }}" hint-size="100%,170px"></dc-import>
+<dc-import name="ZK Input" label="The answer" value="{{ ans }}" size="md" trailing="eyeOff" message="Not case-sensitive. “a”, “an” and “the” are ignored." on-change="{{ onAns }}" hint-size="100%,100px"></dc-import>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);padding:var(--zk-space-16)">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font:var(--zk-type-h4)">Riddle strength</span><span style="font:var(--zk-type-btn-md);color:{{ strC }}">{{ strLabel }}</span></div>
+<div role="meter" aria-valuenow="{{ strN }}" aria-valuemax="4" style="margin-top:var(--zk-space-12);display:grid;grid-template-columns:repeat(5,1fr);gap:var(--zk-space-6)"><sc-for list="{{ strSegs }}" as="g" hint-placeholder-count="5"><span style="height:14px;border-radius:var(--zk-radius-pill);background:{{ g.bg }};box-shadow:{{ g.sh }};transition:background var(--zk-dur-base) var(--zk-ease-out)"></span></sc-for></div>
+<div style="margin-top:var(--zk-space-8);display:flex;justify-content:space-between;font:var(--zk-fw-bold) var(--zk-fs-10)/1 var(--zk-font-body);color:var(--zk-text-muted);letter-spacing:.04em"><span>WEAK</span><span>OKAY</span><span>TRICKY</span><span>BRUTAL</span><span>UNCRACKABLE</span></div>
+<div style="margin-top:var(--zk-space-10);font:var(--zk-type-caption);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">{{ strTip }}</div>
+</div>
+<div role="button" style="height:var(--zk-h-btn-md);border-radius:var(--zk-radius-lg);border:1.5px dashed rgb(var(--zk-white-rgb) / .2);display:flex;align-items:center;justify-content:center;gap:var(--zk-space-8);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><dc-import name="ZK Icon" icon="bulb" size="{{ 18 }}" hint-size="18px,18px"></dc-import>Add a bonus hint (unlocks later)</div>
+<div style="margin-top:auto"><dc-import name="ZK Button" label="Next: set the prize" variant="primary" size="lg" state="{{ riddleNext }}" hint-size="100%,62px"></dc-import></div>
+</div>
+</div>
+</div>
+
+<div id="09-2b-prediction" data-screen-label="09.2b Hide · match" style="display:flex;flex-direction:column;gap:var(--zk-space-18)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">09.2b</span>Pick the match</header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:calc(var(--zk-statusbar-h) + var(--zk-space-8)) var(--zk-screen-pad) var(--zk-space-40)">
+<div style="display:flex;align-items:center;justify-content:space-between"><div role="button" aria-label="Back" style="width:40px;height:40px;border-radius:var(--zk-radius-md);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="back" size="{{ 20 }}" stroke="{{ 2.6 }}" hint-size="20px,20px"></dc-import></div><span style="font:var(--zk-type-mono-sm);color:var(--zk-text-muted)">STEP 2 / 4</span><div style="width:40px"></div></div>
+<div role="progressbar" aria-valuenow="2" aria-valuemax="4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-6)"><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span></div>
+<h1 style="margin:var(--zk-space-8) 0 0;font:var(--zk-type-h1)">Pick a match.</h1>
+<div style="height:46px;border-radius:var(--zk-radius-lg);background:var(--zk-surface);display:flex;align-items:center;gap:var(--zk-space-10);padding:0 var(--zk-space-14);font:var(--zk-type-body);font-size:var(--zk-fs-15);color:var(--zk-text-muted)"><dc-import name="ZK Icon" icon="search" size="{{ 18 }}" hint-size="18px,18px"></dc-import>Search teams or leagues</div>
+<div role="radiogroup" style="display:flex;flex-direction:column;gap:var(--zk-space-8)">
+<sc-for list="{{ matches }}" as="m" hint-placeholder-count="5"><div role="radio" aria-checked="{{ m.sel }}" onClick="{{ m.go }}" style="display:flex;align-items:center;gap:var(--zk-space-10);padding:var(--zk-space-10) var(--zk-space-12);border-radius:var(--zk-radius-xl);background:{{ m.bg }};border:2px solid {{ m.bd }};cursor:pointer">
+<div style="display:flex"><dc-import name="ZK Team Badge" code="{{ m.h }}" color="{{ m.hc }}" ink="{{ m.htc }}" size="{{ 38 }}" hint-size="38px,38px"></dc-import><div style="margin-left:-8px"><dc-import name="ZK Team Badge" code="{{ m.a }}" color="{{ m.ac }}" ink="{{ m.atc }}" size="{{ 38 }}" hint-size="38px,38px"></dc-import></div></div>
+<div style="flex:1;min-width:0"><div style="font:var(--zk-type-h4)">{{ m.h }} vs {{ m.a }}</div><div style="font:var(--zk-type-caption);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">{{ m.comp }} · {{ m.when }}</div></div>
+<span style="width:22px;height:22px;border-radius:50%;box-sizing:border-box;border:2px solid {{ m.rim }};background:{{ m.dot }}"></span>
+</div></sc-for>
+</div>
+<div style="font:var(--zk-type-small);font-weight:var(--zk-fw-bold);color:var(--zk-text-muted);margin-top:var(--zk-space-4)">What do they call?</div>
+<div role="radiogroup" style="display:grid;grid-template-columns:1fr 1fr;gap:var(--zk-space-8)">
+<div role="radio" aria-checked="{{ isExact }}" onClick="{{ pickExact }}" style="padding:var(--zk-space-12);border-radius:var(--zk-radius-lg);background:{{ exBg }};border:2px solid {{ exBd }};cursor:pointer"><div style="display:flex;align-items:center;gap:var(--zk-space-6);font:var(--zk-type-h4)"><dc-import name="ZK Icon" icon="target" size="{{ 16 }}" hint-size="16px,16px"></dc-import>Exact score</div><div style="font:var(--zk-fw-medium) var(--zk-fs-11)/1.3 var(--zk-font-body);color:var(--zk-text-muted);margin-top:var(--zk-space-2)">Harder. Bigger flex.</div></div>
+<div role="radio" aria-checked="{{ isWinner }}" onClick="{{ pickWin }}" style="padding:var(--zk-space-12);border-radius:var(--zk-radius-lg);background:{{ wnBg }};border:2px solid {{ wnBd }};cursor:pointer"><div style="display:flex;align-items:center;gap:var(--zk-space-6);font:var(--zk-type-h4)"><dc-import name="ZK Icon" icon="flag" size="{{ 16 }}" hint-size="16px,16px"></dc-import>Winner</div><div style="font:var(--zk-fw-medium) var(--zk-fs-11)/1.3 var(--zk-font-body);color:var(--zk-text-muted);margin-top:var(--zk-space-2)">Easier. Fast crowd.</div></div>
+</div>
+<div style="margin-top:auto"><dc-import name="ZK Button" label="Next: set the prize" variant="primary" size="lg" hint-size="100%,62px"></dc-import></div>
+</div>
+</div>
+</div>
+
+<div id="09-3-amount" data-screen-label="09.3 Hide · amount" style="display:flex;flex-direction:column;gap:var(--zk-space-18)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">09.3</span>Set the prize<span style="color:var(--zk-text-faint)">· drag the slider</span></header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg-hero-gold);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:calc(var(--zk-statusbar-h) + var(--zk-space-8)) var(--zk-screen-pad) var(--zk-space-40)">
+<div style="display:flex;align-items:center;justify-content:space-between"><div role="button" aria-label="Back" style="width:40px;height:40px;border-radius:var(--zk-radius-md);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="back" size="{{ 20 }}" stroke="{{ 2.6 }}" hint-size="20px,20px"></dc-import></div><span style="font:var(--zk-type-mono-sm);color:var(--zk-text-muted)">STEP 3 / 4</span><div style="width:40px"></div></div>
+<div role="progressbar" aria-valuenow="3" aria-valuemax="4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-6)"><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised)"></span></div>
+<h1 style="margin:var(--zk-space-8) 0 0;font:var(--zk-type-h1)">How much is inside?</h1>
+<div style="display:flex;flex-direction:column;align-items:center;padding:var(--zk-space-18) 0 var(--zk-space-6)">
+<div style="font:var(--zk-type-amount-xl);color:var(--zk-gold);letter-spacing:-.03em;text-shadow:var(--zk-text-shadow-gold)">${{ usd }}</div>
+<div style="font:var(--zk-type-mono);font-size:var(--zk-fs-18);margin-top:var(--zk-space-12)">{{ zec }} ZEC</div>
+</div>
+<div role="slider" aria-valuemin="1" aria-valuemax="200" aria-valuenow="{{ usd }}" ref="{{ trackRef }}" onPointerDown="{{ onDown }}" onPointerMove="{{ onMove }}" onPointerUp="{{ onUp }}" style="position:relative;height:44px;touch-action:none;cursor:pointer">
+<div style="position:absolute;left:0;right:0;top:15px;height:14px;border-radius:var(--zk-radius-pill);background:var(--zk-surface-raised);box-shadow:inset 0 2px 0 rgb(var(--zk-black-rgb) / .4)"></div>
+<div style="position:absolute;left:0;top:15px;height:14px;border-radius:var(--zk-radius-pill);width:{{ pct }};background:var(--zk-grad-gold);box-shadow:0 0 16px rgb(var(--zk-gold-rgb) / .5)"></div>
+<div style="position:absolute;top:4px;left:{{ pct }};margin-left:-18px;width:36px;height:36px;border-radius:50%;background:var(--zk-text);box-shadow:var(--zk-shadow-btn-light-pressed),0 0 0 6px rgb(var(--zk-gold-rgb) / .25);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Logo" variant="mark" size="{{ 16 }}" stroke="var(--zk-gold-ink)" hint-size="16px,16px"></dc-import></div>
+</div>
+<div style="display:flex;justify-content:space-between;font:var(--zk-type-mono-xs);color:var(--zk-text-muted)"><span>$1</span><span>$200</span></div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-8)"><sc-for list="{{ presets }}" as="p" hint-placeholder-count="4"><div role="button" aria-pressed="{{ p.on }}" onClick="{{ p.go }}" style="height:48px;border-radius:var(--zk-radius-lg);display:flex;align-items:center;justify-content:center;font:var(--zk-type-h4);background:{{ p.bg }};color:{{ p.fg }};box-shadow:{{ p.sh }};cursor:pointer">{{ p.label }}</div></sc-for></div>
+<div style="font:var(--zk-type-small);font-weight:var(--zk-fw-bold);color:var(--zk-text-muted);margin-top:var(--zk-space-6)">Expires in</div>
+<div style="display:flex;gap:var(--zk-space-8);flex-wrap:wrap"><sc-for list="{{ expiries }}" as="x" hint-placeholder-count="4"><dc-import name="ZK Chip" label="{{ x.label }}" active="{{ x.on }}" size="sm" on-click="{{ x.go }}" hint-size="80px,32px"></dc-import></sc-for></div>
+<div style="display:flex;gap:var(--zk-space-10);align-items:flex-start;padding:var(--zk-space-12) var(--zk-space-14);border-radius:var(--zk-radius-lg);background:var(--zk-surface);font:var(--zk-type-small);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)"><span style="color:var(--zk-purple-light);display:flex"><dc-import name="ZK Icon" icon="shield" size="{{ 18 }}" hint-size="18px,18px"></dc-import></span><span>If nobody cracks it, the ZEC comes back to you. And you earn <b style="color:var(--zk-text)">Uncrackable</b>.</span></div>
+<div style="margin-top:auto"><dc-import name="ZK Button" label="Next: fund it" variant="primary" size="lg" hint-size="100%,62px"></dc-import></div>
+</div>
+</div>
+</div>
+
+<div id="09-4a-fund" data-screen-label="09.4a Hide · fund" style="display:flex;flex-direction:column;gap:var(--zk-space-18)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">09.4a</span>Fund it</header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:calc(var(--zk-statusbar-h) + var(--zk-space-8)) var(--zk-screen-pad) var(--zk-space-40)">
+<div style="display:flex;align-items:center;justify-content:space-between"><div role="button" aria-label="Back" style="width:40px;height:40px;border-radius:var(--zk-radius-md);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="back" size="{{ 20 }}" stroke="{{ 2.6 }}" hint-size="20px,20px"></dc-import></div><span style="font:var(--zk-type-mono-sm);color:var(--zk-text-muted)">STEP 4 / 4</span><div style="width:40px"></div></div>
+<div role="progressbar" aria-valuenow="4" aria-valuemax="4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-6)"><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span><span style="height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-gold)"></span></div>
+<h1 style="margin:var(--zk-space-8) 0 0;font:var(--zk-type-h1)">Fund it.</h1>
+<p style="margin:calc(var(--zk-space-4) * -1) 0 0;font:var(--zk-type-body);color:var(--zk-text-muted)">Scan from any Zcash wallet and send exactly</p>
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-lg);font-size:var(--zk-fs-26);color:var(--zk-gold)">{{ zec }} ZEC</span><span style="font:var(--zk-type-body);color:var(--zk-text-muted)">~${{ usd }}</span></div>
+<div role="img" aria-label="Payment QR code" style="align-self:center;width:250px;height:250px;border-radius:var(--zk-radius-3xl);background:var(--zk-text);padding:var(--zk-space-18);box-sizing:border-box;position:relative;box-shadow:0 0 0 6px rgb(var(--zk-gold-rgb) / .25),var(--zk-shadow-float)">
+<svg viewBox="0 0 25 25" width="214" height="214" shape-rendering="crispEdges" style="display:block"><path d="{{ qr }}" style="fill:var(--zk-bg)"></path></svg>
+<div style="position:absolute;left:50%;top:50%;margin:-24px 0 0 -24px;padding:var(--zk-space-4);background:var(--zk-text);border-radius:var(--zk-radius-lg)"><dc-import name="ZK Logo" variant="icon" size="{{ 40 }}" hint-size="40px,40px"></dc-import></div>
+</div>
+<div style="display:flex;align-items:center;gap:var(--zk-space-10);padding:var(--zk-space-8) var(--zk-space-8) var(--zk-space-8) var(--zk-space-16);border-radius:var(--zk-radius-lg);background:var(--zk-surface)"><span style="flex:1;font:var(--zk-fw-medium) var(--zk-fs-14)/1 var(--zk-font-mono)">u1zk7v…m9x4q</span><dc-import name="ZK Button" label="Copy" icon="copy" variant="secondary" size="sm" full="{{ false }}" hint-size="90px,40px"></dc-import></div>
+<div role="status" style="display:flex;align-items:center;gap:var(--zk-space-12);padding:var(--zk-space-12) var(--zk-space-14);border-radius:var(--zk-radius-lg);background:{{ payBg }};border:1px solid {{ payBd }}">
+<sc-if value="{{ notPaid }}" hint-placeholder-val="{{ true }}"><span style="width:22px;height:22px;border-radius:50%;box-sizing:border-box;border:3px solid rgb(var(--zk-gold-rgb) / .25);border-top-color:var(--zk-gold);will-change:transform;animation:zk-spin .9s linear infinite;flex:none"></span></sc-if>
+<sc-if value="{{ paid }}" hint-placeholder-val="{{ false }}"><span style="width:22px;height:22px;border-radius:50%;background:var(--zk-mint);color:var(--zk-mint-ink);display:flex;align-items:center;justify-content:center;flex:none"><dc-import name="ZK Icon" icon="check" size="{{ 14 }}" stroke="{{ 3 }}" hint-size="14px,14px"></dc-import></span></sc-if>
+<div style="font:var(--zk-type-small)">{{ payText }}</div>
+</div>
+<div style="margin-top:auto"><dc-import name="ZK Button" label="{{ payCta }}" variant="{{ payVariant }}" size="lg" on-click="{{ markPaid }}" hint-size="100%,62px"></dc-import></div>
+</div>
+</div>
+</div>
+
+<div id="09-4b-live" data-screen-label="09.4b Hide · live" style="display:flex;flex-direction:column;gap:var(--zk-space-18)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">09.4b</span>Stash is live</header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg-live);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<dc-import name="ZK Confetti" count="{{ 50 }}" seed="{{ 11 }}" style="position:absolute;inset:0;z-index:5;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;position:relative;z-index:6;display:flex;flex-direction:column;gap:var(--zk-space-14);padding:calc(var(--zk-statusbar-h) + var(--zk-space-20)) var(--zk-screen-pad) var(--zk-space-40)">
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-14);align-items:center;text-align:center">
+<dc-import name="ZK Live Badge" size="md" label="Live · verified by viewing key" hint-size="240px,28px"></dc-import>
+<h1 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display);letter-spacing:var(--zk-track-tight)">Your stash is LIVE 🎉</h1>
+<p style="margin:0;font:var(--zk-type-body);font-size:var(--zk-fs-15);color:var(--zk-text-muted);max-width:300px">Now go stir up trouble. Share it where your people hang out.</p>
+</div>
+<div style="margin-top:var(--zk-space-14)">
+<div style="font:var(--zk-type-label);letter-spacing:var(--zk-track-badge);color:var(--zk-text-muted);margin-bottom:var(--zk-space-8)">SHARE CARD PREVIEW</div>
+<div style="width:354px;height:199px;border-radius:var(--zk-radius-xl);overflow:hidden;position:relative;background:var(--zk-bg-share-riddle);border:1px solid var(--zk-border-strong);box-shadow:var(--zk-shadow-float);transform:rotate(-2deg)">
+<div style="position:absolute;left:16px;top:14px"><dc-import name="ZK Logo" variant="wordmark" size="{{ 18 }}" hint-size="90px,20px"></dc-import></div>
+<div style="position:absolute;left:16px;top:44px;right:120px;font:var(--zk-fw-black) var(--zk-fs-20)/1.08 var(--zk-font-display)">Crack my riddle and ZECK <span style="color:var(--zk-gold)">{{ zec }} ZEC</span> 🔐</div>
+<div style="position:absolute;left:16px;bottom:14px;right:120px;font:var(--zk-fw-semibold) var(--zk-fs-11)/1.3 var(--zk-font-body);color:var(--zk-text-muted)">“{{ riddleShort }}”</div>
+<div style="position:absolute;right:14px;top:44px;width:96px;height:96px;border-radius:var(--zk-radius-2xl);background:var(--zk-grad-tile-gold);box-shadow:var(--zk-shadow-chip-active);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--zk-space-2);color:var(--zk-gold-ink);transform:rotate(4deg)"><span style="font:var(--zk-fw-black) var(--zk-fs-26)/1 var(--zk-font-display)">${{ usd }}</span><span style="font:var(--zk-fw-bold) var(--zk-fs-10)/1 var(--zk-font-mono)">FIRST WINS</span></div>
+<div style="position:absolute;right:14px;bottom:12px;font:var(--zk-fw-bold) var(--zk-fs-10)/1 var(--zk-font-mono)">zecked.com/s/k7Q2</div>
+</div>
+</div>
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:var(--zk-space-10)">
+<dc-import name="ZK Button" label="Share on X" variant="light" size="md" hint-size="100%,52px"></dc-import>
+<dc-import name="ZK Button" label="Share on Telegram" variant="sky" size="md" hint-size="100%,52px"></dc-import>
+<div style="height:var(--zk-h-btn-md);border-radius:var(--zk-radius-lg);border:1.5px solid var(--zk-border-strong);display:flex;align-items:center;justify-content:space-between;padding:0 var(--zk-space-16);font:var(--zk-fw-medium) var(--zk-fs-14)/1 var(--zk-font-mono)"><span>zecked.com/s/k7Q2</span><span style="display:flex;align-items:center;gap:var(--zk-space-4);font:var(--zk-type-body-strong);color:var(--zk-gold)"><dc-import name="ZK Icon" icon="copy" size="{{ 16 }}" hint-size="16px,16px"></dc-import>Copy</span></div>
+</div>
+</div>
+</div>
+</div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const N = 25;
+const QR = (() => {
+  let s = 42; const r = () => (s = (s * 48271) % 2147483647) / 2147483647; let d = '';
+  const finder = (x, y, ox, oy) => { const dx = x - ox, dy = y - oy; if (dx < 0 || dy < 0 || dx > 6 || dy > 6) return null; return dx === 0 || dy === 0 || dx === 6 || dy === 6 || (dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4); };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let v = finder(x, y, 0, 0); if (v === null) v = finder(x, y, N - 7, 0); if (v === null) v = finder(x, y, 0, N - 7);
+    const sep = (x < 8 && y < 8) || (x > N - 9 && y < 8) || (x < 8 && y > N - 9), center = x >= 9 && x <= 15 && y >= 9 && y <= 15;
+    if (v === null) v = sep || center ? false : r() > 0.52;
+    if (v) d += `M${x} ${y}h1v1h-1z`;
+  }
+  return d;
+})();
+const MATCHES = [
+  { h: 'BAR', a: 'CHE', comp: 'Champions League', when: 'Tue 20:00', hc: 'var(--zk-team-bar)', ac: 'var(--zk-team-che)' },
+  { h: 'MAD', a: 'LIV', comp: 'Champions League', when: 'Wed 20:00', hc: 'var(--zk-team-mad)', htc: 'var(--zk-team-mad-ink)', ac: 'var(--zk-team-liv)' },
+  { h: 'MUN', a: 'ARS', comp: 'Premier League', when: 'Sat 12:30', hc: 'var(--zk-team-mun)', ac: 'var(--zk-team-ars)' },
+  { h: 'PSG', a: 'BAY', comp: 'Champions League', when: 'Wed 20:00', hc: 'var(--zk-team-psg)', ac: 'var(--zk-team-bay)' },
+  { h: 'INT', a: 'JUV', comp: 'Serie A', when: 'Sun 19:45', hc: 'var(--zk-team-int)', ac: 'var(--zk-team-juv)', atc: 'var(--zk-team-juv-ink)' }
+];
+const STR = [
+  { l: 'Weak', c: 'var(--zk-red)', tip: 'A toddler could crack this. Add more twists.' },
+  { l: 'Okay', c: 'var(--zk-orange)', tip: 'Getting there. Try a longer riddle.' },
+  { l: 'Tricky', c: 'var(--zk-gold)', tip: 'Nice. A few people will sweat on this.' },
+  { l: 'Brutal', c: 'var(--zk-pink)', tip: 'Brutal. Expect a long queue of wrong guesses.' },
+  { l: 'Uncrackable', c: 'var(--zk-purple)', tip: 'Uncrackable. Respect.' }
+];
+class Component extends DCLogic {
+  state = { type: 'riddle', riddle: 'I have cities, but no houses. Forests, but no trees. Water, but no fish. What am I?', ans: 'a map', match: 0, ptype: 'exact', usd: 20, preset: '$20', expiry: '24 hours', paid: false };
+  track = React.createRef();
+  setFromX(clientX) {
+    const el = this.track.current; if (!el) return;
+    const b = el.getBoundingClientRect(), p = Math.min(1, Math.max(0, (clientX - b.left) / b.width));
+    this.setState({ usd: Math.round(1 + p * 199), preset: 'Custom' });
+  }
+  renderVals() {
+    const s = this.state;
+    const clean = s.ans.replace(/^(a|an|the)\s+/i, '').replace(/\W/g, '');
+    const sc = Math.max(0, Math.min(4, Math.floor(s.riddle.length / 40) + (clean.length >= 5 ? 1 : 0) + (clean.length >= 9 ? 1 : 0)));
+    const st = STR[sc], zec = (s.usd / 1500).toFixed(4);
+    const on = { bg: 'var(--zk-gold)', fg: 'var(--zk-gold-ink)', sh: 'var(--zk-shadow-chip-active)' }, off = { bg: 'var(--zk-surface)', fg: 'var(--zk-text)', sh: 'none' };
+    return {
+      isRiddle: s.type === 'riddle', isPred: s.type === 'pred',
+      pickRiddle: () => this.setState({ type: 'riddle' }), pickPred: () => this.setState({ type: 'pred' }),
+      rShadow: s.type === 'riddle' ? '0 0 0 4px var(--zk-gold), 0 8px 0 var(--zk-purple-night), var(--zk-glow-purple)' : '0 8px 0 var(--zk-purple-night)',
+      pShadow: s.type === 'pred' ? '0 0 0 4px var(--zk-gold), 0 8px 0 var(--zk-sky-night), var(--zk-glow-sky)' : '0 8px 0 var(--zk-sky-night)',
+      riddle: s.riddle, riddleCount: `${s.riddle.length} / 200`, onRiddle: e => this.setState({ riddle: e.target.value.slice(0, 200) }),
+      ans: s.ans, onAns: e => this.setState({ ans: e.target.value }),
+      strLabel: st.l, strC: st.c, strTip: st.tip, strN: sc,
+      strSegs: [0, 1, 2, 3, 4].map(i => ({ bg: i <= sc ? st.c : 'var(--zk-surface-raised)', sh: i <= sc ? `0 0 12px ${st.c}` : 'none' })),
+      riddleNext: s.riddle.trim().length > 10 && clean.length > 0 ? 'default' : 'disabled',
+      matches: MATCHES.map((m, i) => { const sel = s.match === i; return { ...m, htc: m.htc || 'var(--zk-text)', atc: m.atc || 'var(--zk-text)', sel: sel ? 'true' : 'false', go: () => this.setState({ match: i }), bg: sel ? 'var(--zk-sky-tint)' : 'var(--zk-surface)', bd: sel ? 'var(--zk-sky)' : 'transparent', rim: sel ? 'var(--zk-sky)' : 'var(--zk-border-strong)', dot: sel ? 'var(--zk-sky)' : 'transparent' }; }),
+      isExact: s.ptype === 'exact', isWinner: s.ptype === 'win',
+      pickExact: () => this.setState({ ptype: 'exact' }), pickWin: () => this.setState({ ptype: 'win' }),
+      exBg: s.ptype === 'exact' ? 'var(--zk-gold-tint)' : 'var(--zk-surface)', exBd: s.ptype === 'exact' ? 'var(--zk-gold)' : 'transparent',
+      wnBg: s.ptype === 'win' ? 'var(--zk-gold-tint)' : 'var(--zk-surface)', wnBd: s.ptype === 'win' ? 'var(--zk-gold)' : 'transparent',
+      usd: s.usd, zec, pct: `${((s.usd - 1) / 199 * 100).toFixed(1)}%`, trackRef: this.track,
+      onDown: e => { this.drag = true; e.currentTarget.setPointerCapture && e.currentTarget.setPointerCapture(e.pointerId); this.setFromX(e.clientX); },
+      onMove: e => { if (this.drag) this.setFromX(e.clientX); }, onUp: () => { this.drag = false; },
+      presets: [['$5', 5], ['$10', 10], ['$20', 20], ['Custom', null]].map(([l, v]) => ({ label: l, on: s.preset === l ? 'true' : 'false', ...(s.preset === l ? on : off), go: () => this.setState(v ? { usd: v, preset: l } : { preset: 'Custom', usd: 42 }) })),
+      expiries: ['1 hour', '24 hours', '3 days', '7 days'].map(l => ({ label: l, on: s.expiry === l, go: () => this.setState({ expiry: l }) })),
+      qr: QR, paid: s.paid, notPaid: !s.paid, markPaid: () => this.setState({ paid: !s.paid }),
+      payText: s.paid ? 'Payment detected. Your vault is sealed and verified.' : 'Waiting for your ZEC… usually under a minute.',
+      payBg: s.paid ? 'var(--zk-mint-tint)' : 'var(--zk-surface)', payBd: s.paid ? 'rgb(var(--zk-mint-rgb) / .4)' : 'transparent',
+      payCta: s.paid ? 'Go live' : 'I’ve sent it', payVariant: s.paid ? 'success' : 'primary',
+      riddleShort: s.riddle.length > 70 ? s.riddle.slice(0, 68) + '…' : s.riddle
+    };
+  }
+}
+</script>
+</body>
+</html>

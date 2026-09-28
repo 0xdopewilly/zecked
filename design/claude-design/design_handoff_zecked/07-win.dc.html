@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="07-win" data-screen-label="07 Win moment" style="display:flex;flex-direction:column;gap:var(--zk-space-18);padding:var(--zk-space-14)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">07</span>Win moment<span role="button" onClick="{{ replay }}" style="color:var(--zk-gold);cursor:pointer">· replay</span></header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg-win);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div aria-hidden="true" style="position:absolute;left:-255px;top:-240px;width:900px;height:900px;border-radius:50%;background:repeating-conic-gradient(rgb(var(--zk-gold-rgb) / .16) 0 9deg,transparent 9deg 22deg);will-change:transform;animation:zk-spin var(--zk-dur-sunburst) linear infinite"></div>
+<div aria-hidden="true" style="position:absolute;left:65px;top:80px;width:260px;height:260px;border-radius:50%;border:3px solid rgb(var(--zk-gold-rgb) / .6);will-change:transform,opacity;animation:zk-ring var(--zk-dur-ring) var(--zk-ease-out) infinite"></div>
+<dc-import name="ZK Vault" mode="open" size="{{ 200 }}" style="position:absolute;left:95px;top:110px" hint-size="200px,200px"></dc-import>
+<dc-import name="ZK Confetti" count="{{ 70 }}" seed="{{ 7 }}" run="{{ run }}" style="position:absolute;inset:0;z-index:5;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;position:relative;z-index:6;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:338px var(--zk-screen-pad) var(--zk-space-40)">
+<div role="status" style="display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-8);text-align:center">
+<h1 style="margin:0;font:var(--zk-type-hero);color:var(--zk-gold);letter-spacing:var(--zk-track-tight);text-shadow:var(--zk-text-shadow-gold);animation:zk-pop var(--zk-dur-pop) var(--zk-ease-spring) both">YOU ZECKED IT!</h1>
+<div style="font:var(--zk-type-mono-xl);margin-top:var(--zk-space-8)"><dc-import name="ZK Count Up" to="{{ 0.02 }}" decimals="{{ 4 }}" prefix="+" suffix=" ZEC" run="{{ run }}" hint-size="220px,34px"></dc-import></div>
+<div style="font:var(--zk-type-body-strong);font-size:var(--zk-fs-16);color:var(--zk-gold-pale)"><dc-import name="ZK Count Up" to="{{ 30 }}" decimals="{{ 2 }}" prefix="~$" run="{{ run }}" hint-size="70px,18px"></dc-import></div>
+</div>
+<div style="margin-top:var(--zk-space-12);background:var(--zk-scrim);border-radius:var(--zk-radius-2xl);padding:var(--zk-space-14);display:flex;align-items:center;gap:var(--zk-space-14);border:1.5px solid rgb(var(--zk-gold-rgb) / .4)">
+<dc-import name="ZK Badge" badge="first" size="{{ 60 }}" hint-size="60px,60px"></dc-import>
+<div style="flex:1"><div style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-gold)">BADGE UNLOCKED</div><div style="font:var(--zk-type-h3);margin-top:var(--zk-space-2)">First Crack</div><div style="font:var(--zk-type-caption);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">Your first stash. Many more to come.</div></div>
+</div>
+<div style="background:var(--zk-scrim);border-radius:var(--zk-radius-2xl);padding:var(--zk-space-14) var(--zk-space-16)">
+<div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:var(--zk-space-8)"><dc-import name="ZK Emblem" tier="safecracker" size="{{ 26 }}" hint-size="26px,29px"></dc-import><span style="font:var(--zk-type-h4)">Safecracker</span></div><span style="font:var(--zk-type-mono-sm);color:var(--zk-mint)">+120 XP</span></div>
+<div role="progressbar" aria-valuenow="1240" aria-valuemax="1500" style="margin-top:var(--zk-space-10);height:14px;border-radius:var(--zk-radius-pill);background:var(--zk-bg);overflow:hidden;box-shadow:inset 0 2px 0 rgb(var(--zk-black-rgb) / .4)"><div style="height:100%;width:{{ xpW }};border-radius:var(--zk-radius-pill);background:var(--zk-grad-xp);box-shadow:inset 0 -3px 0 rgb(var(--zk-black-rgb) / .18);transition:{{ xpT }}"></div></div>
+<div style="margin-top:var(--zk-space-6);display:flex;justify-content:space-between;font:var(--zk-fw-semibold) var(--zk-fs-11)/1 var(--zk-font-body);color:var(--zk-text-muted)"><span><dc-import name="ZK Count Up" from="{{ 1120 }}" to="{{ 1240 }}" grouping="{{ true }}" run="{{ run }}" hint-size="36px,12px"></dc-import> / 1,500 XP</span><span>Next: Vault Breaker</span></div>
+</div>
+<div style="margin-top:auto"><dc-import name="ZK Button" label="Claim my ZEC" icon-right="arrowRight" variant="primary" size="lg" hint-size="100%,62px"></dc-import></div>
+</div>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { run: 0, filled: false };
+  componentDidMount() { this.replay(); }
+  componentWillUnmount() { clearTimeout(this.t); }
+  replay = () => {
+    clearTimeout(this.t);
+    this.setState(s => ({ run: s.run + 1, filled: false }));
+    this.t = setTimeout(() => this.setState({ filled: true }), 60);
+  };
+  renderVals() {
+    const { run, filled } = this.state;
+    return {
+      run, replay: this.replay,
+      xpW: filled ? '82.7%' : '74.7%',
+      xpT: filled ? 'width var(--zk-dur-countup) cubic-bezier(.33,1,.68,1)' : 'none'
+    };
+  }
+}
+</script>
+</body>
+</html>

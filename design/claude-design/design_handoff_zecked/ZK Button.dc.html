@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="button" aria-disabled="{{ disabled }}" onClick="{{ click }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onMouseDown="{{ down }}" onMouseUp="{{ up }}" style="height:{{ h }};width:{{ w }};padding:0 {{ px }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:var(--zk-space-8);border-radius:{{ r }};background:{{ bg }};color:{{ fg }};border:{{ bd }};box-shadow:{{ sh }};transform:{{ tf }};font:{{ font }};letter-spacing:.01em;white-space:nowrap;cursor:{{ cur }};user-select:none;transition:transform var(--zk-dur-fast) var(--zk-ease-out),box-shadow var(--zk-dur-fast) var(--zk-ease-out),background var(--zk-dur-fast) var(--zk-ease-out)">
+<sc-if value="{{ hasIcon }}" hint-placeholder-val="{{ false }}"><dc-import name="ZK Icon" icon="{{ icon }}" size="{{ is }}" stroke="{{ 2.4 }}" hint-size="20px,20px"></dc-import></sc-if>
+<span>{{ label }}</span>
+<sc-if value="{{ hasIconR }}" hint-placeholder-val="{{ false }}"><dc-import name="ZK Icon" icon="{{ iconRight }}" size="{{ is }}" stroke="{{ 2.4 }}" hint-size="20px,20px"></dc-import></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:100},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;ZECK IT&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;primary&quot;,&quot;secondary&quot;,&quot;success&quot;,&quot;sky&quot;,&quot;light&quot;,&quot;ghost&quot;],&quot;default&quot;:&quot;primary&quot;,&quot;tsType&quot;:&quot;'primary'|'secondary'|'success'|'sky'|'light'|'ghost'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;lg&quot;,&quot;md&quot;,&quot;sm&quot;],&quot;default&quot;:&quot;lg&quot;,&quot;tsType&quot;:&quot;'lg'|'md'|'sm'&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;hover&quot;,&quot;pressed&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;'default'|'hover'|'pressed'|'disabled'&quot;},&quot;icon&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;iconRight&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;full&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;onClick&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(e) =&gt; void&quot;}}">
+const V = {
+  primary: { bg: 'var(--zk-grad-gold)', fg: 'var(--zk-gold-ink)', sh: 'var(--zk-shadow-btn-gold)', shH: 'var(--zk-shadow-btn-gold-hover)', shP: 'var(--zk-shadow-btn-gold-pressed)', dy: 4 },
+  secondary: { bg: 'var(--zk-purple)', fg: 'var(--zk-text)', sh: 'var(--zk-shadow-btn-purple)', shH: 'var(--zk-shadow-btn-purple), var(--zk-glow-purple)', shP: 'var(--zk-shadow-btn-purple-pressed)', dy: 4 },
+  success: { bg: 'var(--zk-mint)', fg: 'var(--zk-mint-ink)', sh: 'var(--zk-shadow-btn-mint)', shH: 'var(--zk-shadow-btn-mint)', shP: 'var(--zk-shadow-btn-mint-pressed)', dy: 4 },
+  sky: { bg: 'var(--zk-sky)', fg: 'var(--zk-sky-ink)', sh: 'var(--zk-shadow-btn-sky)', shH: 'var(--zk-shadow-btn-sky)', shP: 'var(--zk-shadow-btn-sky-pressed)', dy: 4 },
+  light: { bg: 'var(--zk-text)', fg: 'var(--zk-bg)', sh: 'var(--zk-shadow-btn-light)', shH: 'var(--zk-shadow-btn-light)', shP: 'var(--zk-shadow-btn-light-pressed)', dy: 4 },
+  ghost: { bg: 'transparent', bgH: 'rgb(var(--zk-white-rgb) / .06)', bgP: 'rgb(var(--zk-white-rgb) / .1)', fg: 'var(--zk-text)', bd: '1.5px solid var(--zk-border-strong)', sh: 'none', shH: 'none', shP: 'none', dy: 0 }
+};
+const S = {
+  lg: { h: 'var(--zk-h-btn-lg)', r: 'var(--zk-radius-2xl)', font: 'var(--zk-type-btn-lg)', px: 'var(--zk-space-24)', is: 22 },
+  md: { h: 'var(--zk-h-btn-md)', r: 'var(--zk-radius-xl)', font: 'var(--zk-type-btn-md)', px: 'var(--zk-space-20)', is: 20 },
+  sm: { h: 'var(--zk-h-btn-sm)', r: 'var(--zk-radius-lg)', font: 'var(--zk-type-btn-sm)', px: 'var(--zk-space-16)', is: 16 }
+};
+class Component extends DCLogic {
+  state = { hover: false, press: false };
+  renderVals() {
+    const p = this.props, v = V[p.variant] || V.primary, s = S[p.size] || S.lg;
+    const forced = p.state && p.state !== 'default' ? p.state : null;
+    const st = forced || (this.state.press ? 'pressed' : this.state.hover ? 'hover' : 'default');
+    const dis = st === 'disabled', ghost = p.variant === 'ghost';
+    const font = ghost ? s.font.replace('--zk-type-btn', '--zk-type-btn') : s.font;
+    return {
+      ...s, font, label: p.label ?? 'ZECK IT', w: p.full === false ? 'auto' : '100%',
+      icon: p.icon, hasIcon: !!p.icon, iconRight: p.iconRight, hasIconR: !!p.iconRight,
+      bg: dis ? 'var(--zk-surface-raised)' : st === 'hover' && v.bgH ? v.bgH : st === 'pressed' && v.bgP ? v.bgP : v.bg,
+      fg: dis ? 'var(--zk-text-faint)' : v.fg,
+      bd: dis && !ghost ? '1.5px solid transparent' : v.bd || '1.5px solid transparent',
+      sh: dis ? 'none' : st === 'hover' ? v.shH : st === 'pressed' ? v.shP : v.sh,
+      tf: dis ? 'none' : st === 'hover' ? 'translateY(-1px)' : st === 'pressed' ? (v.dy ? `translateY(${v.dy}px)` : 'scale(.98)') : 'none',
+      cur: dis ? 'not-allowed' : 'pointer', disabled: dis ? 'true' : 'false',
+      click: e => { if (!dis && p.onClick) p.onClick(e); },
+      enter: () => this.setState({ hover: true }), leave: () => this.setState({ hover: false, press: false }),
+      down: () => this.setState({ press: true }), up: () => this.setState({ press: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

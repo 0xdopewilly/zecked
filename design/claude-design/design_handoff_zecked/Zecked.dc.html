@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<main style="background:var(--zk-canvas);color:var(--zk-text);font-family:var(--zk-font-body);width:max-content;min-width:100%">
+<header style="padding:var(--zk-space-64) 78px var(--zk-space-40);display:flex;align-items:flex-end;gap:var(--zk-space-48)">
+<div style="display:flex;align-items:center;gap:var(--zk-space-24)"><dc-import name="ZK Logo" variant="icon" size="{{ 96 }}" hint-size="96px,96px"></dc-import><dc-import name="ZK Logo" variant="wordmark" size="{{ 80 }}" hint-size="400px,84px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-6);padding-bottom:var(--zk-space-6)"><div style="font:var(--zk-type-h2)">Hide it. Crack it. <span style="color:var(--zk-gold)">Get Zecked.</span></div><div style="font:var(--zk-type-body);font-size:var(--zk-fs-15);color:var(--zk-text-muted);max-width:760px">Developer handoff build. One file per screen (01-welcome … 12-share-card, style-guide). Every value comes from zk-tokens.css. Shared parts are ZK components. Screens are interactive where marked.</div></div>
+</header>
+<section aria-label="Crack a stash" style="padding:var(--zk-space-48) var(--zk-space-64) 72px;border-top:1px solid var(--zk-border)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14);margin:0 var(--zk-space-14) var(--zk-space-28)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">A</span><span style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Crack a stash</span></div>
+<div style="display:flex;gap:var(--zk-space-48);align-items:flex-start">
+<dc-import name="01-welcome" hint-size="420px,900px"></dc-import>
+<dc-import name="02-home-feed" hint-size="420px,900px"></dc-import>
+<dc-import name="03-riddle-stash" hint-size="420px,900px"></dc-import>
+<dc-import name="04-wrong-answer" hint-size="420px,900px"></dc-import>
+<dc-import name="05-prediction-stash" hint-size="420px,900px"></dc-import>
+<dc-import name="06-live-match" hint-size="420px,900px"></dc-import>
+<dc-import name="07-win" hint-size="420px,900px"></dc-import>
+<dc-import name="08-claim" hint-size="1340px,900px"></dc-import>
+</div>
+</section>
+<section aria-label="Hide a stash" style="padding:var(--zk-space-48) var(--zk-space-64) 72px;border-top:1px solid var(--zk-border)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14);margin:0 var(--zk-space-14) var(--zk-space-28)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">B</span><span style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Hide a stash</span></div>
+<dc-import name="09-hide-a-stash" hint-size="2760px,900px"></dc-import>
+</section>
+<section aria-label="Profile and leaderboard" style="padding:var(--zk-space-48) var(--zk-space-64) 72px;border-top:1px solid var(--zk-border)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14);margin:0 var(--zk-space-14) var(--zk-space-28)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">C</span><span style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Profile &amp; leaderboard</span></div>
+<div style="display:flex;gap:var(--zk-space-48);align-items:flex-start"><dc-import name="10-profile" hint-size="420px,900px"></dc-import><dc-import name="11-leaderboard" hint-size="420px,900px"></dc-import></div>
+</section>
+<section aria-label="Share cards" style="padding:var(--zk-space-48) var(--zk-space-64) 72px;border-top:1px solid var(--zk-border)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14);margin:0 var(--zk-space-14) var(--zk-space-28)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">D</span><span style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Share cards for X</span></div>
+<dc-import name="12-share-card" hint-size="2500px,740px"></dc-import>
+</section>
+<section aria-label="Style guide" style="padding:var(--zk-space-48) var(--zk-space-64) 96px;border-top:1px solid var(--zk-border)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14);margin:0 var(--zk-space-14) var(--zk-space-28)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">E</span><span style="font:var(--zk-fw-black) var(--zk-fs-34)/1 var(--zk-font-display)">Style guide</span></div>
+<dc-import name="style-guide" hint-size="2470px,5200px"></dc-import>
+</section>
+</main>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  componentDidMount() {
+    this.io = new IntersectionObserver(entries => entries.forEach(e => {
+      if (e.isIntersecting) e.target.removeAttribute('data-zk-offscreen'); else e.target.setAttribute('data-zk-offscreen', '');
+    }), { rootMargin: '200px' });
+    const scan = () => document.querySelectorAll('section[id]').forEach(s => { if (!s.__zkObs) { s.__zkObs = 1; this.io.observe(s); } });
+    scan();
+    let pending = null;
+    this.mo = new MutationObserver(() => { if (!pending) pending = setTimeout(() => { pending = null; scan(); }, 400); });
+    this.mo.observe(document.body, { childList: true, subtree: true });
+  }
+  componentWillUnmount() { this.io && this.io.disconnect(); this.mo && this.mo.disconnect(); }
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

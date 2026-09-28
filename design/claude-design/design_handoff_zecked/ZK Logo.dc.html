@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<sc-if value="{{ isWord }}" hint-placeholder-val="{{ true }}">
+<div role="img" aria-label="ZECKED" style="display:inline-flex;align-items:center;font-family:var(--zk-font-display);font-weight:var(--zk-fw-black);font-size:{{ fs }}px;line-height:1;letter-spacing:-0.035em;color:var(--zk-text);text-shadow:0 {{ sh }}px 0 var(--zk-purple)">
+<svg viewBox="0 0 100 100" width="{{ zs }}" height="{{ zs }}" style="flex:none;overflow:visible;filter:drop-shadow(0 {{ sh }}px 0 var(--zk-purple)) drop-shadow(0 0 {{ glow }}px rgb(var(--zk-gold-rgb) / .55))"><defs><linearGradient id="{{ gid }}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--zk-gold-pale)"></stop><stop offset="0.55" style="stop-color:var(--zk-gold)"></stop><stop offset="1" style="stop-color:var(--zk-gold-amber-deep)"></stop></linearGradient></defs><polygon points="14,10 86,10 86,26 50,48 64,48 30,74 86,74 86,90 14,90 14,74 44,54 30,54 60,26 14,26" fill="url(#{{ gid }})"></polygon><circle cx="47" cy="51" r="8" style="fill:var(--zk-bg);stroke:var(--zk-gold-pale);stroke-width:4"></circle></svg>
+<span style="margin-left:-0.02em">ECKED</span>
+</div>
+</sc-if>
+<sc-if value="{{ isMark }}" hint-placeholder-val="{{ false }}">
+<svg viewBox="0 0 100 100" width="{{ fs }}" height="{{ fs }}" role="img" aria-label="Z" style="display:block;flex:none;overflow:visible"><defs><linearGradient id="{{ gid }}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--zk-gold-pale)"></stop><stop offset="1" style="stop-color:var(--zk-gold)"></stop></linearGradient></defs><polygon points="14,10 86,10 86,26 50,48 64,48 30,74 86,74 86,90 14,90 14,74 44,54 30,54 60,26 14,26" fill="url(#{{ gid }})" style="stroke:{{ markStroke }};stroke-width:5;stroke-linejoin:round"></polygon><circle cx="47" cy="51" r="8" style="fill:var(--zk-bg);stroke:var(--zk-gold-pale);stroke-width:4"></circle></svg>
+</sc-if>
+<sc-if value="{{ isIcon }}" hint-placeholder-val="{{ false }}">
+<div role="img" aria-label="ZECKED app icon" style="width:{{ fs }}px;height:{{ fs }}px;border-radius:{{ ir }}px;position:relative;flex:none;overflow:hidden;background:radial-gradient(circle at 30% 18%,var(--zk-purple-light),var(--zk-purple-vivid) 50%,var(--zk-purple-shade));box-shadow:inset 0 {{ ins }}px 0 rgb(var(--zk-white-rgb) / .35),inset 0 -{{ ins }}px 0 rgb(var(--zk-black-rgb) / .3),0 {{ drop }}px {{ glow }}px rgb(var(--zk-purple-rgb) / .45)">
+<svg viewBox="0 0 100 100" width="{{ fs }}" height="{{ fs }}" style="position:absolute;inset:0"><defs><linearGradient id="{{ gid }}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--zk-gold-pale)"></stop><stop offset="1" style="stop-color:var(--zk-gold)"></stop></linearGradient><radialGradient id="{{ gid2 }}" cx="0.4" cy="0.3" r="0.8"><stop offset="0" style="stop-color:var(--zk-icon-face-hi)"></stop><stop offset="1" style="stop-color:var(--zk-icon-face-lo)"></stop></radialGradient></defs><circle cx="50" cy="52" r="37" style="fill:var(--zk-icon-rim)"></circle><circle cx="50" cy="50" r="37" fill="url(#{{ gid2 }})" style="stroke:var(--zk-gold);stroke-width:5"></circle><path d="M47 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0M47 82a3 3 0 1 0 6 0a3 3 0 1 0-6 0M15 50a3 3 0 1 0 6 0a3 3 0 1 0-6 0M79 50a3 3 0 1 0 6 0a3 3 0 1 0-6 0" style="fill:var(--zk-gold)"></path><g transform="translate(29 29) scale(.42)"><polygon points="14,10 86,10 86,26 50,48 64,48 30,74 86,74 86,90 14,90 14,74 44,54 30,54 60,26 14,26" fill="url(#{{ gid }})"></polygon><circle cx="47" cy="51" r="8" style="fill:var(--zk-icon-face-lo);stroke:var(--zk-gold-pale);stroke-width:4"></circle></g></svg>
+</div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:120},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;wordmark&quot;,&quot;icon&quot;,&quot;mark&quot;],&quot;default&quot;:&quot;wordmark&quot;,&quot;tsType&quot;:&quot;'wordmark'|'icon'|'mark'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:48,&quot;min&quot;:16,&quot;max&quot;:200,&quot;tsType&quot;:&quot;number&quot;},&quot;stroke&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;none&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  gid = 'zkl' + Math.random().toString(36).slice(2, 8);
+  renderVals() {
+    const v = this.props.variant ?? 'wordmark', s = this.props.size ?? 48;
+    const r = (x, m = 1) => Math.max(m, Math.round(x));
+    return {
+      gid: this.gid, gid2: this.gid + 'b',
+      isWord: v === 'wordmark', isIcon: v === 'icon', isMark: v === 'mark',
+      fs: s, zs: r(s * 0.84), sh: r(s * 0.07, 2), glow: r(s * 0.22), ir: r(s * 0.24),
+      ins: r(s * 0.035), drop: r(s * 0.1), markStroke: this.props.stroke ?? 'none'
+    };
+  }
+}
+</script>
+</body>
+</html>

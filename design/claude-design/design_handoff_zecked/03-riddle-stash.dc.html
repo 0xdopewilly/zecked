@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="03-riddle-stash" data-screen-label="03 Riddle stash" style="display:flex;flex-direction:column;gap:var(--zk-space-18);padding:var(--zk-space-14)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">03</span>Riddle stash<span style="color:var(--zk-text-faint)">· try “globe”, then “map”</span></header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg-hero-purple);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-14);padding:calc(var(--zk-statusbar-h) + var(--zk-space-6)) var(--zk-screen-pad) var(--zk-space-40)">
+<nav style="display:flex;align-items:center;justify-content:space-between">
+<div role="button" aria-label="Back" style="width:var(--zk-tap-min);height:var(--zk-tap-min);border-radius:var(--zk-radius-lg);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="back" size="{{ 22 }}" stroke="{{ 2.4 }}" hint-size="22px,22px"></dc-import></div>
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-pink)">RIDDLE STASH</span>
+<div role="button" aria-label="Share" style="width:var(--zk-tap-min);height:var(--zk-tap-min);border-radius:var(--zk-radius-lg);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="share" size="{{ 20 }}" stroke="{{ 2.2 }}" hint-size="20px,20px"></dc-import></div>
+</nav>
+<div style="display:flex;align-items:center;gap:var(--zk-space-12)">
+<dc-import name="ZK Emblem" tier="safecracker" size="{{ 42 }}" hint-size="42px,47px"></dc-import>
+<div style="flex:1"><div style="font:var(--zk-type-body-strong);font-size:var(--zk-fs-15)">@satoshisghost</div><div style="font:var(--zk-type-caption);color:var(--zk-gold)">Safecracker · 6 stashes hidden</div></div>
+<div style="text-align:right"><div style="font:var(--zk-type-mono-lg);color:var(--zk-gold)">0.02 ZEC</div><div style="font:var(--zk-type-caption);color:var(--zk-text-muted)">~$30</div></div>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-20);border:1.5px solid rgb(var(--zk-purple-rgb) / .35);box-shadow:var(--zk-glow-purple);display:flex;flex-direction:column;gap:var(--zk-space-14)">
+<div style="display:flex;align-items:center;gap:var(--zk-space-8);position:relative">
+<dc-import name="ZK Live Badge" label="Live · verified by viewing key" hint-size="220px,22px"></dc-import>
+<div role="button" aria-label="What’s this?" onClick="{{ toggleTip }}" style="width:24px;height:24px;border-radius:50%;background:var(--zk-surface-raised);color:var(--zk-text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer"><dc-import name="ZK Icon" icon="info" size="{{ 16 }}" hint-size="16px,16px"></dc-import></div>
+<sc-if value="{{ tip }}" hint-placeholder-val="{{ true }}"><div role="tooltip" style="position:absolute;left:110px;top:34px;width:200px;padding:var(--zk-space-12) var(--zk-space-14);border-radius:var(--zk-radius-lg);background:var(--zk-text);color:var(--zk-surface);font:var(--zk-type-small);box-shadow:var(--zk-shadow-float);z-index:5"><div style="font:var(--zk-fw-black) var(--zk-fs-12)/1.3 var(--zk-font-body);color:var(--zk-purple);margin-bottom:var(--zk-space-4)">What’s this?</div>Anyone can check this stash is real. Nobody can touch it.</div></sc-if>
+</div>
+<h2 style="margin:0;font:var(--zk-type-riddle);letter-spacing:-.01em;text-wrap:pretty">I have cities, but no houses. Forests, but no trees. Water, but no fish. What am I?</h2>
+<div style="display:flex;gap:var(--zk-space-14);font:var(--zk-type-caption);color:var(--zk-text-muted)"><span style="display:flex;align-items:center;gap:var(--zk-space-4)"><dc-import name="ZK Icon" icon="key" size="{{ 14 }}" hint-size="14px,14px"></dc-import>38 tries</span><span style="display:flex;align-items:center;gap:var(--zk-space-4)"><dc-import name="ZK Icon" icon="eye" size="{{ 14 }}" hint-size="14px,14px"></dc-import>12 cracking now</span><span style="display:flex;align-items:center;gap:var(--zk-space-4)"><dc-import name="ZK Icon" icon="hourglass" size="{{ 14 }}" hint-size="14px,14px"></dc-import>5h 12m</span></div>
+</div>
+<dc-import name="ZK Input" value="{{ answer }}" placeholder="Type your answer…" state="{{ inState }}" shake="{{ shake }}" on-change="{{ onAnswer }}" on-key-down="{{ onKey }}" hint-size="100%,62px"></dc-import>
+<dc-import name="ZK Button" label="ZECK IT" icon-right="unlock" variant="primary" size="lg" state="{{ btnState }}" on-click="{{ submit }}" hint-size="100%,62px"></dc-import>
+<div style="display:flex;align-items:center;justify-content:space-between;min-height:22px">
+<div style="display:flex;align-items:center;gap:var(--zk-space-6)"><sc-for list="{{ dots }}" as="d" hint-placeholder-count="3"><span style="width:12px;height:12px;border-radius:50%;background:{{ d.bg }}"></span></sc-for><span style="font:var(--zk-type-small);color:var(--zk-text-muted);margin-left:var(--zk-space-4)">{{ triesText }}</span></div>
+<span style="font:var(--zk-type-small);font-weight:var(--zk-fw-bold);color:{{ verdictC }}">{{ verdictText }}</span>
+</div>
+<div style="background:var(--zk-surface);border:1.5px dashed rgb(var(--zk-white-rgb) / .2);border-radius:var(--zk-radius-xl);padding:var(--zk-space-14) var(--zk-space-16);display:flex;align-items:center;gap:var(--zk-space-12)">
+<div style="width:40px;height:40px;border-radius:var(--zk-radius-md);background:var(--zk-surface-raised);color:var(--zk-text-muted);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="bulb" size="{{ 20 }}" hint-size="20px,20px"></dc-import></div>
+<div style="flex:1"><div style="font:var(--zk-type-body-strong)">Bonus hint</div><div style="display:flex;align-items:center;gap:var(--zk-space-4);font:var(--zk-type-caption);color:var(--zk-text-muted)">Hint unlocks in <dc-import name="ZK Countdown" seconds="{{ 2530 }}" format="ms" size="sm" tone="gold" hint-size="44px,16px"></dc-import></div></div>
+<span style="color:var(--zk-text-muted)"><dc-import name="ZK Icon" icon="lock" size="{{ 18 }}" hint-size="18px,18px"></dc-import></span>
+</div>
+<dc-import name="ZK Button" label="Share this stash" icon="share" variant="ghost" size="md" hint-size="100%,52px"></dc-import>
+</div>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { answer: '', tries: 3, verdict: null, shake: 0, tip: true };
+  submit = () => {
+    const v = this.state.answer.trim().toLowerCase().replace(/^(a|an|the)\s+/, '');
+    if (!v || this.state.tries === 0) return;
+    if (v === 'map') return this.setState({ verdict: 'right' });
+    this.setState(s => ({ verdict: 'wrong', tries: Math.max(0, s.tries - 1), shake: s.shake + 1 }));
+  };
+  renderVals() {
+    const s = this.state, wrong = s.verdict === 'wrong', right = s.verdict === 'right';
+    return {
+      tip: s.tip, toggleTip: () => this.setState({ tip: !s.tip }),
+      answer: s.answer, onAnswer: e => this.setState({ answer: e.target.value, verdict: null }),
+      onKey: e => { if (e.key === 'Enter') this.submit(); }, submit: this.submit,
+      inState: wrong ? 'error' : right ? 'success' : 'default', shake: s.shake,
+      btnState: s.tries === 0 ? 'disabled' : 'default',
+      dots: [0, 1, 2].map(i => ({ bg: i < s.tries ? 'var(--zk-gold)' : 'rgb(var(--zk-red-rgb) / .35)' })),
+      triesText: `${s.tries} ${s.tries === 1 ? 'try' : 'tries'} left (resets in 10 min)`,
+      verdictText: wrong ? 'Nope! Try again 😏' : right ? 'Cracked! The vault is open.' : '',
+      verdictC: wrong ? 'var(--zk-red)' : 'var(--zk-mint)'
+    };
+  }
+}
+</script>
+</body>
+</html>

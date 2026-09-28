@@ -1,0 +1,64 @@
+@import "./zk-tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+html { background: var(--zk-canvas); color-scheme: dark; -webkit-text-size-adjust: 100%; }
+body { overscroll-behavior-y: none; }
+button { font: inherit; color: inherit; }
+a { text-decoration: none; }
+
+/* App column: full-bleed on phones, a centered phone-width column on desktop. */
+.zk-app {
+  position: relative;
+  width: 100%;
+  max-width: 430px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--zk-bg);
+  overflow-x: hidden;
+  isolation: isolate;
+}
+@media (min-width: 520px) {
+  body { background: radial-gradient(60% 50% at 50% 0%, #1A1240 0%, var(--zk-canvas) 70%) fixed; }
+  .zk-app { box-shadow: 0 0 0 1px var(--zk-border), 0 30px 80px rgba(0,0,0,.6); }
+}
+
+/* A screen fills the column: flex column, safe-area aware. */
+.zk-screen {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--zk-space-14)) var(--zk-screen-pad) calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18));
+  color: var(--zk-text);
+  font-family: var(--zk-font-body);
+}
+/* Screens with the bottom tab bar reserve room for it. */
+.zk-screen.has-tabs { padding-bottom: calc(var(--zk-tabbar-h, 90px) + env(safe-area-inset-bottom, 0px) + var(--zk-space-18)); }
+
+.zk-scroll-x { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.zk-scroll-x::-webkit-scrollbar { display: none; }
+
+.zk-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* Test-mode ribbon */
+.zk-testmode {
+  position: relative; z-index: 90; display: block;
+  max-width: 430px; width: 100%; margin: 0 auto;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 4px) !important;
+  font: var(--zk-type-label); letter-spacing: var(--zk-track-label, .12em); text-transform: uppercase;
+  text-align: center; padding: 4px 8px calc(4px);
+  background: repeating-linear-gradient(135deg, rgb(var(--zk-gold-rgb) / .92) 0 10px, rgb(var(--zk-gold-rgb) / .78) 10px 20px);
+  color: var(--zk-gold-ink);
+  pointer-events: none;
+}
+
+/* Reduced motion: finish animations instantly (the token file only pauses them, which can freeze pop-ins invisible). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-play-state: running !important;
+    animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}

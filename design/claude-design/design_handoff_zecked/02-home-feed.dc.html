@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="02-home-feed" data-screen-label="02 Home feed" style="display:flex;flex-direction:column;gap:var(--zk-space-18);padding:var(--zk-space-14)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">02</span>Home feed<span style="color:var(--zk-text-faint)">· tap the chips</span></header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="padding:calc(var(--zk-statusbar-h) + var(--zk-space-6)) var(--zk-screen-pad) 0;display:flex;align-items:center;justify-content:space-between">
+<dc-import name="ZK Logo" variant="wordmark" size="{{ 28 }}" hint-size="140px,30px"></dc-import>
+<div style="display:flex;gap:var(--zk-space-8);align-items:center">
+<div style="height:36px;padding:0 var(--zk-space-12);border-radius:var(--zk-radius-pill);background:var(--zk-surface);display:flex;align-items:center;gap:var(--zk-space-6);font:var(--zk-type-btn-sm);color:var(--zk-text)"><dc-import name="ZK Icon" icon="flame" size="{{ 16 }}" filled="{{ true }}" stroke="{{ 1.5 }}" color="var(--zk-pink)" hint-size="16px,16px"></dc-import>5</div>
+<div style="height:36px;padding:0 var(--zk-space-12) 0 var(--zk-space-4);border-radius:var(--zk-radius-pill);background:var(--zk-surface);display:flex;align-items:center;gap:var(--zk-space-6);font:var(--zk-type-mono-sm);color:var(--zk-gold)"><span style="width:28px;height:28px;border-radius:50%;background:var(--zk-grad-tile-gold);display:flex;align-items:center;justify-content:center;color:var(--zk-gold-ink)"><dc-import name="ZK Logo" variant="mark" size="{{ 14 }}" stroke="var(--zk-gold-ink)" hint-size="14px,14px"></dc-import></span>0.28</div>
+</div>
+</div>
+<div aria-label="Live activity" style="margin-top:var(--zk-space-12);height:36px;flex:none;overflow:hidden;background:rgb(var(--zk-mint-rgb) / .07);border-top:1px solid rgb(var(--zk-mint-rgb) / .18);border-bottom:1px solid rgb(var(--zk-mint-rgb) / .18);display:flex;align-items:center">
+<div style="display:flex;gap:var(--zk-space-28);white-space:nowrap;width:max-content;padding-left:var(--zk-space-16);animation:zk-marquee var(--zk-dur-ticker) linear infinite;font:var(--zk-type-small)">
+<sc-for list="{{ ticker }}" as="t" hint-placeholder-count="4"><span style="display:inline-flex;align-items:center;gap:var(--zk-space-6)"><span style="color:{{ t.c }};display:flex"><dc-import name="ZK Icon" icon="{{ t.icon }}" size="{{ 14 }}" stroke="{{ 2.4 }}" hint-size="14px,14px"></dc-import></span>{{ t.who }} <b style="color:var(--zk-gold)">{{ t.verb }}</b> {{ t.what }} · <span style="color:var(--zk-text-muted)">{{ t.ago }}</span></span></sc-for>
+</div>
+</div>
+<div role="tablist" style="display:flex;gap:var(--zk-space-8);padding:var(--zk-space-12) var(--zk-space-16) var(--zk-space-6);overflow-x:auto;scrollbar-width:none;flex:none">
+<sc-for list="{{ chips }}" as="c" hint-placeholder-count="5"><dc-import name="ZK Chip" label="{{ c.label }}" active="{{ c.active }}" on-click="{{ c.go }}" hint-size="80px,38px"></dc-import></sc-for>
+</div>
+<div style="flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;padding:var(--zk-space-8) var(--zk-space-16) 96px;display:flex;flex-direction:column;gap:var(--zk-space-14)">
+<sc-for list="{{ feed }}" as="c" hint-placeholder-count="3"><dc-import name="ZK Stash Card" type="{{ c.type }}" hider="{{ c.hider }}" teaser="{{ c.teaser }}" zec="{{ c.zec }}" usd="{{ c.usd }}" tries="{{ c.tries }}" pct="{{ c.pct }}" time-left="{{ c.left }}" urgent="{{ c.urgent }}" whale="{{ c.whale }}" mode="{{ c.mode }}" comp="{{ c.comp }}" home="{{ c.home }}" away="{{ c.away }}" home-name="{{ c.hn }}" away-name="{{ c.an }}" home-color="{{ c.hc }}" away-color="{{ c.ac }}" home-ink="{{ c.hi }}" away-ink="{{ c.ai }}" kickoff-seconds="{{ c.kick }}" kickoff-text="{{ c.kickText }}" calls="{{ c.calls }}" hint-size="100%,230px"></dc-import></sc-for>
+</div>
+<dc-import name="ZK Button" label="Hide a stash" icon="plus" variant="primary" size="md" full="{{ false }}" style="position:absolute;right:16px;bottom:calc(var(--zk-tabbar-h) + var(--zk-space-16));z-index:10" hint-size="180px,52px"></dc-import>
+<dc-import name="ZK Tab Bar" active="home" hint-size="390px,90px"></dc-import>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const FEED = [
+  { type: 'riddle', teaser: 'I have cities, but no houses. Forests, but no trees…', hider: '@satoshisghost', zec: '0.02', usd: '30', n: 30, pct: 64, left: '5h 12m left', tries: '38 tries' },
+  { type: 'prediction', home: 'BAR', away: 'CHE', hn: 'Barcelona', an: 'Chelsea', comp: 'Champions League', mode: 'Exact score', kick: 4965, zec: '0.0134', usd: '20', n: 20, calls: '142 calls', hc: 'var(--zk-team-bar)', ac: 'var(--zk-team-che)', soon: true },
+  { type: 'riddle', teaser: 'The more you take, the more you leave behind. What am I?', hider: '@zwhale', zec: '0.5', usd: '750', n: 750, pct: 9, left: '18m left', tries: '211 tries', whale: true, urgent: true, soon: true },
+  { type: 'prediction', home: 'MAD', away: 'LIV', hn: 'Madrid', an: 'Liverpool', comp: 'Champions League', mode: 'Winner', kickText: '1d 04:10', zec: '0.0067', usd: '10', n: 10, calls: '61 calls', hc: 'var(--zk-team-mad)', hi: 'var(--zk-team-mad-ink)', ac: 'var(--zk-team-liv)' },
+  { type: 'riddle', teaser: 'What has to be broken before you can use it?', hider: '@mothra', zec: '0.0033', usd: '5', n: 5, pct: 88, left: '2d left', tries: '9 tries' }
+];
+const TICKER = [
+  { icon: 'unlock', c: 'var(--zk-mint)', who: '@nightowl just', verb: 'ZECKED', what: '0.02 ZEC', ago: '12s ago' },
+  { icon: 'ball', c: 'var(--zk-sky)', who: '@goalhanger called', verb: 'BAR 2–1', what: '', ago: '1m ago' },
+  { icon: 'whale', c: 'var(--zk-pink)', who: '@zwhale hid', verb: '0.5 ZEC', what: '', ago: '3m ago' },
+  { icon: 'shield', c: 'var(--zk-purple-light)', who: '@mothra’s riddle is still', verb: 'uncrackable', what: '', ago: '2d' }
+];
+class Component extends DCLogic {
+  state = { chip: 'All' };
+  renderVals() {
+    const s = this.state;
+    let feed = FEED;
+    if (s.chip === 'Riddles') feed = FEED.filter(c => c.type === 'riddle');
+    if (s.chip === 'Predictions') feed = FEED.filter(c => c.type === 'prediction');
+    if (s.chip === 'Ending soon') feed = FEED.filter(c => c.soon);
+    if (s.chip === 'Biggest') feed = [...FEED].sort((a, b) => b.n - a.n);
+    return {
+      ticker: [...TICKER, ...TICKER],
+      chips: ['All', 'Riddles', 'Predictions', 'Ending soon', 'Biggest'].map(l => ({ label: l, active: s.chip === l, go: () => this.setState({ chip: l }) })),
+      feed: feed.map(c => ({ whale: false, urgent: false, ...c }))
+    };
+  }
+}
+</script>
+</body>
+</html>

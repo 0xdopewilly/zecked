@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="img" aria-label="{{ aria }}" style="width:{{ w }}px;height:{{ h }}px;position:relative;flex:none;filter:drop-shadow(0 {{ glowY }}px {{ glowR }}px {{ glow }})">
+<svg viewBox="0 0 100 112" width="{{ w }}" height="{{ h }}" style="position:absolute;inset:0;overflow:visible"><defs><linearGradient id="{{ gid }}" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" style="stop-color:{{ hi }}"></stop><stop offset="0.55" style="stop-color:{{ mid }}"></stop><stop offset="1" style="stop-color:{{ lo }}"></stop></linearGradient></defs>
+<path d="M50 3C75 3 95 13 95 37C95 70 73 94 50 105C27 94 5 70 5 37C5 13 25 3 50 3Z" transform="translate(0 6)" style="fill:{{ edge }}"></path>
+<path d="M50 3C75 3 95 13 95 37C95 70 73 94 50 105C27 94 5 70 5 37C5 13 25 3 50 3Z" fill="url(#{{ gid }})"></path>
+<path d="M50 3C75 3 95 13 95 37C95 70 73 94 50 105C27 94 5 70 5 37C5 13 25 3 50 3Z" transform="translate(10 11) scale(.8)" style="fill:rgb(var(--zk-black-rgb) / .14);stroke:rgb(var(--zk-white-rgb) / .4);stroke-width:3"></path>
+<ellipse cx="44" cy="17" rx="22" ry="6.5" style="fill:rgb(var(--zk-white-rgb) / {{ hl }})"></ellipse>
+</svg>
+<div style="position:absolute;inset:0;padding-bottom:{{ pb }}px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:{{ ink }}">
+<sc-if value="{{ isLegend }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;align-items:center"><dc-import name="ZK Icon" icon="crown" size="{{ cs }}" filled="{{ true }}" stroke="{{ 1.5 }}" color="var(--zk-gold-pale)" hint-size="20px,20px"></dc-import><div style="margin-top:-{{ co }}px"><dc-import name="ZK Logo" variant="mark" size="{{ zs }}" stroke="var(--zk-tier-legend-edge)" hint-size="30px,30px"></dc-import></div></div></sc-if>
+<sc-if value="{{ isGlyph }}" hint-placeholder-val="{{ true }}"><dc-import name="ZK Icon" icon="{{ glyph }}" size="{{ gs }}" stroke="{{ 2.4 }}" hint-size="40px,40px"></dc-import></sc-if>
+</div>
+<sc-if value="{{ locked }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:-4%;bottom:0;width:{{ ls }}px;height:{{ ls }}px;border-radius:50%;background:var(--zk-surface-raised);border:2px solid var(--zk-bg);display:flex;align-items:center;justify-content:center;color:var(--zk-text-muted)"><dc-import name="ZK Icon" icon="lock" size="{{ lis }}" stroke="{{ 2.4 }}" hint-size="12px,12px"></dc-import></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:160,&quot;height&quot;:160},&quot;tier&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;rookie&quot;,&quot;cracker&quot;,&quot;safecracker&quot;,&quot;vault&quot;,&quot;oracle&quot;,&quot;legend&quot;],&quot;default&quot;:&quot;safecracker&quot;,&quot;tsType&quot;:&quot;'rookie'|'cracker'|'safecracker'|'vault'|'oracle'|'legend'&quot;},&quot;locked&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:96,&quot;min&quot;:20,&quot;max&quot;:240,&quot;tsType&quot;:&quot;number&quot;}}">
+const GLYPH = { rookie: 'key', cracker: 'clip', safecracker: 'dial', vault: 'vault', oracle: 'orb', legend: 'crown' };
+const NAME = { rookie: 'Rookie', cracker: 'Cracker', safecracker: 'Safecracker', vault: 'Vault Breaker', oracle: 'Oracle', legend: 'Z-Legend' };
+class Component extends DCLogic {
+  gid = 'zke' + Math.random().toString(36).slice(2, 8);
+  renderVals() {
+    const tier = GLYPH[this.props.tier] ? this.props.tier : 'safecracker';
+    const L = !!this.props.locked, key = L ? 'locked' : tier, w = this.props.size ?? 96;
+    const v = n => `var(--zk-tier-${key}-${n})`, r = (x, m = 1) => Math.max(m, Math.round(x));
+    return {
+      gid: this.gid, aria: `${NAME[tier]} tier${L ? ' (locked)' : ''}`,
+      w, h: r(w * 1.12), hi: v('hi'), mid: v('mid'), lo: v('lo'), edge: v('edge'), ink: v('ink'), glow: v('glow'),
+      glowR: r(w * 0.22), glowY: r(w * 0.04), hl: L ? '.08' : '.6', pb: r(w * 0.1),
+      isLegend: tier === 'legend' && !L, isGlyph: tier !== 'legend' || L, glyph: GLYPH[tier],
+      gs: r(w * 0.44), cs: r(w * 0.26), zs: r(w * 0.34), co: r(w * 0.04),
+      locked: L, ls: r(w * 0.34, 18), lis: r(w * 0.18, 10)
+    };
+  }
+}
+</script>
+</body>
+</html>

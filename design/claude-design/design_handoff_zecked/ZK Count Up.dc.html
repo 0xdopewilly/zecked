@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<span style="font:inherit;color:inherit;font-variant-numeric:tabular-nums">{{ text }}</span>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:200,&quot;height&quot;:60},&quot;from&quot;:{&quot;editor&quot;:&quot;float&quot;,&quot;default&quot;:0,&quot;tsType&quot;:&quot;number&quot;},&quot;to&quot;:{&quot;editor&quot;:&quot;float&quot;,&quot;default&quot;:0.02,&quot;tsType&quot;:&quot;number&quot;},&quot;decimals&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4,&quot;tsType&quot;:&quot;number&quot;},&quot;duration&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:1800,&quot;tsType&quot;:&quot;number&quot;,&quot;unit&quot;:&quot;ms&quot;},&quot;prefix&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;suffix&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;grouping&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;loop&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;hold&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:1200,&quot;tsType&quot;:&quot;number&quot;},&quot;run&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  state = { e: 0 };
+  componentDidMount() { this.start(); }
+  componentDidUpdate(prev) { if (prev.run !== this.props.run || prev.to !== this.props.to) this.start(); }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); clearTimeout(this.pause); }
+  start() {
+    cancelAnimationFrame(this.raf); clearTimeout(this.pause);
+    const D = this.props.duration ?? 1800, t0 = performance.now();
+    const step = t => {
+      const p = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - p, 3);
+      if (Math.abs(e - this.state.e) > 0.004 || p === 1) this.setState({ e });
+      if (p < 1) this.raf = requestAnimationFrame(step);
+      else if (this.props.loop) this.pause = setTimeout(() => this.start(), this.props.hold ?? 1200);
+    };
+    this.setState({ e: 0 });
+    this.raf = requestAnimationFrame(step);
+  }
+  renderVals() {
+    const p = this.props, from = p.from ?? 0, to = p.to ?? 0.02, d = p.decimals ?? 4;
+    const v = from + (to - from) * this.state.e;
+    const s = p.grouping ? Math.round(v).toLocaleString() : v.toFixed(d);
+    return { text: `${p.prefix ?? ''}${s}${p.suffix ?? ''}` };
+  }
+}
+</script>
+</body>
+</html>

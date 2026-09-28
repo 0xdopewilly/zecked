@@ -1,0 +1,345 @@
+/* Fonts: load Bricolage Grotesque 600/800, Inter 400–800, Space Mono 400/700 (see <link> in each page head). */
+/* ZECKED design tokens — single source of truth. Every design file links this. */
+:root {
+  /* ---------- Color: surfaces ---------- */
+  --zk-canvas: #07060F;
+  --zk-bg: #0E0B1F;
+  --zk-surface: #1A1533;
+  --zk-surface-raised: #251E47;
+  --zk-bezel: #16122B;
+  --zk-bezel-edge: #2D2656;
+  --zk-black: #000000;
+
+  /* ---------- Color: text ---------- */
+  --zk-text: #FFFFFF;
+  --zk-text-muted: #A9A3C9;
+  --zk-text-faint: #6E6892;
+
+  /* ---------- Color: brand + accents ---------- */
+  --zk-gold: #F4B728;
+  --zk-gold-light: #FFD869;
+  --zk-gold-pale: #FFE9A3;
+  --zk-gold-deep: #B9811A;
+  --zk-gold-ink: #2A1B00;
+  --zk-purple: #7C5CFF;
+  --zk-purple-light: #A48CFF;
+  --zk-purple-mid: #5B3BE8;
+  --zk-purple-deep: #4A2BC7;
+  --zk-purple-ink: #1E1257;
+  --zk-pink: #FF4D9A;
+  --zk-pink-deep: #A8266A;
+  --zk-mint: #2EE6A6;
+  --zk-mint-light: #B6FFE6;
+  --zk-mint-deep: #129A6C;
+  --zk-mint-ink: #062A1E;
+  --zk-sky: #3DB8FF;
+  --zk-sky-light: #8FDBFF;
+  --zk-sky-mid: #1F8FD6;
+  --zk-sky-deep: #1C79B0;
+  --zk-sky-ink: #04202A;
+  --zk-red: #FF5A5A;
+  --zk-red-soft: #FFB3B3;
+  --zk-red-deep: #8E1E1E;
+  --zk-light-edge: #B9B3D9;
+
+  /* RGB triplets for alpha use: rgb(var(--zk-gold-rgb) / .35) */
+  --zk-gold-rgb: 244 183 40;
+  --zk-purple-rgb: 124 92 255;
+  --zk-pink-rgb: 255 77 154;
+  --zk-mint-rgb: 46 230 166;
+  --zk-sky-rgb: 61 184 255;
+  --zk-red-rgb: 255 90 90;
+  --zk-bg-rgb: 14 11 31;
+  --zk-surface-rgb: 26 21 51;
+  --zk-white-rgb: 255 255 255;
+  --zk-black-rgb: 0 0 0;
+
+  /* Borders + tints */
+  --zk-border: rgb(var(--zk-white-rgb) / .08);
+  --zk-border-strong: rgb(var(--zk-white-rgb) / .16);
+  --zk-gold-tint: rgb(var(--zk-gold-rgb) / .14);
+  --zk-purple-tint: rgb(var(--zk-purple-rgb) / .12);
+  --zk-mint-tint: rgb(var(--zk-mint-rgb) / .12);
+  --zk-sky-tint: rgb(var(--zk-sky-rgb) / .12);
+  --zk-red-tint: rgb(var(--zk-red-rgb) / .10);
+  --zk-scrim: rgb(var(--zk-surface-rgb) / .85);
+
+  /* Gradients */
+  --zk-grad-gold: linear-gradient(180deg, var(--zk-gold-light), var(--zk-gold));
+  --zk-grad-tile-purple: linear-gradient(160deg, var(--zk-purple-light), var(--zk-purple-mid));
+  --zk-grad-tile-sky: linear-gradient(160deg, var(--zk-sky-light), var(--zk-sky-mid));
+  --zk-grad-tile-gold: linear-gradient(160deg, var(--zk-gold-pale), var(--zk-gold));
+  --zk-grad-tile-mint: linear-gradient(160deg, var(--zk-mint-light), var(--zk-mint));
+  --zk-grad-progress: linear-gradient(90deg, var(--zk-gold), var(--zk-pink));
+  --zk-grad-progress-urgent: linear-gradient(90deg, var(--zk-red), var(--zk-pink));
+  --zk-grad-progress-calm: linear-gradient(90deg, var(--zk-mint), var(--zk-sky));
+  --zk-grad-tension: linear-gradient(90deg, var(--zk-sky), var(--zk-purple) 40%, var(--zk-pink) 70%, var(--zk-gold));
+  --zk-grad-xp: linear-gradient(180deg, var(--zk-gold-bright), var(--zk-gold));
+  --zk-sunburst-gold: repeating-conic-gradient(rgb(var(--zk-gold-rgb) / .12) 0 9deg, transparent 9deg 22deg);
+
+  /* Screen backgrounds */
+  --zk-bg-welcome: radial-gradient(120% 60% at 50% 30%, #2F1F7A 0%, #170F3A 45%, var(--zk-bg) 75%);
+  --zk-bg-hero-purple: radial-gradient(90% 40% at 50% 0%, #2A1B66 0%, var(--zk-bg) 70%);
+  --zk-bg-hero-red: radial-gradient(90% 40% at 50% 0%, #3A1030 0%, var(--zk-bg) 70%);
+  --zk-bg-hero-sky: radial-gradient(90% 40% at 50% 0%, #0F3A5E 0%, var(--zk-bg) 70%);
+  --zk-bg-hero-mint: radial-gradient(100% 45% at 50% 0%, #0B4A3A 0%, var(--zk-bg) 70%);
+  --zk-bg-hero-gold: radial-gradient(90% 40% at 50% 15%, #3A2A08 0%, var(--zk-bg) 70%);
+  --zk-bg-win: radial-gradient(90% 55% at 50% 30%, #6A3BFF 0%, #2A1470 45%, var(--zk-bg) 80%);
+  --zk-bg-live: radial-gradient(90% 50% at 50% 25%, var(--zk-purple-deep) 0%, var(--zk-purple-ink) 45%, var(--zk-bg) 80%);
+  --zk-bg-claimed: radial-gradient(90% 45% at 50% 18%, #0B5A44 0%, var(--zk-bg) 70%);
+  --zk-bg-lockscreen: radial-gradient(80% 50% at 20% 20%, var(--zk-purple) 0%, transparent 60%), radial-gradient(80% 50% at 90% 80%, var(--zk-pink) 0%, transparent 60%), #1A1036;
+  --zk-bg-share-riddle: radial-gradient(55% 80% at 95% 5%, rgb(var(--zk-pink-rgb) / .5), transparent 60%), radial-gradient(60% 90% at 0% 100%, rgb(var(--zk-purple-rgb) / .6), transparent 60%), var(--zk-bg);
+  --zk-bg-share-prediction: radial-gradient(55% 80% at 100% 0%, rgb(var(--zk-mint-rgb) / .35), transparent 60%), radial-gradient(60% 90% at 0% 100%, rgb(var(--zk-sky-rgb) / .45), transparent 60%), var(--zk-bg);
+
+
+  /* Illustration + depth shades */
+  --zk-purple-vivid: #6444F0;
+  --zk-purple-shade: #3A22A8;
+  --zk-purple-night: #2B1880;
+  --zk-purple-pale: #E3DBFF;
+  --zk-surface-purple: #2E2358;
+  --zk-surface-navy: #1E2F6B;
+  --zk-sky-shade: #16679A;
+  --zk-sky-night: #134C8F;
+  --zk-aqua: #2EC8C0;
+  --zk-aqua-light: #8FFFE0;
+  --zk-orange: #FF8A4D;
+  --zk-silver-light: #E8EEF7;
+  --zk-gold-bright: #FFE08A;
+  --zk-gold-amber: #D08A10;
+  --zk-gold-amber-deep: #E08A10;
+  --zk-gold-shadow: #8A5A08;
+  --zk-gold-text-edge: #A8691A;
+  --zk-icon-face-hi: #2E2566;
+  --zk-icon-face-lo: #140F2E;
+  --zk-icon-rim: #9A6A0C;
+  --zk-vault-bolt: #C88A12;
+  --zk-vault-bolt-edge: #6B4708;
+  --zk-vault-hub-ink: #3A2600;
+
+  /* Team colors — sample data only; production values come from the sports feed */
+  --zk-team-bar: linear-gradient(135deg, #A50044 50%, #004D98 50%);
+  --zk-team-che: #034694;
+  --zk-team-mad: #FFFFFF; --zk-team-mad-ink: #3B1F7A;
+  --zk-team-liv: #C8102E;
+  --zk-team-mun: #DA291C;
+  --zk-team-ars: #EF0107;
+  --zk-team-psg: #004170;
+  --zk-team-bay: #DC052D;
+  --zk-team-int: linear-gradient(135deg, #0068A8 50%, #111111 50%);
+  --zk-team-juv: linear-gradient(135deg, #FFFFFF 50%, #111111 50%); --zk-team-juv-ink: #E11D2A;
+
+  /* Vault illustration */
+  --zk-vault-face-hi: #43388A;
+  --zk-vault-face-lo: #1E1840;
+  --zk-vault-rim: #8A620E;
+  --zk-vault-core: #FFF1C2;
+  --zk-vault-core-lo: #9A5A0E;
+
+  /* Tier emblems (hi → mid → lo gradient, edge = 3D base, ink = glyph) */
+  --zk-tier-rookie-hi: #F7C08E; --zk-tier-rookie-mid: #C97C3E; --zk-tier-rookie-lo: #8A4A1E; --zk-tier-rookie-edge: #5E3012; --zk-tier-rookie-ink: #FFFFFF; --zk-tier-rookie-glow: rgb(230 140 70 / .45);
+  --zk-tier-cracker-hi: #FFFFFF; --zk-tier-cracker-mid: #BCC6D6; --zk-tier-cracker-lo: #7D889C; --zk-tier-cracker-edge: #4E5668; --zk-tier-cracker-ink: #3A4254; --zk-tier-cracker-glow: rgb(200 215 240 / .35);
+  --zk-tier-safecracker-hi: #FFE9A0; --zk-tier-safecracker-mid: #F4B728; --zk-tier-safecracker-lo: #B8790F; --zk-tier-safecracker-edge: #7A4F06; --zk-tier-safecracker-ink: #5A3A00; --zk-tier-safecracker-glow: rgb(244 183 40 / .55);
+  --zk-tier-vault-hi: #C4B3FF; --zk-tier-vault-mid: #7C5CFF; --zk-tier-vault-lo: #4A2BC7; --zk-tier-vault-edge: #2B1880; --zk-tier-vault-ink: #FFFFFF; --zk-tier-vault-glow: rgb(124 92 255 / .6);
+  --zk-tier-oracle-hi: #C8F4FF; --zk-tier-oracle-mid: #3DB8FF; --zk-tier-oracle-lo: #6A4BEA; --zk-tier-oracle-edge: #23408F; --zk-tier-oracle-ink: #FFFFFF; --zk-tier-oracle-glow: rgb(61 184 255 / .55);
+  --zk-tier-legend-hi: #FFF3C0; --zk-tier-legend-mid: #F4B728; --zk-tier-legend-lo: #FF4D9A; --zk-tier-legend-edge: #8A2F5A; --zk-tier-legend-ink: #FFFFFF; --zk-tier-legend-glow: rgb(255 77 154 / .5);
+  --zk-tier-locked-hi: #3A3360; --zk-tier-locked-mid: #2A2448; --zk-tier-locked-lo: #221C3F; --zk-tier-locked-edge: #15112A; --zk-tier-locked-ink: #5A5480; --zk-tier-locked-glow: transparent;
+
+  /* Badges (same structure) */
+  --zk-badge-first-hi: #FFE08A; --zk-badge-first-mid: #F4B728; --zk-badge-first-lo: #FF4D9A; --zk-badge-first-edge: #A8266A; --zk-badge-first-ray: rgb(var(--zk-gold-rgb) / .3);
+  --zk-badge-uncrackable-hi: #C4B3FF; --zk-badge-uncrackable-mid: #7C5CFF; --zk-badge-uncrackable-lo: #3A22A8; --zk-badge-uncrackable-edge: #1E1257; --zk-badge-uncrackable-ray: rgb(var(--zk-purple-rgb) / .3);
+  --zk-badge-oracle-hi: #C8F4FF; --zk-badge-oracle-mid: #3DB8FF; --zk-badge-oracle-lo: #6A4BEA; --zk-badge-oracle-edge: #23408F; --zk-badge-oracle-ray: rgb(var(--zk-sky-rgb) / .3);
+  --zk-badge-speed-hi: #FFB3D3; --zk-badge-speed-mid: #FF4D9A; --zk-badge-speed-lo: #B3246A; --zk-badge-speed-edge: #6E1240; --zk-badge-speed-ray: rgb(var(--zk-pink-rgb) / .3);
+  --zk-badge-whale-hi: #B8F0FF; --zk-badge-whale-mid: #3DB8FF; --zk-badge-whale-lo: #2EE6A6; --zk-badge-whale-edge: #0F6B6B; --zk-badge-whale-ray: rgb(var(--zk-sky-rgb) / .3);
+  --zk-badge-shielded-hi: #B6FFE6; --zk-badge-shielded-mid: #2EE6A6; --zk-badge-shielded-lo: #0F9C6E; --zk-badge-shielded-edge: #0A6B4B; --zk-badge-shielded-ray: rgb(var(--zk-mint-rgb) / .3);
+  --zk-badge-bday-hi: #FFE9A3; --zk-badge-bday-mid: #FF8FBF; --zk-badge-bday-lo: #7C5CFF; --zk-badge-bday-edge: #4A2BC7; --zk-badge-bday-ray: rgb(var(--zk-pink-rgb) / .3);
+  --zk-badge-locked-hi: #3A3360; --zk-badge-locked-mid: #2A2448; --zk-badge-locked-lo: #221C3F; --zk-badge-locked-edge: #15112A; --zk-badge-locked-ray: transparent;
+
+  /* ---------- Typography ---------- */
+  --zk-font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --zk-font-body: 'Inter', system-ui, sans-serif;
+  --zk-font-mono: 'Space Mono', ui-monospace, monospace;
+
+  --zk-fw-medium: 500;
+  --zk-fw-semibold: 600;
+  --zk-fw-bold: 700;
+  --zk-fw-black: 800;
+
+  --zk-fs-10: 10px;
+  --zk-fs-11: 11px;
+  --zk-fs-12: 12px;
+  --zk-fs-13: 13px;
+  --zk-fs-14: 14px;
+  --zk-fs-15: 15px;
+  --zk-fs-16: 16px;
+  --zk-fs-18: 18px;
+  --zk-fs-20: 20px;
+  --zk-fs-22: 22px;
+  --zk-fs-26: 26px;
+  --zk-fs-30: 30px;
+  --zk-fs-34: 34px;
+  --zk-fs-40: 40px;
+  --zk-fs-52: 52px;
+  --zk-fs-64: 64px;
+  --zk-fs-84: 84px;
+  --zk-fs-92: 92px;
+
+  --zk-lh-none: 1;
+  --zk-lh-tight: 1.05;
+  --zk-lh-snug: 1.18;
+  --zk-lh-normal: 1.4;
+
+  --zk-track-tight: -0.02em;
+  --zk-track-label: 0.12em;
+  --zk-track-badge: 0.08em;
+
+  /* Composite type styles — use as `font: var(--zk-type-h1)` */
+  --zk-type-hero: var(--zk-fw-black) var(--zk-fs-52)/0.95 var(--zk-font-display);
+  --zk-type-h1: var(--zk-fw-black) var(--zk-fs-34)/var(--zk-lh-tight) var(--zk-font-display);
+  --zk-type-h2: var(--zk-fw-black) var(--zk-fs-26)/var(--zk-lh-snug) var(--zk-font-display);
+  --zk-type-riddle: var(--zk-fw-black) var(--zk-fs-30)/1.14 var(--zk-font-display);
+  --zk-type-h3: var(--zk-fw-black) var(--zk-fs-20)/var(--zk-lh-snug) var(--zk-font-display);
+  --zk-type-h4: var(--zk-fw-black) var(--zk-fs-16)/var(--zk-lh-snug) var(--zk-font-display);
+  --zk-type-score: var(--zk-fw-black) var(--zk-fs-52)/var(--zk-lh-none) var(--zk-font-display);
+  --zk-type-score-xl: var(--zk-fw-black) var(--zk-fs-64)/var(--zk-lh-none) var(--zk-font-display);
+  --zk-type-amount-xl: var(--zk-fw-black) var(--zk-fs-84)/var(--zk-lh-none) var(--zk-font-display);
+  --zk-type-btn-lg: var(--zk-fw-black) var(--zk-fs-22)/var(--zk-lh-none) var(--zk-font-display);
+  --zk-type-btn-md: var(--zk-fw-black) var(--zk-fs-18)/var(--zk-lh-none) var(--zk-font-display);
+  --zk-type-btn-sm: var(--zk-fw-black) var(--zk-fs-14)/var(--zk-lh-none) var(--zk-font-display);
+  --zk-type-body-lg: var(--zk-fw-medium) var(--zk-fs-16)/1.45 var(--zk-font-body);
+  --zk-type-body: var(--zk-fw-medium) var(--zk-fs-14)/var(--zk-lh-normal) var(--zk-font-body);
+  --zk-type-body-strong: var(--zk-fw-bold) var(--zk-fs-14)/1.3 var(--zk-font-body);
+  --zk-type-small: var(--zk-fw-semibold) var(--zk-fs-13)/1.35 var(--zk-font-body);
+  --zk-type-caption: var(--zk-fw-semibold) var(--zk-fs-12)/1.3 var(--zk-font-body);
+  --zk-type-label: var(--zk-fw-black) var(--zk-fs-11)/var(--zk-lh-none) var(--zk-font-body);
+  --zk-type-tab: var(--zk-fw-bold) var(--zk-fs-11)/var(--zk-lh-none) var(--zk-font-body);
+  --zk-type-status: var(--zk-fw-semibold) var(--zk-fs-15)/var(--zk-lh-none) var(--zk-font-body);
+  --zk-type-mono-xl: var(--zk-fw-bold) var(--zk-fs-34)/var(--zk-lh-none) var(--zk-font-mono);
+  --zk-type-mono-lg: var(--zk-fw-bold) var(--zk-fs-22)/1.1 var(--zk-font-mono);
+  --zk-type-mono: var(--zk-fw-bold) var(--zk-fs-16)/1.2 var(--zk-font-mono);
+  --zk-type-mono-sm: var(--zk-fw-bold) var(--zk-fs-13)/1.2 var(--zk-font-mono);
+  --zk-type-mono-xs: var(--zk-fw-bold) var(--zk-fs-11)/1.2 var(--zk-font-mono);
+
+  /* ---------- Spacing (px-named) ---------- */
+  --zk-space-2: 2px;
+  --zk-space-4: 4px;
+  --zk-space-6: 6px;
+  --zk-space-8: 8px;
+  --zk-space-10: 10px;
+  --zk-space-12: 12px;
+  --zk-space-14: 14px;
+  --zk-space-16: 16px;
+  --zk-space-18: 18px;
+  --zk-space-20: 20px;
+  --zk-space-24: 24px;
+  --zk-space-28: 28px;
+  --zk-space-32: 32px;
+  --zk-space-40: 40px;
+  --zk-space-48: 48px;
+  --zk-space-56: 56px;
+  --zk-space-64: 64px;
+
+  /* ---------- Radii ---------- */
+  --zk-radius-xs: 4px;
+  --zk-radius-sm: 8px;
+  --zk-radius-md: 12px;
+  --zk-radius-lg: 16px;
+  --zk-radius-xl: 20px;
+  --zk-radius-2xl: 24px;
+  --zk-radius-3xl: 28px;
+  --zk-radius-4xl: 36px;
+  --zk-radius-phone: 52px;
+  --zk-radius-pill: 999px;
+
+  /* ---------- Sizes ---------- */
+  --zk-phone-w: 390px;
+  --zk-phone-h: 844px;
+  --zk-statusbar-h: 50px;
+  --zk-tabbar-h: 90px;
+  --zk-h-btn-lg: 62px;
+  --zk-h-btn-md: 52px;
+  --zk-h-btn-sm: 40px;
+  --zk-h-input-lg: 62px;
+  --zk-h-input-md: 54px;
+  --zk-h-chip: 38px;
+  --zk-h-chip-sm: 32px;
+  --zk-tap-min: 44px;
+  --zk-tile-md: 42px;
+  --zk-screen-pad: var(--zk-space-18);
+
+  /* ---------- Shadows ---------- */
+  --zk-inset-gloss: inset 0 2px 0 rgb(var(--zk-white-rgb) / .3);
+  --zk-shadow-3d-sm: 0 3px 0 rgb(var(--zk-black-rgb) / .35);
+  --zk-shadow-3d-md: 0 5px 0 rgb(var(--zk-black-rgb) / .4);
+  --zk-shadow-card: 0 10px 24px rgb(var(--zk-black-rgb) / .25);
+  --zk-shadow-card-hover: 0 16px 34px rgb(var(--zk-black-rgb) / .35), 0 0 0 1px rgb(var(--zk-purple-rgb) / .5);
+  --zk-shadow-float: 0 12px 30px rgb(var(--zk-black-rgb) / .4);
+  --zk-shadow-phone: 0 0 0 9px var(--zk-bezel), 0 0 0 10px var(--zk-bezel-edge), 0 50px 100px -20px rgb(var(--zk-black-rgb) / .8);
+  --zk-shadow-btn-gold: 0 6px 0 var(--zk-gold-deep), 0 14px 30px rgb(var(--zk-gold-rgb) / .35);
+  --zk-shadow-btn-gold-hover: 0 8px 0 var(--zk-gold-deep), 0 18px 40px rgb(var(--zk-gold-rgb) / .5);
+  --zk-shadow-btn-gold-pressed: 0 2px 0 var(--zk-gold-deep);
+  --zk-shadow-btn-purple: 0 5px 0 var(--zk-purple-deep);
+  --zk-shadow-btn-purple-pressed: 0 1px 0 var(--zk-purple-deep);
+  --zk-shadow-btn-mint: 0 6px 0 var(--zk-mint-deep);
+  --zk-shadow-btn-mint-pressed: 0 2px 0 var(--zk-mint-deep);
+  --zk-shadow-btn-sky: 0 6px 0 var(--zk-sky-deep);
+  --zk-shadow-btn-sky-pressed: 0 2px 0 var(--zk-sky-deep);
+  --zk-shadow-btn-light: 0 6px 0 var(--zk-light-edge);
+  --zk-shadow-btn-light-pressed: 0 2px 0 var(--zk-light-edge);
+  --zk-shadow-chip-active: 0 3px 0 var(--zk-gold-deep);
+  --zk-shadow-sticker-pink: 0 4px 0 var(--zk-pink-deep);
+  --zk-shadow-sticker-sky: 0 4px 0 var(--zk-sky-deep);
+  --zk-shadow-sticker-mint: 0 4px 0 var(--zk-mint-deep);
+  --zk-ring-focus: 0 0 0 5px rgb(var(--zk-purple-rgb) / .18);
+  --zk-ring-error: 0 0 0 5px rgb(var(--zk-red-rgb) / .18);
+  --zk-ring-success: 0 0 0 5px rgb(var(--zk-mint-rgb) / .2);
+  --zk-glow-gold: 0 0 40px rgb(var(--zk-gold-rgb) / .45);
+  --zk-glow-purple: 0 0 40px rgb(var(--zk-purple-rgb) / .2);
+  --zk-glow-sky: 0 0 40px rgb(var(--zk-sky-rgb) / .15);
+  --zk-text-shadow-gold: 0 5px 0 var(--zk-gold-text-edge), 0 0 40px rgb(var(--zk-gold-rgb) / .5);
+  --zk-text-shadow-red: 0 4px 0 var(--zk-red-deep);
+  --zk-text-shadow-logo: 0 var(--zk-logo-drop, 4px) 0 var(--zk-purple);
+
+  /* ---------- Motion ---------- */
+  --zk-dur-fast: 150ms;
+  --zk-dur-base: 250ms;
+  --zk-dur-shake: 450ms;
+  --zk-dur-meter: 600ms;
+  --zk-dur-pop: 700ms;
+  --zk-dur-pulse: 1600ms;
+  --zk-dur-countup: 1800ms;
+  --zk-dur-ring: 1800ms;
+  --zk-dur-vault-cycle: 6000ms;
+  --zk-dur-ticker: 26s;
+  --zk-dur-sunburst: 24s;
+  --zk-ease-out: cubic-bezier(.22, 1, .36, 1);
+  --zk-ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --zk-ease-spring: cubic-bezier(.3, 1.6, .5, 1);
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes zk-ping { 0% { transform: scale(1); opacity: .7 } 70% { transform: scale(3); opacity: 0 } 100% { transform: scale(3); opacity: 0 } }
+@keyframes zk-marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+@keyframes zk-shake-a { 0%, 100% { transform: translateX(0) } 15%, 55% { transform: translateX(-10px) } 35%, 75% { transform: translateX(10px) } }
+@keyframes zk-shake-b { 0%, 100% { transform: translateX(0) } 15%, 55% { transform: translateX(-10px) } 35%, 75% { transform: translateX(10px) } }
+@keyframes zk-shake-loop { 0%, 60%, 100% { transform: translateX(0) } 66%, 82% { transform: translateX(-9px) } 74%, 90% { transform: translateX(9px) } }
+@keyframes zk-spin { to { transform: rotate(360deg) } }
+@keyframes zk-dial { 0% { transform: rotate(0) } 30% { transform: rotate(540deg) } 100% { transform: rotate(540deg) } }
+@keyframes zk-door { 0%, 30% { transform: perspective(1000px) rotateY(0deg) } 50%, 85% { transform: perspective(1000px) rotateY(-112deg) } 100% { transform: perspective(1000px) rotateY(0deg) } }
+@keyframes zk-fall { 0% { transform: translateY(-40px) rotate(0) } 100% { transform: translateY(900px) rotate(760deg) } }
+@keyframes zk-pop { 0% { transform: scale(.3) rotate(-3deg); opacity: 0 } 60% { transform: scale(1.12) rotate(-3deg); opacity: 1 } 100% { transform: scale(1) rotate(-3deg) } }
+@keyframes zk-ring { 0% { transform: scale(.8); opacity: .8 } 100% { transform: scale(1.6); opacity: 0 } }
+@keyframes zk-bob { 0%, 100% { transform: translateY(0) rotate(var(--zk-tilt, 0deg)) } 50% { transform: translateY(-8px) rotate(var(--zk-tilt, 0deg)) } }
+@keyframes zk-glow { 0%, 100% { opacity: .5 } 50% { opacity: 1 } }
+
+/* ---------- Resets ---------- */
+body { margin: 0; background: var(--zk-canvas); color: var(--zk-text); font-family: var(--zk-font-body); -webkit-font-smoothing: antialiased; }
+a { color: var(--zk-gold); }
+a:hover { color: var(--zk-gold-light); }
+input::placeholder, textarea::placeholder { color: var(--zk-text-faint); }
+
+/* ---------- Performance + accessibility ---------- */
+[data-zk-offscreen], [data-zk-offscreen] * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-play-state: paused !important; transition-duration: 0s !important; }
+}

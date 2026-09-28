@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="style-guide" data-screen-label="Style guide" style="width:2440px;box-sizing:border-box;margin:var(--zk-space-14);padding:var(--zk-space-64);border-radius:var(--zk-radius-4xl);background:var(--zk-bg);color:var(--zk-text);font-family:var(--zk-font-body);display:flex;flex-direction:column;gap:var(--zk-space-64)">
+
+<header style="display:flex;justify-content:space-between;align-items:flex-end">
+<div><div style="font:var(--zk-type-mono-sm);color:var(--zk-gold);letter-spacing:.1em">ZECKED · STYLE GUIDE</div><h1 style="margin:var(--zk-space-10) 0 0;font:var(--zk-fw-black) var(--zk-fs-64)/1 var(--zk-font-display);letter-spacing:var(--zk-track-tight)">Tokens, components &amp; motion</h1></div>
+<p style="margin:0;font:var(--zk-type-body-lg);color:var(--zk-text-muted);max-width:560px;text-align:right">All values below read live from <b style="color:var(--zk-text);font-family:var(--zk-font-mono)">zk-tokens.css</b>. Change a token there and every screen updates.</p>
+</header>
+
+<div id="sg-color" style="display:flex;flex-direction:column;gap:var(--zk-space-20)">
+<h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Color</h2>
+<sc-for list="{{ colorGroups }}" as="g" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">{{ g.name }}</span><div style="display:grid;grid-template-columns:repeat(9,1fr);gap:var(--zk-space-10)"><sc-for list="{{ g.items }}" as="c" hint-placeholder-count="6"><div style="border-radius:var(--zk-radius-lg);overflow:hidden;background:var(--zk-surface);border:1px solid var(--zk-border)"><div style="height:64px;background:{{ c.v }}"></div><div style="padding:var(--zk-space-8) var(--zk-space-10);font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">{{ c.n }}</div></div></sc-for></div></div></sc-for>
+</div>
+
+<div style="display:grid;grid-template-columns:1.3fr 1fr;gap:var(--zk-space-32)">
+<div id="sg-type" style="display:flex;flex-direction:column;gap:var(--zk-space-14)">
+<h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Type</h2>
+<div style="font:var(--zk-type-small);color:var(--zk-text-muted)">Bricolage Grotesque ExtraBold (display) · Inter (body) · Space Mono (countdowns + amounts). Use as <span style="font-family:var(--zk-font-mono);color:var(--zk-text)">font: var(--zk-type-*)</span>.</div>
+<sc-for list="{{ types }}" as="t" hint-placeholder-count="10"><div style="display:grid;grid-template-columns:220px 1fr;align-items:baseline;gap:var(--zk-space-16);padding:var(--zk-space-10) 0;border-bottom:1px solid var(--zk-border)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">{{ t.n }}</span><span style="font:{{ t.v }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.s }}</span></div></sc-for>
+</div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-32)">
+<div id="sg-space" style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Spacing</h2>
+<sc-for list="{{ spaces }}" as="s" hint-placeholder-count="10"><div style="display:flex;align-items:center;gap:var(--zk-space-12)"><span style="width:140px;font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">{{ s.n }}</span><span style="height:12px;width:{{ s.v }};background:var(--zk-purple);border-radius:2px"></span></div></sc-for></div>
+<div id="sg-radius" style="display:flex;flex-direction:column;gap:var(--zk-space-12)"><h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Radii</h2>
+<div style="display:flex;gap:var(--zk-space-12);flex-wrap:wrap"><sc-for list="{{ radii }}" as="r" hint-placeholder-count="8"><div style="display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-6)"><div style="width:72px;height:72px;background:var(--zk-surface-raised);border:2px solid var(--zk-gold);border-radius:{{ r.v }}"></div><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">{{ r.n }}</span></div></sc-for></div></div>
+</div>
+</div>
+
+<div id="sg-shadow" style="display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Shadows &amp; rings</h2>
+<div style="display:grid;grid-template-columns:repeat(8,1fr);gap:var(--zk-space-24)"><sc-for list="{{ shadows }}" as="s" hint-placeholder-count="8"><div style="display:flex;flex-direction:column;gap:var(--zk-space-14);align-items:center"><div style="width:120px;height:72px;border-radius:var(--zk-radius-xl);background:{{ s.bg }};box-shadow:{{ s.v }}"></div><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted);text-align:center">{{ s.n }}</span></div></sc-for></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1.6fr;gap:var(--zk-space-32)">
+<div id="sg-logo" style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-20)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">LOGO · ZK Logo</span>
+<dc-import name="ZK Logo" variant="wordmark" size="{{ 86 }}" hint-size="430px,90px"></dc-import>
+<div style="display:flex;align-items:flex-end;gap:var(--zk-space-20)"><dc-import name="ZK Logo" variant="icon" size="{{ 120 }}" hint-size="120px,120px"></dc-import><dc-import name="ZK Logo" variant="icon" size="{{ 72 }}" hint-size="72px,72px"></dc-import><dc-import name="ZK Logo" variant="icon" size="{{ 40 }}" hint-size="40px,40px"></dc-import><dc-import name="ZK Logo" variant="mark" size="{{ 56 }}" hint-size="56px,56px"></dc-import></div>
+<p style="margin:0;font:var(--zk-type-small);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">variant: wordmark · icon · mark. The Z is a lightning bolt with a vault-handle hub. Never pair with the official Zcash mark. Write “Built on Zcash” in small text.</p>
+</div>
+<div id="sg-icons" style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">ICONS · ZK Icon · 24px grid, 2px round stroke, currentColor</span>
+<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:var(--zk-space-12)"><sc-for list="{{ icons }}" as="i" hint-placeholder-count="24"><div style="display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-6);padding:var(--zk-space-10) 0;border-radius:var(--zk-radius-md);background:var(--zk-surface-raised)"><dc-import name="ZK Icon" icon="{{ i }}" size="{{ 24 }}" hint-size="24px,24px"></dc-import><span style="font:var(--zk-fw-medium) var(--zk-fs-10)/1 var(--zk-font-mono);color:var(--zk-text-muted)">{{ i }}</span></div></sc-for></div>
+</div>
+</div>
+
+<div id="sg-tiers" style="display:flex;flex-direction:column;gap:var(--zk-space-20)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14)"><h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Tier emblems</h2><span style="font:var(--zk-type-body);color:var(--zk-text-muted)">ZK Emblem · tier, size, locked</span></div>
+<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:var(--zk-space-18)"><sc-for list="{{ tiers }}" as="t" hint-placeholder-count="6"><div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-24) var(--zk-space-16) var(--zk-space-20);display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-10);text-align:center">
+<div style="display:flex;align-items:flex-end;gap:var(--zk-space-16)"><dc-import name="ZK Emblem" tier="{{ t.id }}" size="{{ 104 }}" hint-size="104px,116px"></dc-import><dc-import name="ZK Emblem" tier="{{ t.id }}" locked="{{ true }}" size="{{ 44 }}" hint-size="44px,49px"></dc-import></div>
+<div style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted);margin-top:var(--zk-space-8)">TIER {{ t.n }} · {{ t.xp }}</div>
+<div style="font:var(--zk-type-h2);color:{{ t.c }}">{{ t.name }}</div>
+<div style="font:var(--zk-type-small);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">{{ t.motif }} · unlocked / locked</div>
+</div></sc-for></div>
+</div>
+
+<div id="sg-badges" style="display:flex;flex-direction:column;gap:var(--zk-space-20)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14)"><h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Badges</h2><span style="font:var(--zk-type-body);color:var(--zk-text-muted)">ZK Badge · badge, size, locked. Unlocked: glossy + sunburst. Locked: grey silhouette + lock.</span></div>
+<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:var(--zk-space-16)"><sc-for list="{{ badges }}" as="b" hint-placeholder-count="7"><div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-20) var(--zk-space-14);display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-10);text-align:center">
+<div style="display:flex;align-items:flex-end;gap:var(--zk-space-10)"><dc-import name="ZK Badge" badge="{{ b.id }}" size="{{ 96 }}" hint-size="96px,96px"></dc-import><dc-import name="ZK Badge" badge="{{ b.id }}" locked="{{ true }}" size="{{ 48 }}" hint-size="48px,48px"></dc-import></div>
+<div style="font:var(--zk-type-h3);margin-top:var(--zk-space-4)">{{ b.name }}</div>
+<div style="font:var(--zk-type-caption);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">{{ b.how }}</div>
+</div></sc-for></div>
+</div>
+
+<div id="sg-components" style="display:flex;flex-direction:column;gap:var(--zk-space-32)">
+<h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Components</h2>
+
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">BUTTON · ZK Button · variant × state (size lg; md and sm share states)</span>
+<div style="display:grid;grid-template-columns:120px repeat(4,1fr);gap:var(--zk-space-16) var(--zk-space-20);align-items:center">
+<span></span><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">default</span><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">hover</span><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">pressed</span><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">disabled</span>
+<sc-for list="{{ btnRows }}" as="r" hint-placeholder-count="6"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">{{ r.v }}</span><dc-import name="ZK Button" label="{{ r.label }}" variant="{{ r.v }}" state="default" hint-size="100%,62px"></dc-import><dc-import name="ZK Button" label="{{ r.label }}" variant="{{ r.v }}" state="hover" hint-size="100%,62px"></dc-import><dc-import name="ZK Button" label="{{ r.label }}" variant="{{ r.v }}" state="pressed" hint-size="100%,62px"></dc-import><dc-import name="ZK Button" label="{{ r.label }}" variant="{{ r.v }}" state="disabled" hint-size="100%,62px"></dc-import></sc-for>
+</div>
+<div style="display:flex;gap:var(--zk-space-16);align-items:center;margin-top:var(--zk-space-8)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted);width:120px">sizes</span><dc-import name="ZK Button" label="Large" size="lg" icon-right="unlock" full="{{ false }}" hint-size="160px,62px"></dc-import><dc-import name="ZK Button" label="Medium" size="md" icon="plus" full="{{ false }}" hint-size="140px,52px"></dc-import><dc-import name="ZK Button" label="Small" size="sm" variant="secondary" icon="copy" full="{{ false }}" hint-size="100px,40px"></dc-import></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--zk-space-24)">
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">CHIP · ZK Chip</span>
+<div style="display:flex;gap:var(--zk-space-14);flex-wrap:wrap;align-items:flex-end">
+<sc-for list="{{ chipStates }}" as="c" hint-placeholder-count="6"><div style="display:flex;flex-direction:column;gap:var(--zk-space-8);align-items:flex-start"><dc-import name="ZK Chip" label="{{ c.label }}" active="{{ c.active }}" state="{{ c.state }}" hint-size="90px,38px"></dc-import><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">{{ c.n }}</span></div></sc-for>
+</div>
+<div style="display:flex;gap:var(--zk-space-8);flex-wrap:wrap;align-items:center"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted);width:80px">info</span><dc-import name="ZK Chip" variant="info" icon="medal" label="First correct call wins" hint-size="160px,32px"></dc-import><dc-import name="ZK Chip" variant="info" icon="key" label="38 tries" hint-size="90px,32px"></dc-import><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted);margin-left:var(--zk-space-16)">sm</span><dc-import name="ZK Chip" size="sm" label="24 hours" active="{{ true }}" hint-size="90px,32px"></dc-import><dc-import name="ZK Chip" size="sm" label="3 days" hint-size="80px,32px"></dc-import></div>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-12)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">INPUT · ZK Input · default / focus / error / success / disabled</span>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--zk-space-12)">
+<dc-import name="ZK Input" placeholder="Type your answer…" message="default" hint-size="100%,84px"></dc-import>
+<dc-import name="ZK Input" value="a ma" state="focus" message="focus" hint-size="100%,84px"></dc-import>
+<dc-import name="ZK Input" value="a globe" state="error" message="Nope! Try again 😏" hint-size="100%,84px"></dc-import>
+<dc-import name="ZK Input" value="a map" state="success" message="Cracked! The vault is open." hint-size="100%,84px"></dc-import>
+<dc-import name="ZK Input" value="Out of tries" state="disabled" message="disabled · resets in 10 min" hint-size="100%,84px"></dc-import>
+<dc-import name="ZK Input" value="u1q8rw5x…k2m97fks" size="sm" font="mono" message="sm · mono" hint-size="100%,72px"></dc-import>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--zk-space-24)">
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-14)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">LIVE BADGE · ZK Live Badge</span>
+<div style="display:flex;gap:var(--zk-space-12);align-items:center;flex-wrap:wrap"><dc-import name="ZK Live Badge" size="sm" hint-size="110px,22px"></dc-import><dc-import name="ZK Live Badge" size="md" hint-size="130px,28px"></dc-import><dc-import name="ZK Live Badge" size="lg" hint-size="180px,40px"></dc-import></div>
+<div style="display:flex;gap:var(--zk-space-12);align-items:center;flex-wrap:wrap"><dc-import name="ZK Live Badge" variant="solid" size="md" label="Live · 67’" hint-size="100px,28px"></dc-import><dc-import name="ZK Live Badge" state="ended" size="md" label="Cracked" hint-size="90px,28px"></dc-import></div>
+<span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">soft sm / md / lg · solid (match minute) · ended</span>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-14)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">COUNTDOWN · ZK Countdown</span>
+<div style="display:flex;gap:var(--zk-space-16);align-items:center;flex-wrap:wrap"><dc-import name="ZK Countdown" seconds="{{ 4965 }}" hint-size="90px,20px"></dc-import><dc-import name="ZK Countdown" seconds="{{ 4965 }}" variant="pill" hint-size="100px,28px"></dc-import><dc-import name="ZK Countdown" seconds="{{ 2530 }}" format="ms" tone="gold" size="sm" hint-size="50px,16px"></dc-import></div>
+<div style="display:flex;gap:var(--zk-space-16);align-items:center;flex-wrap:wrap"><dc-import name="ZK Countdown" seconds="{{ 4965 }}" variant="boxed" size="lg" hint-size="180px,40px"></dc-import><dc-import name="ZK Countdown" seconds="{{ 1080 }}" format="ms" tone="urgent" size="lg" hint-size="80px,26px"></dc-import></div>
+<span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">inline · pill · boxed · tone gold / urgent (&lt; 30 min)</span>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-10)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">TOAST · ZK Toast</span>
+<dc-import name="ZK Toast" variant="success" text="@nightowl just ZECKED 0.02 ZEC" meta="12s" hint-size="100%,60px"></dc-import>
+<dc-import name="ZK Toast" variant="gold" text="Payment detected. Your stash is live." meta="now" hint-size="100%,60px"></dc-import>
+<dc-import name="ZK Toast" variant="error" text="Nope! 2 tries left" hint-size="100%,60px"></dc-import>
+<dc-import name="ZK Toast" variant="default" icon="eyeOff" text="Wrong guesses are private." hint-size="100%,60px"></dc-import>
+</div>
+</div>
+
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">STASH CARD · ZK Stash Card · type × state</span>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--zk-space-24);align-items:start;padding-top:var(--zk-space-10)">
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">riddle · default</span><dc-import name="ZK Stash Card" type="riddle" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">riddle · hover</span><dc-import name="ZK Stash Card" type="riddle" state="hover" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">riddle · pressed</span><dc-import name="ZK Stash Card" type="riddle" state="pressed" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">riddle · cracked (closed)</span><dc-import name="ZK Stash Card" type="riddle" state="cracked" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">riddle · whale + ending soon</span><dc-import name="ZK Stash Card" type="riddle" whale="{{ true }}" urgent="{{ true }}" hider="@zwhale" teaser="The more you take, the more you leave behind. What am I?" zec="0.5" usd="750" pct="{{ 9 }}" time-left="18m left" tries="211 tries" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">prediction · default</span><dc-import name="ZK Stash Card" type="prediction" zec="0.0134" usd="20" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">prediction · hover</span><dc-import name="ZK Stash Card" type="prediction" state="hover" zec="0.0134" usd="20" hint-size="100%,230px"></dc-import></div>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-10)"><span style="font:var(--zk-type-mono-xs);color:var(--zk-text-muted)">prediction · cracked (full time)</span><dc-import name="ZK Stash Card" type="prediction" state="cracked" zec="0.0134" usd="20" kickoff-text="FT 2–1" hint-size="100%,230px"></dc-import></div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:var(--zk-space-24)">
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">TEAM BADGE · ZK Team Badge · code + club colors from the sports feed, never crests</span>
+<div style="display:flex;gap:var(--zk-space-16);align-items:flex-end"><dc-import name="ZK Team Badge" code="BAR" color="var(--zk-team-bar)" size="{{ 120 }}" hint-size="120px,120px"></dc-import><dc-import name="ZK Team Badge" code="CHE" color="var(--zk-team-che)" size="{{ 68 }}" hint-size="68px,68px"></dc-import><dc-import name="ZK Team Badge" code="MAD" color="var(--zk-team-mad)" ink="var(--zk-team-mad-ink)" size="{{ 40 }}" hint-size="40px,40px"></dc-import><dc-import name="ZK Team Badge" code="LIV" color="var(--zk-team-liv)" size="{{ 40 }}" hint-size="40px,40px"></dc-import></div>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-28);display:flex;flex-direction:column;gap:var(--zk-space-16)">
+<span style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:var(--zk-text-muted)">VAULT · ZK Vault · closed / loop (welcome) / open (win)</span>
+<div style="display:flex;gap:var(--zk-space-48);align-items:center"><dc-import name="ZK Vault" mode="closed" size="{{ 160 }}" hint-size="160px,160px"></dc-import><dc-import name="ZK Vault" mode="loop" size="{{ 160 }}" hint-size="160px,160px"></dc-import><div style="padding-left:var(--zk-space-40)"><dc-import name="ZK Vault" mode="open" size="{{ 160 }}" hint-size="160px,160px"></dc-import></div></div>
+</div>
+</div>
+</div>
+
+<div id="sg-motion" style="display:flex;flex-direction:column;gap:var(--zk-space-20)">
+<div style="display:flex;align-items:baseline;gap:var(--zk-space-14)"><h2 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)">Motion notes</h2><span style="font:var(--zk-type-body);color:var(--zk-text-muted)">Keyframes live in zk-tokens.css. Respect prefers-reduced-motion: swap loops for a single fade, keep count-ups instant.</span></div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);overflow:hidden">
+<div style="display:grid;grid-template-columns:220px 200px 170px 1fr 1fr 1.6fr;gap:var(--zk-space-16);padding:var(--zk-space-14) var(--zk-space-24);background:var(--zk-surface-raised);font:var(--zk-type-label);letter-spacing:var(--zk-track-badge);color:var(--zk-text-muted)"><span>ANIMATION</span><span>KEYFRAMES</span><span>DURATION</span><span>EASING</span><span>TRIGGER / LOOP</span><span>NOTES</span></div>
+<sc-for list="{{ motion }}" as="m" hint-placeholder-count="6"><div style="display:grid;grid-template-columns:220px 200px 170px 1fr 1fr 1.6fr;gap:var(--zk-space-16);padding:var(--zk-space-16) var(--zk-space-24);border-top:1px solid var(--zk-border);align-items:baseline"><span style="font:var(--zk-type-h4);font-size:var(--zk-fs-18)">{{ m.name }}</span><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">{{ m.kf }}</span><span style="font:var(--zk-type-mono-sm)">{{ m.dur }}</span><span style="font:var(--zk-fw-medium) var(--zk-fs-13)/1.4 var(--zk-font-mono);color:var(--zk-text)">{{ m.ease }}</span><span style="font:var(--zk-type-small);color:var(--zk-text-muted)">{{ m.trig }}</span><span style="font:var(--zk-type-small);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted)">{{ m.note }}</span></div></sc-for>
+</div>
+<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:var(--zk-space-18)">
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);overflow:hidden"><div style="height:180px;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 60%,var(--zk-purple-deep),var(--zk-surface) 70%)"><dc-import name="ZK Confetti" count="{{ 36 }}" seed="{{ 5 }}" size="sm" style="position:absolute;inset:0" hint-size="100%,180px"></dc-import><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:var(--zk-type-h2);color:var(--zk-gold);text-shadow:0 3px 0 var(--zk-gold-text-edge)">ZECKED!</div></div><div style="padding:var(--zk-space-12) var(--zk-space-16);font:var(--zk-type-h4)">Confetti</div></div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);overflow:hidden"><div style="height:180px;display:flex;align-items:center;justify-content:center"><dc-import name="ZK Vault" mode="spin" size="{{ 130 }}" hint-size="130px,130px"></dc-import></div><div style="padding:var(--zk-space-12) var(--zk-space-16);font:var(--zk-type-h4)">Vault spin</div></div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);overflow:hidden"><div style="height:180px;display:flex;align-items:center;padding:0 var(--zk-space-20)"><div style="width:100%"><dc-import name="ZK Input" value="a globe" state="error" size="md" shake-loop="{{ true }}" hint-size="100%,54px"></dc-import></div></div><div style="padding:var(--zk-space-12) var(--zk-space-16);font:var(--zk-type-h4)">Wrong-answer shake</div></div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);overflow:hidden"><div style="height:180px;display:flex;align-items:center;justify-content:center"><dc-import name="ZK Live Badge" size="lg" label="Live" hint-size="100px,40px"></dc-import></div><div style="padding:var(--zk-space-12) var(--zk-space-16);font:var(--zk-type-h4)">LIVE pulse</div></div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);overflow:hidden"><div style="height:180px;display:flex;align-items:center;overflow:hidden"><div style="width:100%;height:40px;background:rgb(var(--zk-mint-rgb) / .07);border-top:1px solid rgb(var(--zk-mint-rgb) / .2);border-bottom:1px solid rgb(var(--zk-mint-rgb) / .2);overflow:hidden;display:flex;align-items:center"><div style="display:flex;gap:var(--zk-space-24);white-space:nowrap;width:max-content;animation:zk-marquee 12s linear infinite;font:var(--zk-type-small);padding-left:var(--zk-space-12)"><span>@nightowl ZECKED 0.02</span><span>@goalhanger called 2–1</span><span>@zwhale hid 0.5 ZEC</span><span>@nightowl ZECKED 0.02</span><span>@goalhanger called 2–1</span><span>@zwhale hid 0.5 ZEC</span></div></div></div><div style="padding:var(--zk-space-12) var(--zk-space-16);font:var(--zk-type-h4)">Ticker</div></div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);overflow:hidden"><div style="height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--zk-space-4)"><div style="font:var(--zk-type-mono-xl);color:var(--zk-gold)"><dc-import name="ZK Count Up" to="{{ 0.02 }}" decimals="{{ 4 }}" prefix="+" loop="{{ true }}" hint-size="160px,34px"></dc-import></div><div style="font:var(--zk-type-body-strong);color:var(--zk-text-muted)">ZEC</div></div><div style="padding:var(--zk-space-12) var(--zk-space-16);font:var(--zk-type-h4)">Count-up</div></div>
+</div>
+</div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const sw = names => names.map(n => ({ n: '--zk-' + n, v: `var(--zk-${n})` }));
+const DATA = {
+      colorGroups: [
+        { name: 'SURFACES + TEXT', items: sw(['canvas', 'bg', 'surface', 'surface-raised', 'bezel', 'text', 'text-muted', 'text-faint', 'border-strong']) },
+        { name: 'BRAND + ACCENTS', items: sw(['gold', 'gold-light', 'gold-pale', 'gold-deep', 'gold-ink', 'purple', 'purple-light', 'purple-deep', 'pink', 'pink-deep', 'mint', 'mint-deep', 'mint-ink', 'sky', 'sky-deep', 'sky-ink', 'red', 'red-soft']) },
+        { name: 'TINTS + GRADIENTS', items: sw(['gold-tint', 'purple-tint', 'mint-tint', 'sky-tint', 'red-tint', 'grad-gold', 'grad-progress', 'grad-tension', 'grad-xp']) }
+      ],
+      types: [
+        ['hero', 'YOU ZECKED IT!'], ['h1', 'Where should we send it?'], ['riddle', 'I have cities, but no houses.'], ['h2', 'Safecracker'], ['h3', 'First Crack'], ['h4', 'Tension meter'],
+        ['score', '2 – 1'], ['btn-lg', 'ZECK IT'], ['btn-md', 'Hide a stash'], ['body-lg', 'Nobody can see who won'], ['body', 'Anyone can check this stash is real. Nobody can touch it.'],
+        ['body-strong', 'Bonus hint'], ['small', 'Free to play · No sign-up needed'], ['caption', 'Safecracker · 6 stashes hidden'], ['label', 'LIVE · VERIFIED'],
+        ['mono-xl', '+0.0200 ZEC'], ['mono-lg', '0.02 ZEC'], ['mono', '01:22:45'], ['mono-sm', 'STEP 2 / 4'], ['mono-xs', '5h 12m left']
+      ].map(([n, s]) => ({ n: '--zk-type-' + n, v: `var(--zk-type-${n})`, s })),
+      spaces: [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 56, 64].map(n => ({ n: '--zk-space-' + n, v: `var(--zk-space-${n})` })),
+      radii: ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', 'pill'].map(n => ({ n, v: `var(--zk-radius-${n})` })),
+      shadows: [
+        ['shadow-card', 'var(--zk-surface)'], ['shadow-card-hover', 'var(--zk-surface)'], ['shadow-float', 'var(--zk-surface-raised)'], ['shadow-btn-gold', 'var(--zk-grad-gold)'],
+        ['shadow-btn-purple', 'var(--zk-purple)'], ['shadow-btn-mint', 'var(--zk-mint)'], ['ring-focus', 'var(--zk-surface)'], ['ring-error', 'var(--zk-red-tint)'],
+        ['ring-success', 'var(--zk-surface)'], ['glow-gold', 'var(--zk-surface)'], ['shadow-3d-md', 'var(--zk-surface-raised)'], ['shadow-chip-active', 'var(--zk-gold)'],
+        ['shadow-sticker-pink', 'var(--zk-pink)'], ['shadow-btn-sky', 'var(--zk-sky)'], ['shadow-btn-light', 'var(--zk-text)'], ['inset-gloss', 'var(--zk-purple)']
+      ].map(([n, bg]) => ({ n: '--zk-' + n, v: `var(--zk-${n})`, bg })),
+      icons: ['lock', 'unlock', 'key', 'ball', 'share', 'back', 'close', 'plus', 'minus', 'check', 'arrowRight', 'arrowUp', 'search', 'bulb', 'flame', 'trophy', 'home', 'user', 'vault', 'wallet', 'bolt', 'shield', 'shieldCheck', 'orb', 'eye', 'eyeOff', 'hourglass', 'clip', 'dial', 'crown', 'whale', 'mask', 'cake', 'sliders', 'copy', 'signal', 'medal', 'target', 'flag', 'flashlight', 'camera', 'clock', 'coin', 'sparkle', 'info', 'bell'],
+      tiers: [
+        { id: 'rookie', name: 'Rookie', motif: 'Bronze key', xp: '0 XP', c: 'var(--zk-tier-rookie-hi)' },
+        { id: 'cracker', name: 'Cracker', motif: 'Silver lockpick', xp: '250 XP', c: 'var(--zk-tier-cracker-mid)' },
+        { id: 'safecracker', name: 'Safecracker', motif: 'Gold dial', xp: '750 XP', c: 'var(--zk-gold)' },
+        { id: 'vault', name: 'Vault Breaker', motif: 'Purple vault', xp: '1,500 XP', c: 'var(--zk-purple-light)' },
+        { id: 'oracle', name: 'Oracle', motif: 'Crystal ball', xp: '3,000 XP', c: 'var(--zk-sky)' },
+        { id: 'legend', name: 'Z-Legend', motif: 'Golden crowned Z', xp: '6,000 XP', c: 'var(--zk-pink)' }
+      ].map((t, i) => ({ ...t, n: i + 1 })),
+      badges: [
+        { id: 'first', name: 'First Crack', how: 'Crack your first stash.' }, { id: 'uncrackable', name: 'Uncrackable', how: 'Hide a stash nobody cracks.' },
+        { id: 'oracle', name: 'Oracle', how: 'Call 3 exact scores.' }, { id: 'speed', name: 'Speed Demon', how: 'Crack a stash in under 60s.' },
+        { id: 'whale', name: 'Whale Hider', how: 'Hide a stash over $100.' }, { id: 'shielded', name: 'Shielded', how: 'Claim to your first private wallet.' },
+        { id: 'bday', name: 'Birthday OG', how: 'Play during Zcash’s 10th birthday week.' }
+      ],
+      btnRows: [['primary', 'ZECK IT'], ['secondary', 'Paste'], ['success', 'CALL SEALED'], ['sky', 'Share on Telegram'], ['light', 'Share on X'], ['ghost', 'Back to stashes']].map(([v, label]) => ({ v, label })),
+      chipStates: [
+        { n: 'default', label: 'Riddles', active: false, state: 'default' }, { n: 'hover', label: 'Riddles', active: false, state: 'hover' },
+        { n: 'pressed', label: 'Riddles', active: false, state: 'pressed' }, { n: 'active', label: 'All', active: true, state: 'default' },
+        { n: 'active · pressed', label: 'All', active: true, state: 'pressed' }, { n: 'disabled', label: 'Biggest', active: false, state: 'disabled' }
+      ],
+      motion: [
+        { name: 'Confetti on wins', kf: 'zk-fall', dur: '2.4–4.6s / piece', ease: 'linear', trig: 'Win + stash live. 70 pieces (50 on stash-live), negative delays so it starts mid-air. Stop spawning after 3s.', note: '6 brand colors, 6–14px, 40% round. translateY −40 → 900px, rotate 0 → 760°. Haptic: success.' },
+        { name: 'Vault spin + open', kf: 'zk-dial · zk-door', dur: '6000ms cycle (--zk-dur-vault-cycle)', ease: 'cubic-bezier(.65,0,.35,1) (--zk-ease-in-out)', trig: 'Welcome: infinite loop. Win: play once, then hold open.', note: 'Dial 0 → 540° in first 30%. Door rotateY 0 → −112° (30–50%), holds to 85%, closes. transform-origin left center, perspective 1000px.' },
+        { name: 'Wrong-answer shake', kf: 'zk-shake-a / -b', dur: '450ms (--zk-dur-shake)', ease: 'cubic-bezier(.65,0,.35,1)', trig: 'Each wrong submit. Alternate a/b names to retrigger.', note: 'translateX ±10px twice. Input switches to error state at the same time. Haptic: error.' },
+        { name: 'LIVE pulse', kf: 'zk-ping', dur: '1600ms (--zk-dur-pulse)', ease: 'ease-out', trig: 'Infinite while stash is live. Solid variant blinks with zk-glow at 1s.', note: 'Mint ring grows 0 → 7px and fades to 0 opacity.' },
+        { name: 'Ticker marquee', kf: 'zk-marquee', dur: '26s per loop (--zk-dur-ticker)', ease: 'linear', trig: 'Infinite. Pause on touch. Content duplicated once for a seamless loop.', note: 'translateX 0 → −50%. Roughly 40px/s. New events slide in from the right.' },
+        { name: 'Number count-up', kf: 'rAF (JS)', dur: '1800ms (--zk-dur-countup)', ease: 'ease-out cubic: 1 − (1 − t)³', trig: 'Win screen mount and replay. XP bar fills in the same frame loop.', note: 'Format ZEC to 4 decimals, USD to 2. Title pops in with zk-pop, 700ms, cubic-bezier(.3,1.6,.5,1).' }
+      ]
+};
+class Component extends DCLogic {
+  renderVals() { return DATA; }
+}
+</script>
+</body>
+</html>

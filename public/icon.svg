@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512">
+  <title>ZECKED</title>
+  <defs>
+    <!-- Tile: radial-gradient(circle at 30% 18%, --zk-purple-light, --zk-purple-vivid 50%, --zk-purple-shade) -->
+    <radialGradient id="zk-tile" gradientUnits="userSpaceOnUse" cx="30" cy="18" r="107.81">
+      <stop offset="0" stop-color="#A48CFF"/>
+      <stop offset="0.5" stop-color="#6444F0"/>
+      <stop offset="1" stop-color="#3A22A8"/>
+    </radialGradient>
+    <!-- Z fill: --zk-gold-pale -> --zk-gold -->
+    <linearGradient id="zk-z" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE9A3"/>
+      <stop offset="1" stop-color="#F4B728"/>
+    </linearGradient>
+    <!-- Vault face: --zk-icon-face-hi -> --zk-icon-face-lo -->
+    <radialGradient id="zk-face" cx="0.4" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#2E2566"/>
+      <stop offset="1" stop-color="#140F2E"/>
+    </radialGradient>
+    <!-- inset 0 4px 0 white/.35 and inset 0 -4px 0 black/.3 -->
+    <mask id="zk-top">
+      <rect width="100" height="100" rx="24" fill="#fff"/>
+      <rect y="4" width="100" height="100" rx="24" fill="#000"/>
+    </mask>
+    <mask id="zk-bottom">
+      <rect width="100" height="100" rx="24" fill="#fff"/>
+      <rect y="-4" width="100" height="100" rx="24" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="100" height="100" rx="24" fill="url(#zk-tile)"/>
+  <rect width="100" height="100" rx="24" fill="#FFFFFF" fill-opacity=".35" mask="url(#zk-top)"/>
+  <rect width="100" height="100" rx="24" fill="#000000" fill-opacity=".3" mask="url(#zk-bottom)"/>
+  <circle cx="50" cy="52" r="37" fill="#9A6A0C"/>
+  <circle cx="50" cy="50" r="37" fill="url(#zk-face)" stroke="#F4B728" stroke-width="5"/>
+  <path d="M47 18a3 3 0 1 0 6 0a3 3 0 1 0-6 0M47 82a3 3 0 1 0 6 0a3 3 0 1 0-6 0M15 50a3 3 0 1 0 6 0a3 3 0 1 0-6 0M79 50a3 3 0 1 0 6 0a3 3 0 1 0-6 0" fill="#F4B728"/>
+  <g transform="translate(29 29) scale(.42)">
+    <polygon points="14,10 86,10 86,26 50,48 64,48 30,74 86,74 86,90 14,90 14,74 44,54 30,54 60,26 14,26" fill="url(#zk-z)"/>
+    <circle cx="47" cy="51" r="8" fill="#140F2E" stroke="#FFE9A3" stroke-width="4"/>
+  </g>
+</svg>

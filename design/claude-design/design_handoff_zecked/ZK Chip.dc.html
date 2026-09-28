@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="button" aria-pressed="{{ pressedAria }}" onClick="{{ click }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onMouseDown="{{ down }}" onMouseUp="{{ up }}" style="flex:none;height:{{ h }};padding:{{ pad }};box-sizing:border-box;border-radius:{{ r }};display:inline-flex;align-items:center;gap:var(--zk-space-6);background:{{ bg }};color:{{ fg }};border:1px solid {{ bd }};box-shadow:{{ sh }};transform:{{ tf }};opacity:{{ op }};font:{{ font }};white-space:nowrap;cursor:{{ cur }};user-select:none;transition:transform var(--zk-dur-fast) var(--zk-ease-out),background var(--zk-dur-fast) var(--zk-ease-out)">
+<sc-if value="{{ hasIcon }}" hint-placeholder-val="{{ false }}"><dc-import name="ZK Icon" icon="{{ icon }}" size="{{ is }}" stroke="{{ 2.2 }}" color="{{ iconC }}" hint-size="16px,16px"></dc-import></sc-if>
+<span>{{ label }}</span>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:200,&quot;height&quot;:60},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Riddles&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;active&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;filter&quot;,&quot;info&quot;],&quot;default&quot;:&quot;filter&quot;,&quot;tsType&quot;:&quot;'filter'|'info'&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;md&quot;,&quot;sm&quot;],&quot;default&quot;:&quot;md&quot;,&quot;tsType&quot;:&quot;'md'|'sm'&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;hover&quot;,&quot;pressed&quot;,&quot;disabled&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;icon&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;iconColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;currentColor&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onClick&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(e) =&gt; void&quot;}}">
+class Component extends DCLogic {
+  state = { hover: false, press: false };
+  renderVals() {
+    const p = this.props, info = p.variant === 'info', sm = p.size === 'sm';
+    const forced = p.state && p.state !== 'default' ? p.state : null;
+    const st = forced || (this.state.press ? 'pressed' : this.state.hover ? 'hover' : 'default');
+    const on = !!p.active, dis = st === 'disabled', interactive = !info && !dis;
+    return {
+      label: p.label ?? 'Chip', icon: p.icon, hasIcon: !!p.icon, is: sm || info ? 14 : 16,
+      iconC: p.iconColor ?? 'currentColor',
+      h: info ? 'auto' : sm ? 'var(--zk-h-chip-sm)' : 'var(--zk-h-chip)',
+      pad: info ? 'var(--zk-space-8) var(--zk-space-12)' : sm ? '0 var(--zk-space-14)' : '0 var(--zk-space-16)',
+      r: info ? 'var(--zk-radius-lg)' : 'var(--zk-radius-pill)',
+      font: info || sm ? 'var(--zk-fw-bold) var(--zk-fs-12)/1 var(--zk-font-body)' : 'var(--zk-fw-bold) var(--zk-fs-14)/1 var(--zk-font-body)',
+      bg: info ? 'var(--zk-surface-raised)' : on ? 'var(--zk-gold)' : st === 'hover' || st === 'pressed' ? 'var(--zk-surface-raised)' : 'var(--zk-surface)',
+      fg: on ? 'var(--zk-gold-ink)' : 'var(--zk-text)',
+      bd: on || info ? 'transparent' : 'var(--zk-border)',
+      sh: on && st !== 'pressed' ? 'var(--zk-shadow-chip-active)' : 'none',
+      tf: st === 'pressed' && interactive ? 'translateY(2px)' : 'none',
+      op: dis ? '.4' : '1', cur: interactive ? 'pointer' : 'default', pressedAria: on ? 'true' : 'false',
+      click: e => { if (interactive && p.onClick) p.onClick(e); },
+      enter: () => interactive && this.setState({ hover: true }), leave: () => this.setState({ hover: false, press: false }),
+      down: () => interactive && this.setState({ press: true }), up: () => this.setState({ press: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

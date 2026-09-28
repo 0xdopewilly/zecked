@@ -1,0 +1,35 @@
+# dependencies & builds
+node_modules/
+dist/
+build/
+.next/
+out/
+.vercel/
+coverage/
+target/
+
+# env & secrets: never commit keys, seeds or wallet files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+seed-phrase*
+*.mnemonic
+*.wallet
+wallet.dat
+secrets/
+
+# misc
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# vault wallet data: NEVER commit (holds the hot-wallet seed)
+vault/.data/
+vault/.env
+vault/node_modules/
+.vercel
+next-env.d.ts
+*.tsbuildinfo

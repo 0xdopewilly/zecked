@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div style="display:inline-flex;align-items:center;gap:{{ gap }};padding:{{ pad }};border-radius:var(--zk-radius-pill);background:{{ bg }};border:1px solid {{ bd }};color:{{ fg }};font:var(--zk-fw-black) {{ fs }}/1 var(--zk-font-body);letter-spacing:var(--zk-track-badge);white-space:nowrap;flex:none;text-transform:uppercase"><span style="position:relative;width:{{ dot }};height:{{ dot }};flex:none"><span style="position:absolute;inset:0;border-radius:50%;background:{{ dotC }};opacity:.7;animation:{{ ringAnim }};will-change:transform,opacity"></span><span style="position:absolute;inset:0;border-radius:50%;background:{{ dotC }};animation:{{ anim }}"></span></span>{{ label }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:240,&quot;height&quot;:60},&quot;label&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Live · verified&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;sm&quot;,&quot;md&quot;,&quot;lg&quot;],&quot;default&quot;:&quot;sm&quot;,&quot;tsType&quot;:&quot;'sm'|'md'|'lg'&quot;},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;soft&quot;,&quot;solid&quot;],&quot;default&quot;:&quot;soft&quot;,&quot;tsType&quot;:&quot;'soft'|'solid'&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;live&quot;,&quot;ended&quot;],&quot;default&quot;:&quot;live&quot;,&quot;tsType&quot;:&quot;'live'|'ended'&quot;}}">
+const SIZES = {
+  sm: { pad: 'var(--zk-space-4) var(--zk-space-10) var(--zk-space-4) var(--zk-space-8)', fs: 'var(--zk-fs-10)', dot: '7px', gap: 'var(--zk-space-6)' },
+  md: { pad: 'var(--zk-space-6) var(--zk-space-12) var(--zk-space-6) var(--zk-space-10)', fs: 'var(--zk-fs-12)', dot: '8px', gap: 'var(--zk-space-8)' },
+  lg: { pad: 'var(--zk-space-10) var(--zk-space-18) var(--zk-space-10) var(--zk-space-14)', fs: 'var(--zk-fs-16)', dot: '11px', gap: 'var(--zk-space-10)' }
+};
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props, sz = SIZES[p.size] || SIZES.sm, ended = p.state === 'ended', solid = p.variant === 'solid';
+    return {
+      ...sz, label: p.label ?? (ended ? 'Ended' : 'Live · verified'),
+      bg: ended ? 'var(--zk-surface-raised)' : solid ? 'var(--zk-mint)' : 'var(--zk-mint-tint)',
+      bd: ended ? 'var(--zk-border)' : solid ? 'var(--zk-mint)' : 'rgb(var(--zk-mint-rgb) / .3)',
+      fg: ended ? 'var(--zk-text-muted)' : solid ? 'var(--zk-mint-ink)' : 'var(--zk-mint)',
+      dotC: ended ? 'var(--zk-text-faint)' : solid ? 'var(--zk-mint-ink)' : 'var(--zk-mint)',
+      anim: ended || !solid ? 'none' : 'zk-glow 1s ease-in-out infinite', ringAnim: ended || solid ? 'none' : 'zk-ping var(--zk-dur-pulse) ease-out infinite'
+    };
+  }
+}
+</script>
+</body>
+</html>

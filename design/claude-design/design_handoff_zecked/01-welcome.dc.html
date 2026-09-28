@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="01-welcome" data-screen-label="01 Welcome" style="display:flex;flex-direction:column;gap:var(--zk-space-18);padding:var(--zk-space-14)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">01</span>Welcome</header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg-welcome);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div aria-hidden="true" style="position:absolute;left:-60px;top:80px;width:510px;height:510px;border-radius:50%;background:var(--zk-sunburst-gold);will-change:transform;animation:zk-spin 40s linear infinite"></div>
+<dc-import name="ZK Vault" mode="loop" size="{{ 260 }}" style="position:absolute;left:65px;top:140px" hint-size="260px,260px"></dc-import>
+<div style="position:absolute;left:18px;top:128px;--zk-tilt:-8deg;animation:zk-bob 3.2s ease-in-out infinite;display:flex;align-items:center;gap:var(--zk-space-6);padding:var(--zk-space-8) var(--zk-space-12);border-radius:var(--zk-radius-lg);background:var(--zk-pink);color:var(--zk-text);font:var(--zk-type-btn-sm);box-shadow:var(--zk-shadow-sticker-pink)"><dc-import name="ZK Icon" icon="unlock" size="{{ 15 }}" stroke="{{ 2.6 }}" hint-size="15px,15px"></dc-import>+0.02 ZEC</div>
+<div style="position:absolute;right:16px;top:190px;--zk-tilt:7deg;animation:zk-bob 3.8s ease-in-out .4s infinite;display:flex;align-items:center;gap:var(--zk-space-6);padding:var(--zk-space-8) var(--zk-space-12);border-radius:var(--zk-radius-lg);background:var(--zk-sky);color:var(--zk-sky-ink);font:var(--zk-type-btn-sm);box-shadow:var(--zk-shadow-sticker-sky)"><dc-import name="ZK Icon" icon="ball" size="{{ 15 }}" stroke="{{ 2.4 }}" hint-size="15px,15px"></dc-import>BAR 2–1?</div>
+<div style="position:absolute;right:30px;top:390px;--zk-tilt:-5deg;animation:zk-bob 3.4s ease-in-out .9s infinite;display:flex;align-items:center;gap:var(--zk-space-6);padding:var(--zk-space-8) var(--zk-space-12);border-radius:var(--zk-radius-lg);background:var(--zk-mint);color:var(--zk-mint-ink);font:var(--zk-type-btn-sm);box-shadow:var(--zk-shadow-sticker-mint)"><dc-import name="ZK Icon" icon="key" size="{{ 15 }}" stroke="{{ 2.4 }}" hint-size="15px,15px"></dc-import>38 tries</div>
+<div style="margin-top:auto;position:relative;display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-40);padding:0 var(--zk-space-24) var(--zk-space-48)">
+<div style="display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-16);text-align:center">
+<dc-import name="ZK Logo" variant="wordmark" size="{{ 58 }}" hint-size="290px,60px"></dc-import>
+<h1 style="margin:0;font:var(--zk-fw-black) var(--zk-fs-22)/1.2 var(--zk-font-display)">Hide it. Crack it. <span style="color:var(--zk-gold)">Get Zecked.</span></h1>
+<p style="margin:0;font:var(--zk-type-body);font-size:var(--zk-fs-15);color:var(--zk-text-muted);max-width:300px;text-wrap:pretty">Riddles and match calls with real ZEC inside. First one to crack it keeps it.</p>
+</div>
+<div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-14)">
+<dc-import name="ZK Button" label="Start zecking" variant="primary" size="lg" icon-right="arrowRight" style="width:100%" hint-size="100%,62px"></dc-import>
+<span style="font:var(--zk-type-small);color:var(--zk-text-muted)">Free to play · No sign-up needed</span>
+<span style="font:var(--zk-fw-medium) var(--zk-fs-11)/1 var(--zk-font-body);color:var(--zk-text-faint);letter-spacing:.04em">Built on Zcash</span>
+</div>
+</div>
+</div>
+</section>
+</x-dc>
+</body>
+</html>

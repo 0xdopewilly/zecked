@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&amp;family=Inter:wght@400;500;600;700;800&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"></helmet>
+<section id="06-live-match" data-screen-label="06 Live match" style="display:flex;flex-direction:column;gap:var(--zk-space-18);padding:var(--zk-space-14)">
+<header style="display:flex;align-items:baseline;gap:var(--zk-space-10);font:var(--zk-type-body-strong);color:var(--zk-text-muted)"><span style="font:var(--zk-type-mono-sm);color:var(--zk-gold)">06</span>Live match<span style="color:var(--zk-text-faint)">· tap “Simulate BAR goal”</span></header>
+<div style="width:var(--zk-phone-w);height:var(--zk-phone-h);border-radius:var(--zk-radius-phone);background:var(--zk-bg-hero-mint);box-shadow:var(--zk-shadow-phone);position:relative;overflow:hidden;display:flex;flex-direction:column;color:var(--zk-text);font-family:var(--zk-font-body);flex:none">
+<dc-import name="ZK Device Chrome" style="position:absolute;inset:0;z-index:40;pointer-events:none" hint-size="390px,844px"></dc-import>
+<div style="flex:1;display:flex;flex-direction:column;gap:var(--zk-space-12);padding:calc(var(--zk-statusbar-h) + var(--zk-space-6)) var(--zk-space-16) var(--zk-space-32)">
+<nav style="display:flex;align-items:center;justify-content:space-between">
+<div role="button" aria-label="Back" style="width:var(--zk-tap-min);height:var(--zk-tap-min);border-radius:var(--zk-radius-lg);background:var(--zk-surface);display:flex;align-items:center;justify-content:center"><dc-import name="ZK Icon" icon="back" size="{{ 22 }}" stroke="{{ 2.4 }}" hint-size="22px,22px"></dc-import></div>
+<dc-import name="ZK Live Badge" variant="solid" size="md" label="{{ liveLabel }}" hint-size="100px,28px"></dc-import>
+<div style="width:var(--zk-tap-min)"></div>
+</nav>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-3xl);padding:var(--zk-space-18);border:1.5px solid rgb(var(--zk-mint-rgb) / .3)">
+<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center">
+<div style="display:flex;justify-content:center"><dc-import name="ZK Team Badge" code="BAR" color="var(--zk-team-bar)" size="{{ 58 }}" hint-size="58px,58px"></dc-import></div>
+<div style="font:var(--zk-type-score-xl);letter-spacing:var(--zk-track-tight);display:flex;gap:var(--zk-space-12);align-items:center"><span style="color:{{ hColor }}">{{ lh }}</span><span style="color:var(--zk-text-muted);font-size:var(--zk-fs-40)">–</span><span>1</span></div>
+<div style="display:flex;justify-content:center"><dc-import name="ZK Team Badge" code="CHE" color="var(--zk-team-che)" size="{{ 58 }}" hint-size="58px,58px"></dc-import></div>
+</div>
+<div role="progressbar" aria-label="Match time" style="margin-top:var(--zk-space-12);height:6px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised);overflow:hidden"><div style="height:100%;width:{{ minPct }};background:var(--zk-mint);border-radius:var(--zk-radius-xs)"></div></div>
+<div style="margin-top:var(--zk-space-10);display:flex;flex-direction:column;gap:var(--zk-space-6);font:var(--zk-type-caption);color:var(--zk-text-muted)">
+<span style="display:flex;align-items:center;gap:var(--zk-space-6)"><dc-import name="ZK Icon" icon="ball" size="{{ 13 }}" hint-size="13px,13px"></dc-import>12’ Barcelona</span>
+<span style="display:flex;align-items:center;gap:var(--zk-space-6)"><dc-import name="ZK Icon" icon="ball" size="{{ 13 }}" hint-size="13px,13px"></dc-import>54’ Chelsea</span>
+<sc-if value="{{ scored }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:var(--zk-space-6);color:var(--zk-mint)"><dc-import name="ZK Icon" icon="ball" size="{{ 13 }}" hint-size="13px,13px"></dc-import>{{ minute }}’ Barcelona. You’re calling it!</span></sc-if>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--zk-space-10)">
+<div style="background:var(--zk-surface-raised);border-radius:var(--zk-radius-xl);padding:var(--zk-space-12) var(--zk-space-14)"><div style="font:var(--zk-type-label);letter-spacing:var(--zk-track-badge);color:var(--zk-text-muted)">YOUR CALL</div><div style="font:var(--zk-fw-black) var(--zk-fs-30)/1.1 var(--zk-font-display);color:var(--zk-gold);margin-top:var(--zk-space-4)">2–1</div></div>
+<div style="background:var(--zk-surface-raised);border-radius:var(--zk-radius-xl);padding:var(--zk-space-12) var(--zk-space-14)"><div style="font:var(--zk-type-label);letter-spacing:var(--zk-track-badge);color:var(--zk-text-muted)">PRIZE</div><div style="font:var(--zk-type-mono);font-size:var(--zk-fs-18);color:var(--zk-gold);margin-top:var(--zk-space-10)">0.0134 ZEC</div></div>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);padding:var(--zk-space-16)">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font:var(--zk-type-h4);font-size:var(--zk-fs-18)">Tension meter</span><span style="font:var(--zk-type-small);font-weight:var(--zk-fw-black);color:{{ meterC }}">{{ meterLabel }}</span></div>
+<div role="meter" aria-valuenow="{{ meterN }}" style="margin-top:var(--zk-space-12);height:18px;border-radius:var(--zk-radius-pill);background:var(--zk-grad-tension);position:relative;box-shadow:inset 0 -3px 0 rgb(var(--zk-black-rgb) / .2)"><div style="position:absolute;top:-6px;left:{{ meterPct }};width:30px;height:30px;margin-left:-15px;border-radius:50%;background:var(--zk-text);border:4px solid var(--zk-bg);box-sizing:border-box;box-shadow:0 0 18px rgb(var(--zk-white-rgb) / .6);transition:left var(--zk-dur-meter) var(--zk-ease-spring)"></div></div>
+<div style="margin-top:var(--zk-space-10);display:flex;justify-content:space-between;font:var(--zk-type-tab);color:var(--zk-text-muted)"><span>Cold</span><span>Warm</span><span>Sweaty</span><span>On fire</span></div>
+</div>
+<div style="background:var(--zk-surface);border-radius:var(--zk-radius-2xl);padding:var(--zk-space-16)">
+<div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font:var(--zk-type-h4);font-size:var(--zk-fs-18)">Still in the running</span><span style="font:var(--zk-type-mono-sm);color:var(--zk-mint)">{{ aliveN }} / 142</span></div>
+<div style="margin-top:var(--zk-space-12);display:flex;flex-direction:column;gap:var(--zk-space-8)">
+<sc-for list="{{ alive }}" as="p" hint-placeholder-count="4"><div style="display:flex;align-items:center;gap:var(--zk-space-10);padding:var(--zk-space-8) var(--zk-space-10);border-radius:var(--zk-radius-lg);background:{{ p.bg }}"><span style="width:28px;height:28px;border-radius:50%;background:{{ p.c }};display:flex;align-items:center;justify-content:center;font:var(--zk-type-label);color:var(--zk-bg)">{{ p.i }}</span><span style="flex:1;font:var(--zk-type-body-strong);font-weight:var(--zk-fw-semibold)">{{ p.name }}</span><span style="font:var(--zk-type-h4);color:{{ p.sc }}">{{ p.call }}</span></div></sc-for>
+</div>
+</div>
+<div role="button" onClick="{{ simGoal }}" style="height:46px;border-radius:var(--zk-radius-lg);border:1.5px dashed rgb(var(--zk-mint-rgb) / .5);color:var(--zk-mint);display:flex;align-items:center;justify-content:center;gap:var(--zk-space-8);font:var(--zk-type-body-strong);cursor:pointer"><dc-import name="ZK Icon" icon="ball" size="{{ 16 }}" hint-size="16px,16px"></dc-import>{{ simLabel }}</div>
+</div>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const PEOPLE = [
+  { name: 'You', i: 'YOU', call: '2–1', c: 'var(--zk-gold)', you: true },
+  { name: '@goalhanger', i: 'G', call: '2–1', c: 'var(--zk-sky)' },
+  { name: '@m0nk', i: 'M', call: '1–1', c: 'var(--zk-pink)' },
+  { name: '@kaboom', i: 'K', call: '3–1', c: 'var(--zk-mint)' }
+];
+class Component extends DCLogic {
+  state = { lh: 1, minute: 67 };
+  renderVals() {
+    const s = this.state, scored = s.lh === 2;
+    return {
+      lh: s.lh, minute: s.minute, scored, liveLabel: `Live · ${s.minute}’`,
+      minPct: `${Math.round(s.minute / 90 * 100)}%`, hColor: scored ? 'var(--zk-mint)' : 'var(--zk-text)',
+      meterPct: scored ? '94%' : '68%', meterN: scored ? 94 : 68,
+      meterLabel: scored ? 'You’re calling it!' : 'One BAR goal away', meterC: scored ? 'var(--zk-mint)' : 'var(--zk-pink)',
+      aliveN: scored ? 9 : 23,
+      alive: PEOPLE.map(p => ({ ...p, i: p.you ? '★' : p.i, bg: p.you ? 'var(--zk-gold-tint)' : 'var(--zk-surface-raised)', sc: p.call === `${s.lh}–1` ? 'var(--zk-mint)' : 'var(--zk-text)' })),
+      simGoal: () => this.setState(scored ? { lh: 1, minute: 67 } : { lh: 2, minute: 78 }),
+      simLabel: scored ? 'Reset match' : 'Simulate BAR goal'
+    };
+  }
+}
+</script>
+</body>
+</html>

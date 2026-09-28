@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc><helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<div role="img" aria-label="{{ code }}" style="width:{{ s }}px;height:{{ s }}px;border-radius:50%;background:{{ bg }};color:{{ ink }};display:flex;align-items:center;justify-content:center;font:var(--zk-fw-black) {{ fs }}px/1 var(--zk-font-display);border:{{ bw }}px solid var(--zk-text);box-shadow:0 {{ d }}px 0 rgb(var(--zk-black-rgb) / .4);box-sizing:border-box;flex:none">{{ code }}</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:100,&quot;height&quot;:100},&quot;code&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;BAR&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;color&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;var(--zk-team-bar)&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;ink&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#FFFFFF&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;size&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:40,&quot;min&quot;:24,&quot;max&quot;:140,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props, s = p.size ?? 40, r = (x, m = 1) => Math.max(m, Math.round(x));
+    return { code: p.code ?? 'BAR', bg: p.color ?? 'var(--zk-purple)', ink: p.ink ?? 'var(--zk-text)', s, fs: r(s * 0.27), bw: r(s * 0.05, 2), d: r(s * 0.07, 2) };
+  }
+}
+</script>
+</body>
+</html>

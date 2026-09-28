@@ -1,0 +1,72 @@
+Design a mobile app called ZECKED. Tagline: "Hide it. Crack it. Get Zecked."
+"Zeck" is our verb: to crack a stash and win the ZEC ("I just zecked a $20 stash", "your stash got ZECKED 🔓", "Zeck it before kickoff").
+
+WHAT IT IS
+ZECKED is a free-to-play social game built on Zcash (the private cryptocurrency, $ZEC). People hide small amounts of ZEC (a "stash") behind a challenge and share it on X and Telegram. The first person to beat the challenge wins the ZEC, and it lands in their private wallet. There are two stash types:
+1. RIDDLE STASH: the hider writes a riddle. The first person to type the right answer cracks the stash.
+2. PREDICTION STASH: the hider picks a real football match (e.g. Barcelona vs Chelsea). Players predict the exact score or the winner. Predictions lock at kickoff, the result comes in automatically from a live sports feed, and at the final whistle the stash goes to the FIRST person who called it right.
+Players never pay to play. The hider puts up the prize. Winners stay anonymous, because Zcash payments are private.
+
+WHO IT'S FOR
+Crypto-curious people on their phones, arriving from a link on X or Telegram, plus existing Zcash fans and big holders ("whales") who post big stashes for hype. Many players have never owned crypto, so winning is how they get their first ZEC.
+
+VIBE
+Gamey, colorful and joyful, like Duolingo's gamification, Clash Royale's chests and tiers, and a modern sports app's live match cards, mixed with a slick crypto feel. Big rounded cards, chunky type, glossy 3D-ish badges, stickers, confetti. It must feel like a GAME, not a bank or a casino. No casino imagery (no chips, slot machines or dice), and no betting words ("bet", "odds", "wager"). Use "crack", "call it", "predict", "hide", "stash", "vault".
+
+VISUAL SYSTEM
+- Dark, rich base: background #0E0B1F, cards #1A1533, raised cards #251E47
+- Zcash Gold #F4B728 for money, primary buttons and wins
+- Accents: Electric Purple #7C5CFF, Hot Pink #FF4D9A, Mint #2EE6A6 (LIVE and success), Sky Blue #3DB8FF, Red #FF5A5A (wrong answer)
+- Text white #FFFFFF, muted #A9A3C9
+- Type: Bricolage Grotesque ExtraBold for headings and big numbers, Inter for body, Space Mono for countdowns and amounts
+- Corners 20–28px, soft glows on key elements, generous spacing, big thumb-friendly buttons
+- Always show amounts in ZEC and USD, e.g. "0.02 ZEC · ~$30"
+- Our own logo: a bold, chunky "ZECKED" wordmark where the Z doubles as a vault-door handle / lightning bolt, plus a matching app icon. Do NOT use the official Zcash logo; write "Built on Zcash" in small text instead. Do NOT use real football club crests. Show teams as colored circle badges with 3-letter codes (BAR, CHE).
+
+SCREENS (iPhone size, 390×844). Lay them out left to right in flow order, with realistic sample data:
+1. WELCOME: an animated vault door opening, the ZECKED logo, "Hide it. Crack it. Get Zecked.", a "Start zecking" button, "Free to play · No sign-up needed".
+2. HOME FEED:
+   - a live ticker at the top ("🔓 @nightowl just ZECKED 0.02 ZEC · 12s ago")
+   - filter chips: All · Riddles · Predictions · Ending soon · Biggest
+   - a scrolling feed of stash cards. Riddle cards show a lock icon, a riddle teaser, the prize, a time-left bar and "38 tries". Prediction cards show a match strip (BAR vs CHE), a kickoff countdown and "142 calls".
+   - every card has a pulsing green "LIVE · verified" badge
+   - a floating "+ Hide a stash" button
+   - a bottom tab bar: Home · Leaderboard · Hide · Profile
+3. RIDDLE STASH DETAIL:
+   - the riddle in big type, the hider's handle and tier emblem, the prize
+   - the "LIVE · verified by viewing key" badge with a small "what's this?" tooltip ("Anyone can check this stash is real. Nobody can touch it.")
+   - an answer input with a big gold "ZECK IT" button, "3 tries left (resets in 10 min)", a locked bonus hint ("Hint unlocks in 42:10"), a share button
+4. WRONG ANSWER STATE: the input shakes and turns red, "Nope! 2 tries left", with a cheeky line.
+5. PREDICTION STASH DETAIL:
+   - a big match card (BAR vs CHE, competition, kickoff time) with a countdown ("Calls lock in 01:22:45")
+   - a score picker with big +/– steppers and a "LOCK MY CALL" button
+   - rules chips: "First correct call wins", "Results from live sports feed"
+   - "142 calls sealed 🔒. Revealed at kickoff."
+6. LIVE MATCH STATE: a live score updating (67'), "Your call: 2–1", a tension meter showing how close you are, the players still in the running.
+7. WIN MOMENT: a full-screen confetti explosion, the vault door bursting open, "YOU ZECKED IT!", "+0.02 ZEC (~$30)" counting up, "Badge unlocked: First Crack", an XP bar filling toward the next tier.
+8. CLAIM:
+   - "Where should we send it?" with two options: "I have a Zcash wallet" (paste address) or "Get a wallet in 60 seconds" (a friendly 3-step card)
+   - then "It's in your private wallet. Nobody can see who won 🥷"
+   - also show the HIDER's notification: "Your stash just got ZECKED 🔓 by a mystery cracker"
+   - a "Leave a victory message" field and a share button
+9. HIDE A STASH (show all 4 steps as separate screens):
+   - Step 1: pick Riddle or Prediction (two big illustrated cards)
+   - Step 2 (riddle): the riddle, the answer, a "riddle strength" meter (Weak → Uncrackable)
+   - Step 2 (prediction): pick a match from a list, pick the type (exact score / winner)
+   - Step 3: amount slider with presets ($5 / $10 / $20 / custom) and an expiry
+   - Step 4: "Fund it" with a QR code to scan from your wallet, then "Your stash is LIVE 🎉" with a share card preview
+10. PROFILE:
+    - avatar, handle, current tier (e.g. "Safecracker") with a big emblem and an XP bar
+    - stats: Cracked 14 · Hidden 6 · Uncrackable 2 · Oracle 1 · Streak 5🔥
+    - a badge grid (unlocked are glossy, locked are grey silhouettes)
+11. LEADERBOARD: tabs for Crackers / Hiders / Oracles and Today / Week / All-time, a podium for the top 3 with crowns, a ranked list, and "You · #47" pinned at the bottom.
+12. SHARE CARD (1200×675, for X): "Crack my riddle and ZECK 0.02 ZEC 🔐 First one wins.", the riddle, the ZECKED logo, a short link (zecked.com/s/k7Q2). Also a prediction version: "First to call BAR vs CHE exactly ZECKS $20 ⚽".
+
+GAME SYSTEM (show it on a separate style-guide artboard)
+- Tiers, each with a glossy emblem: Rookie (bronze key) → Cracker (silver lockpick) → Safecracker (gold dial) → Vault Breaker (purple vault) → Oracle (crystal ball) → Z-Legend (golden crowned Z)
+- Badges: First Crack · Uncrackable · Oracle (3 exact scores) · Speed Demon (cracked in under 60s) · Whale Hider (over $100 stash) · Shielded (first private wallet) · Birthday OG (played during Zcash's 10th birthday week)
+- Components: stash card (riddle and prediction versions), LIVE badge, buttons (primary gold, secondary purple, ghost), chips, input (default / focus / error), countdown, toast, tier emblem, badge
+- Motion notes: confetti on wins, vault spin on opening, shake on wrong, pulsing LIVE dot, ticker marquee, number count-ups
+
+COPY TONE
+Short, playful, a little cheeky, never cringe. Examples: "Nope! Try again 😏", "Uncrackable. Respect.", "You just got ZECKED.", "Zeck it before kickoff.", "The vault is open."

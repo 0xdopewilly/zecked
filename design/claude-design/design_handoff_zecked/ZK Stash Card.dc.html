@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><link rel="stylesheet" href="zk-tokens.css"></helmet>
+<article onClick="{{ click }}" onMouseEnter="{{ enter }}" onMouseLeave="{{ leave }}" onMouseDown="{{ down }}" onMouseUp="{{ up }}" style="flex:none;position:relative;background:var(--zk-surface);border-radius:var(--zk-radius-2xl);padding:var(--zk-space-16);display:flex;flex-direction:column;gap:var(--zk-space-14);border:1.5px solid {{ bd }};box-shadow:{{ sh }};transform:{{ tf }};cursor:pointer;transition:transform var(--zk-dur-fast) var(--zk-ease-out),box-shadow var(--zk-dur-fast) var(--zk-ease-out)">
+<sc-if value="{{ whale }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:var(--zk-space-14);top:-12px;transform:rotate(5deg);display:flex;align-items:center;gap:var(--zk-space-4);padding:var(--zk-space-4) var(--zk-space-10);border-radius:var(--zk-radius-md);background:var(--zk-pink);color:var(--zk-text);font:var(--zk-type-btn-sm);font-size:var(--zk-fs-12);box-shadow:var(--zk-shadow-sticker-pink);z-index:2"><dc-import name="ZK Icon" icon="whale" size="{{ 14 }}" stroke="{{ 2.4 }}" hint-size="14px,14px"></dc-import>WHALE STASH</div></sc-if>
+<div style="display:flex;flex-direction:column;gap:var(--zk-space-14);opacity:{{ op }}">
+<div style="display:flex;align-items:center;gap:var(--zk-space-10)">
+<div style="width:var(--zk-tile-md);height:var(--zk-tile-md);border-radius:var(--zk-radius-md);background:{{ tileBg }};box-shadow:var(--zk-inset-gloss),0 3px 0 {{ tileEdge }};display:flex;align-items:center;justify-content:center;color:var(--zk-text);flex:none"><dc-import name="ZK Icon" icon="{{ tileIcon }}" size="{{ 22 }}" stroke="{{ 2.4 }}" hint-size="22px,22px"></dc-import></div>
+<div style="flex:1;min-width:0"><div style="font:var(--zk-type-label);letter-spacing:var(--zk-track-label);color:{{ kindC }}">{{ kind }}</div><div style="font:var(--zk-type-small);font-weight:var(--zk-fw-medium);color:var(--zk-text-muted);margin-top:var(--zk-space-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sub }}</div></div>
+<dc-import name="ZK Live Badge" state="{{ liveState }}" label="{{ liveLabel }}" hint-size="110px,22px"></dc-import>
+</div>
+<sc-if value="{{ isRiddle }}" hint-placeholder-val="{{ true }}"><div style="font:var(--zk-type-h3);text-wrap:pretty">“{{ teaser }}”</div></sc-if>
+<sc-if value="{{ isPred }}" hint-placeholder-val="{{ false }}"><div style="background:var(--zk-surface-raised);border-radius:var(--zk-radius-xl);padding:var(--zk-space-12) var(--zk-space-14);display:grid;grid-template-columns:1fr auto 1fr;align-items:center">
+<div style="display:flex;align-items:center;gap:var(--zk-space-8);min-width:0"><dc-import name="ZK Team Badge" code="{{ home }}" color="{{ homeColor }}" ink="{{ homeInk }}" size="{{ 40 }}" hint-size="40px,40px"></dc-import><span style="font:var(--zk-type-small);font-weight:var(--zk-fw-bold)">{{ homeName }}</span></div>
+<div style="text-align:center;padding:0 var(--zk-space-6);display:flex;flex-direction:column;align-items:center;gap:var(--zk-space-2)"><span style="font:var(--zk-fw-black) var(--zk-fs-10)/1 var(--zk-font-body);letter-spacing:var(--zk-track-badge);color:var(--zk-text-muted)">KICKOFF IN</span><dc-import name="ZK Countdown" seconds="{{ kickoffSeconds }}" text="{{ kickoffText }}" size="md" hint-size="80px,20px"></dc-import></div>
+<div style="display:flex;align-items:center;gap:var(--zk-space-8);justify-content:flex-end;min-width:0"><span style="font:var(--zk-type-small);font-weight:var(--zk-fw-bold)">{{ awayName }}</span><dc-import name="ZK Team Badge" code="{{ away }}" color="{{ awayColor }}" ink="{{ awayInk }}" size="{{ 40 }}" hint-size="40px,40px"></dc-import></div>
+</div></sc-if>
+<div style="display:flex;justify-content:space-between;align-items:flex-end">
+<div><div style="font:var(--zk-type-mono-lg);color:var(--zk-gold)">{{ zec }} ZEC</div><div style="font:var(--zk-type-caption);color:var(--zk-text-muted);margin-top:var(--zk-space-2)">~${{ usd }}</div></div>
+<dc-import name="ZK Chip" variant="info" icon="{{ metaIcon }}" label="{{ meta }}" hint-size="100px,32px"></dc-import>
+</div>
+<sc-if value="{{ isRiddle }}" hint-placeholder-val="{{ true }}"><div><div style="height:8px;border-radius:var(--zk-radius-xs);background:var(--zk-surface-raised);overflow:hidden"><div style="height:100%;width:{{ pctW }};background:{{ bar }};border-radius:var(--zk-radius-xs)"></div></div><div style="margin-top:var(--zk-space-8);display:flex;align-items:center;gap:var(--zk-space-4);font:var(--zk-type-mono-xs);color:{{ leftC }}"><dc-import name="ZK Icon" icon="hourglass" size="{{ 12 }}" stroke="{{ 2.4 }}" hint-size="12px,12px"></dc-import>{{ timeLeft }}</div></div></sc-if>
+</div>
+<sc-if value="{{ cracked }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;right:var(--zk-space-18);top:50%;margin-top:-26px;transform:rotate(-8deg);display:flex;align-items:center;gap:var(--zk-space-8);padding:var(--zk-space-8) var(--zk-space-14);border-radius:var(--zk-radius-md);border:3px solid var(--zk-pink);background:rgb(var(--zk-bg-rgb) / .85);color:var(--zk-pink);font:var(--zk-type-btn-md)"><dc-import name="ZK Icon" icon="unlock" size="{{ 20 }}" stroke="{{ 2.6 }}" hint-size="20px,20px"></dc-import>ZECKED</div></sc-if>
+</article>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:380,&quot;height&quot;:300},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;riddle&quot;,&quot;prediction&quot;],&quot;default&quot;:&quot;riddle&quot;,&quot;tsType&quot;:&quot;'riddle'|'prediction'&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;state&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;default&quot;,&quot;hover&quot;,&quot;pressed&quot;,&quot;cracked&quot;],&quot;default&quot;:&quot;default&quot;,&quot;tsType&quot;:&quot;'default'|'hover'|'pressed'|'cracked'&quot;},&quot;hider&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;@satoshisghost&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;teaser&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;I have cities, but no houses. Forests, but no trees…&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;zec&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;0.02&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;usd&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;30&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;tries&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;38 tries&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;pct&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:64,&quot;min&quot;:0,&quot;max&quot;:100,&quot;tsType&quot;:&quot;number&quot;},&quot;timeLeft&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;5h 12m left&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;urgent&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;whale&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;mode&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Exact score&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;comp&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Champions League&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;home&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;BAR&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;away&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;CHE&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;homeName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Barcelona&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;awayName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Chelsea&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;homeColor&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;var(--zk-team-bar)&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;awayColor&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;var(--zk-team-che)&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;homeInk&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;},&quot;awayInk&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;},&quot;kickoffSeconds&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4965,&quot;tsType&quot;:&quot;number&quot;},&quot;kickoffText&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:null,&quot;tsType&quot;:&quot;string&quot;},&quot;calls&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;142 calls&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;onClick&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;(e) =&gt; void&quot;}}">
+class Component extends DCLogic {
+  state = { hover: false, press: false };
+  renderVals() {
+    const p = this.props, riddle = (p.type ?? 'riddle') === 'riddle';
+    const forced = p.state && p.state !== 'default' ? p.state : null;
+    const st = forced || (this.state.press ? 'pressed' : this.state.hover ? 'hover' : 'default');
+    const cracked = st === 'cracked', urgent = !!p.urgent;
+    const pct = Math.max(0, Math.min(100, p.pct ?? 64));
+    return {
+      isRiddle: riddle, isPred: !riddle, whale: !!p.whale, cracked,
+      kind: riddle ? 'RIDDLE' : 'PREDICTION', kindC: riddle ? 'var(--zk-pink)' : 'var(--zk-sky)',
+      sub: riddle ? `by ${p.hider ?? '@satoshisghost'}` : `${p.mode ?? 'Exact score'} · ${p.comp ?? 'Champions League'}`,
+      tileBg: riddle ? 'var(--zk-grad-tile-purple)' : 'var(--zk-grad-tile-sky)', tileEdge: riddle ? 'var(--zk-purple-shade)' : 'var(--zk-sky-shade)', tileIcon: riddle ? 'lock' : 'ball',
+      liveState: cracked ? 'ended' : 'live', liveLabel: cracked ? 'Cracked' : riddle ? 'Live · verified' : 'Live',
+      teaser: p.teaser ?? 'I have cities, but no houses. Forests, but no trees…',
+      home: p.home ?? 'BAR', away: p.away ?? 'CHE', homeName: p.homeName ?? 'Barcelona', awayName: p.awayName ?? 'Chelsea',
+      homeColor: p.homeColor ?? 'var(--zk-team-bar)', awayColor: p.awayColor ?? 'var(--zk-team-che)',
+      homeInk: p.homeInk ?? 'var(--zk-text)', awayInk: p.awayInk ?? 'var(--zk-text)',
+      kickoffSeconds: p.kickoffSeconds ?? 4965, kickoffText: p.kickoffText,
+      zec: p.zec ?? '0.02', usd: p.usd ?? '30',
+      meta: riddle ? (p.tries ?? '38 tries') : (p.calls ?? '142 calls'), metaIcon: riddle ? 'key' : 'orb',
+      pctW: pct + '%', bar: urgent ? 'var(--zk-grad-progress-urgent)' : pct > 80 ? 'var(--zk-grad-progress-calm)' : 'var(--zk-grad-progress)',
+      timeLeft: p.timeLeft ?? '5h 12m left', leftC: urgent ? 'var(--zk-red)' : 'var(--zk-text-muted)',
+      op: cracked ? '.45' : '1',
+      bd: p.whale ? 'rgb(var(--zk-pink-rgb) / .55)' : st === 'hover' ? 'rgb(var(--zk-purple-rgb) / .5)' : 'var(--zk-border)',
+      sh: st === 'hover' ? 'var(--zk-shadow-card-hover)' : st === 'pressed' || cracked ? 'none' : 'var(--zk-shadow-card)',
+      tf: st === 'hover' ? 'translateY(-2px)' : st === 'pressed' ? 'translateY(2px) scale(.99)' : 'none',
+      click: e => p.onClick && !cracked && p.onClick(e),
+      enter: () => this.setState({ hover: true }), leave: () => this.setState({ hover: false, press: false }),
+      down: () => this.setState({ press: true }), up: () => this.setState({ press: false })
+    };
+  }
+}
+</script>
+</body>
+</html>
