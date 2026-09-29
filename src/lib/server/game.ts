@@ -208,6 +208,7 @@ export async function createStash(
 
 // ---------- funding ----------
 async function goLive(s: StashRecord) {
+  invalidateFeed();
   const now = Date.now();
   s.status = "live";
   s.liveAt = new Date(now).toISOString();
@@ -365,6 +366,7 @@ async function resolvePrediction(s: StashRecord, m: Match) {
 
 // ---------- winning ----------
 async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinPayload> {
+  invalidateFeed();
   const now = Date.now();
   s.status = "zecked";
   s.winnerId = pid;
@@ -692,27 +694,52 @@ async function runners(s: StashRecord, m: Match, viewerId: string): Promise<Runn
 }
 
 // ---------- feed ----------
-export async function feed(filter: string, viewerId?: string): Promise<PublicStash[]> {
+// Short shared cache: the feed is the hottest endpoint (every player polls it), so compute it at most
+// every few seconds per server instance and personalise per viewer afterwards.
+const FEED_TTL_MS = 4000;
+let feedCache: { at: number; rows: { s: StashRecord; pub: PublicStash }[] } | null = null;
+let feedInflight: Promise<{ s: StashRecord; pub: PublicStash }[]> | null = null;
+
+async function loadFeedRows() {
   const ids = (await kv().zrevrange(K.index, 0, 149)).map((r) => r.member);
   const recs = (await Promise.all(ids.map(getStash))).filter(Boolean) as StashRecord[];
-  for (const s of recs) await tickStash(s);
+  await Promise.all(recs.map((s) => tickStash(s)));
   const fresh = (await Promise.all(recs.map((s) => getStash(s.id)))).filter(Boolean) as StashRecord[];
   const rate = await zecUsd();
   const dayAgo = Date.now() - 86400_000;
-  let list = fresh.filter(
+  const visible = fresh.filter(
     (s) =>
       s.status === "live" ||
       s.status === "locked" ||
       ((s.status === "zecked" || s.status === "refunded") && Date.parse(s.zeckedAt || s.refund?.at || s.createdAt) > dayAgo)
   );
-  if (filter === "riddles") list = list.filter((s) => s.type === "riddle");
-  if (filter === "predictions") list = list.filter((s) => s.type === "prediction");
+  return Promise.all(visible.map(async (s) => ({ s, pub: await toPublic(s, undefined, rate) })));
+}
+
+export function invalidateFeed() {
+  feedCache = null;
+}
+
+export async function feed(filter: string, viewerId?: string): Promise<PublicStash[]> {
+  if (!feedCache || Date.now() - feedCache.at > FEED_TTL_MS) {
+    feedInflight ??= loadFeedRows().finally(() => (feedInflight = null));
+    const rows = await feedInflight;
+    feedCache = { at: Date.now(), rows };
+  }
+  let list = feedCache.rows;
+  if (filter === "riddles") list = list.filter((r) => r.s.type === "riddle");
+  if (filter === "predictions") list = list.filter((r) => r.s.type === "prediction");
   const active = (s: StashRecord) => s.status === "live" || s.status === "locked";
   const endsAt = (s: StashRecord) => Date.parse(s.type === "prediction" ? s.prediction!.kickoff : s.expiresAt);
-  if (filter === "ending") list = list.filter(active).sort((a, b) => endsAt(a) - endsAt(b));
-  else if (filter === "biggest") list = list.filter(active).sort((a, b) => b.amountZat - a.amountZat);
-  else list.sort((a, b) => Number(active(b)) - Number(active(a)) || b.createdAt.localeCompare(a.createdAt));
-  return Promise.all(list.slice(0, 60).map((s) => toPublic(s, viewerId, rate)));
+  if (filter === "ending") list = list.filter((r) => active(r.s)).sort((a, b) => endsAt(a.s) - endsAt(b.s));
+  else if (filter === "biggest") list = list.filter((r) => active(r.s)).sort((a, b) => b.s.amountZat - a.s.amountZat);
+  else list = [...list].sort((a, b) => Number(active(b.s)) - Number(active(a.s)) || b.s.createdAt.localeCompare(a.s.createdAt));
+  // Personalise the shared rows for this viewer.
+  return list.slice(0, 60).map(({ s, pub }) => ({
+    ...pub,
+    isMine: !!viewerId && s.hiderId === viewerId,
+    result: pub.result ? { ...pub.result, winnerIsYou: !!viewerId && s.winnerId === viewerId } : undefined,
+  }));
 }
 
 export async function myStashes(pid: string): Promise<PublicStash[]> {
