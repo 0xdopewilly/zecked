@@ -32,6 +32,7 @@ export interface Team {
   name: string; // "Barcelona"
   color: string; // hex, e.g. "#A50044"
   ink: string; // text color on that fill
+  logo?: string; // official crest / flag image (ESPN CDN); demo teams have none
 }
 
 export type MatchStatus = "scheduled" | "live" | "final" | "postponed" | "canceled";

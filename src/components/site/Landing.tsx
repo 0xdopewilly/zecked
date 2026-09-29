@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import { CursorGlow, Grain, ScrollProgressBar } from "./fx";
 import { Nav } from "./Nav";
 import { Faq } from "./sections/Faq";
@@ -13,6 +14,16 @@ import { TickerStrip } from "./sections/TickerStrip";
 import { WhyZcash } from "./sections/WhyZcash";
 
 export function Landing({ appUrl, demoUrl, stats, ticker }: { appUrl: string; demoUrl: string; stats: SiteStats | null; ticker: string[] }) {
+  // Pause CSS animations in sections that are far off screen (cheap frames while scrolling).
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll<HTMLElement>("main.zks > section, main.zks > div, main.zks > footer"));
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => (e.isIntersecting ? e.target.removeAttribute("data-zks-off") : e.target.setAttribute("data-zks-off", ""))),
+      { rootMargin: "250px 0px" }
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
   return (
     <main className="zks">
       <ScrollProgressBar />

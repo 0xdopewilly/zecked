@@ -41,10 +41,10 @@ export function Nav({ appUrl }: { appUrl: string }) {
           gap: 12,
           padding: "10px 10px 10px 18px",
           borderRadius: 22,
-          background: solid ? "rgb(14 11 31 / .72)" : "rgb(14 11 31 / .25)",
+          background: solid ? "rgb(14 11 31 / .9)" : "rgb(14 11 31 / .35)",
           border: `1px solid ${solid ? "var(--zk-border)" : "transparent"}`,
-          backdropFilter: "blur(18px) saturate(140%)",
-          WebkitBackdropFilter: "blur(18px) saturate(140%)",
+          backdropFilter: "var(--zks-nav-blur)",
+          WebkitBackdropFilter: "var(--zks-nav-blur)",
           boxShadow: solid ? "0 20px 50px rgba(0,0,0,.35)" : "none",
           transition: "background .3s, border-color .3s, box-shadow .3s",
         }}

@@ -309,7 +309,7 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-8)", minWidth: 0 }}>
-              <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} size={40} />
+              <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} logo={match.home.logo} name={match.home.name} size={40} />
               <span style={TEAM_NAME_STYLE} title={match.home.name}>
                 {teamLabel(match.home)}
               </span>
@@ -338,7 +338,7 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
               <span style={TEAM_NAME_STYLE} title={match.away.name}>
                 {teamLabel(match.away)}
               </span>
-              <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} size={40} />
+              <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} logo={match.away.logo} name={match.away.name} size={40} />
             </div>
           </div>
         )}

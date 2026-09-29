@@ -36,18 +36,38 @@ function luminance(h: string) {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-export function teamFrom(abbr: string, name: string, color?: string | null, alt?: string | null): Team {
+/**
+ * Official crest (clubs) or flag (national teams) from ESPN's logo CDN, resized to 128px by ESPN's
+ * image combiner (~6KB instead of ~25KB). Anything that isn't an ESPN team logo is dropped.
+ */
+export function crestUrl(raw?: string | null): string | undefined {
+  const m = raw?.match(/^https:\/\/a\.espncdn\.com(\/i\/teamlogos\/(?:soccer|countries)\/500\/[\w.-]+\.png)$/);
+  return m ? `https://a.espncdn.com/combiner/i?img=${m[1]}&w=128&h=128` : undefined;
+}
+
+export function teamFrom(abbr: string, name: string, color?: string | null, alt?: string | null, logo?: string | null): Team {
   let c = hex(color) || hex(alt) || "#7C5CFF";
   // Near-white primaries read poorly on dark cards; prefer the alternate if it has colour.
   if (luminance(c) > 0.85 && hex(alt) && luminance(hex(alt)!) < 0.85) c = hex(alt)!;
   const ink = luminance(c) > 0.45 ? "#0E0B1F" : "#FFFFFF";
-  return { code: (abbr || name.slice(0, 3)).toUpperCase().slice(0, 3), name, color: c, ink };
+  const crest = crestUrl(logo);
+  return { code: (abbr || name.slice(0, 3)).toUpperCase().slice(0, 3), name, color: c, ink, ...(crest ? { logo: crest } : {}) };
 }
 
 type EspnCompetitor = {
   homeAway: "home" | "away";
   score?: string;
-  team: { id?: string; abbreviation: string; displayName: string; shortDisplayName?: string; color?: string; alternateColor?: string };
+  team: {
+    id?: string;
+    abbreviation: string;
+    displayName: string;
+    shortDisplayName?: string;
+    color?: string;
+    alternateColor?: string;
+    /** Scoreboard responses carry `logo`; match summaries carry `logos[]` (light first, then dark). */
+    logo?: string;
+    logos?: { href?: string }[];
+  };
 };
 type EspnEvent = {
   id: string;
@@ -66,6 +86,10 @@ function mapStatus(s: EspnEvent["status"]): MatchStatus {
   if (s.type.state === "post" || s.type.completed) return "final";
   if (s.type.state === "in") return "live";
   return "scheduled";
+}
+
+function espnTeam(t: EspnCompetitor["team"]): Team {
+  return teamFrom(t.abbreviation, t.shortDisplayName || t.displayName, t.color, t.alternateColor, t.logo || t.logos?.[0]?.href);
 }
 
 function fromEspn(e: EspnEvent, league: string): Match {
@@ -87,8 +111,8 @@ function fromEspn(e: EspnEvent, league: string): Match {
     kickoff: new Date(e.date).toISOString(),
     status,
     minute: status === "live" ? e.status.displayClock : undefined,
-    home: teamFrom(home.team.abbreviation, home.team.shortDisplayName || home.team.displayName, home.team.color, home.team.alternateColor),
-    away: teamFrom(away.team.abbreviation, away.team.shortDisplayName || away.team.displayName, away.team.color, away.team.alternateColor),
+    home: espnTeam(home.team),
+    away: espnTeam(away.team),
     homeScore: status === "scheduled" ? undefined : Number(home.score ?? 0),
     awayScore: status === "scheduled" ? undefined : Number(away.score ?? 0),
     events,

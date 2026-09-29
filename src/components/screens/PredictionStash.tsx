@@ -137,7 +137,7 @@ function DemoChip() {
 function TeamCol({ team, size }: { team: Team; size: number }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-6)", minWidth: 0 }}>
-      <TeamBadge code={team.code} color={team.color} ink={team.ink} size={size} />
+      <TeamBadge code={team.code} color={team.color} ink={team.ink} logo={team.logo} name={team.name} size={size} />
       <span style={{ font: "var(--zk-type-body-strong)", textAlign: "center", overflowWrap: "anywhere" }}>{team.name}</span>
     </div>
   );
@@ -206,7 +206,7 @@ function ScoreCard({
       {top ? <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--zk-space-8)", marginBottom: "var(--zk-space-14)" }}>{top}</div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", alignItems: "center" }}>
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} size={58} />
+          <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} logo={match.home.logo} name={match.home.name} size={58} />
         </div>
         <div
           aria-label={`${match.home.name} ${home}, ${match.away.name} ${away}`}
@@ -217,7 +217,7 @@ function ScoreCard({
           <span aria-hidden style={{ color: fg, transition: "color var(--zk-dur-base) var(--zk-ease-out)" }}>{away}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} size={58} />
+          <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} logo={match.away.logo} name={match.away.name} size={58} />
         </div>
       </div>
       {bar ? (
@@ -392,7 +392,7 @@ function PickCard({ selected, readOnly, label, visual, onClick }: { selected: bo
 function WinnerPicks({ match, pick, setPick, readOnly }: { match: Match; pick: WinnerPick | null; setPick: (p: WinnerPick) => void; readOnly: boolean }) {
   const badge = (t: Team, size: number, style?: CSSProperties) => (
     <div style={style}>
-      <TeamBadge code={t.code} color={t.color} ink={t.ink} size={size} />
+      <TeamBadge code={t.code} color={t.color} ink={t.ink} logo={t.logo} name={t.name} size={size} />
     </div>
   );
   const options: { id: WinnerPick; label: string; visual: ReactNode }[] = [

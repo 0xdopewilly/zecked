@@ -27,7 +27,7 @@ export function Reveal({
   y = 36,
   x = 0,
   scale = 1,
-  blur = true,
+  blur: _blur = false, // kept for API compatibility; blur animations are too expensive
   once = true,
   amount = 0.25,
   style,
@@ -48,8 +48,8 @@ export function Reveal({
     <motion.div
       className={className}
       style={style}
-      initial={{ opacity: 0, y, x, scale, filter: blur ? "blur(10px)" : "blur(0px)" }}
-      whileInView={{ opacity: 1, y: 0, x: 0, scale: 1, filter: "blur(0px)" }}
+      initial={{ opacity: 0, y, x, scale }}
+      whileInView={{ opacity: 1, y: 0, x: 0, scale: 1 }}
       viewport={{ once, amount }}
       transition={{ duration: 0.9, delay, ease: EASE_OUT }}
     >
@@ -181,7 +181,7 @@ export function Tilt({
         }}
       >
         {children}
-        {glare && <motion.div aria-hidden style={{ position: "absolute", inset: 0, borderRadius: radius, background: bg, pointerEvents: "none", mixBlendMode: "screen" }} />}
+        {glare && <motion.div aria-hidden style={{ position: "absolute", inset: 0, borderRadius: radius, background: bg, pointerEvents: "none" }} />}
       </motion.div>
     </div>
   );
@@ -203,11 +203,14 @@ export function Parallax({ children, speed = 0.25, x = 0, rotate = 0, style }: {
 
 /** Gentle infinite bob (+ optional tilt). */
 export function Float({ children, amplitude = 10, duration = 4.5, delay = 0, rotate = 0, style }: { children: ReactNode; amplitude?: number; duration?: number; delay?: number; rotate?: number; style?: CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const onScreen = useInView(ref, { margin: "120px" });
   return (
     <motion.div
+      ref={ref}
       style={{ display: "inline-block", ...style }}
-      animate={{ y: [0, -amplitude, 0], rotate: [rotate, rotate + 2.5, rotate] }}
-      transition={{ duration, delay, repeat: Infinity, ease: "easeInOut" }}
+      animate={onScreen ? { y: [0, -amplitude, 0], rotate: [rotate, rotate + 2.5, rotate] } : { y: 0, rotate }}
+      transition={onScreen ? { duration, delay, repeat: Infinity, ease: "easeInOut" } : { duration: 0.3 }}
     >
       {children}
     </motion.div>
@@ -358,10 +361,10 @@ export function CursorGlow() {
         x,
         y,
         borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(124,92,255,.18), rgba(244,183,40,.06) 40%, transparent 70%)",
+        background: "radial-gradient(circle, rgba(124,92,255,.12), rgba(244,183,40,.04) 40%, transparent 70%)",
         pointerEvents: "none",
         zIndex: 1,
-        mixBlendMode: "screen",
+        willChange: "transform",
       }}
     />
   );

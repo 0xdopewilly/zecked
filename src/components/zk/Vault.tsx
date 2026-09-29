@@ -54,10 +54,11 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
             "radial-gradient(circle,var(--zk-vault-core) 0%,var(--zk-gold) 38%,var(--zk-vault-core-lo) 68%,var(--zk-surface-raised) 71%)",
           boxShadow: `0 0 ${glow}px rgb(var(--zk-gold-rgb) / .6),inset 0 0 0 ${rim}px var(--zk-surface-raised)`,
           animation: coreAnim,
+          willChange: m === "loop" ? "opacity" : undefined,
         }}
       />
       {/* Coin stack inside */}
-      <svg viewBox="0 0 100 100" width={s} height={s} style={{ position: "absolute", inset: 0 }}>
+      <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
         <g style={{ stroke: "var(--zk-gold-deep)", strokeWidth: 1.2 }}>
           <ellipse cx="50" cy="66" rx="21" ry="6.5" style={{ fill: "var(--zk-gold-deep)" }} />
           <ellipse cx="50" cy="64" rx="21" ry="6.5" style={{ fill: "var(--zk-gold-light)" }} />
@@ -70,19 +71,28 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
           Z
         </text>
       </svg>
-      {/* Door (hinged on the left) */}
+      {/* Door (hinged on the left). The door, its shadow and the dial are separate layers so the
+          animations only move pixels (GPU) and never re-rasterize the SVG or re-blur a filter. */}
       <div
         style={{
           position: "absolute",
           inset: 0,
           transformOrigin: "0% 50%",
-          willChange: "transform",
+          willChange: m === "loop" ? "transform" : undefined,
           transform: doorTf,
           animation: doorAnim,
-          filter: `drop-shadow(0 ${ds}px ${dsb}px rgb(var(--zk-black-rgb) / .5))`,
         }}
       >
-        <svg viewBox="0 0 100 100" width={s} height={s} style={{ display: "block", overflow: "visible" }}>
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: "0.5%",
+            borderRadius: "50%",
+            boxShadow: `0 ${ds}px ${dsb}px rgb(var(--zk-black-rgb) / .5)`,
+          }}
+        />
+        <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ position: "absolute", inset: 0, display: "block", overflow: "visible" }}>
           <defs>
             <radialGradient id={`${gid}f`} cx="0.35" cy="0.28" r="0.8">
               <stop offset="0" style={{ stopColor: "var(--zk-vault-face-hi)" }} />
@@ -103,17 +113,28 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
             r="29"
             style={{ fill: "none", stroke: "rgb(var(--zk-gold-rgb) / .35)", strokeWidth: 1.5, strokeDasharray: "3 3" }}
           />
-          <g style={{ transformOrigin: "50px 50px", animation: dialAnim }}>
+        </svg>
+        {/* Dial (handles + hub) */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            transformOrigin: "50% 50%",
+            willChange: dialAnim !== "none" ? "transform" : undefined,
+            animation: dialAnim,
+          }}
+        >
+          <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ display: "block", overflow: "visible" }}>
+            <defs>
+              <linearGradient id={`${gid}h`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" style={{ stopColor: "var(--zk-gold-pale)" }} />
+                <stop offset="1" style={{ stopColor: "var(--zk-vault-bolt)" }} />
+              </linearGradient>
+            </defs>
             {HANDLE_ROTATIONS.map((tf, i) => (
-              <rect key={i} x="23" y="47.3" width="54" height="5.4" rx="2.7" transform={tf} fill={`url(#${gid}g)`} />
+              <rect key={i} x="23" y="47.3" width="54" height="5.4" rx="2.7" transform={tf} fill={`url(#${gid}h)`} />
             ))}
-            <circle
-              cx="50"
-              cy="50"
-              r="11.5"
-              fill={`url(#${gid}g)`}
-              style={{ stroke: "var(--zk-gold-deep)", strokeWidth: 1.2 }}
-            />
+            <circle cx="50" cy="50" r="11.5" fill={`url(#${gid}h)`} style={{ stroke: "var(--zk-gold-deep)", strokeWidth: 1.2 }} />
             <text
               x="50"
               y="54.5"
@@ -122,8 +143,8 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
             >
               Z
             </text>
-          </g>
-        </svg>
+          </svg>
+        </div>
       </div>
     </div>
   );

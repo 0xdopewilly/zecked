@@ -1,5 +1,5 @@
 "use client";
-import { motion, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
+import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { useRef } from "react";
 import { Icon, Vault } from "@/components/zk";
 import { EASE_OUT, Float, Magnetic, Sticker, Tilt } from "../fx";
@@ -7,19 +7,26 @@ import { EASE_OUT, Float, Magnetic, Sticker, Tilt } from "../fx";
 const LINES: { text: string; gold?: boolean }[] = [{ text: "Hide it." }, { text: "Crack it." }, { text: "Get Zecked.", gold: true }];
 
 function Blob({ color, size, x, y, delay, dur }: { color: string; size: number; x: string; y: string; delay: number; dur: number }) {
+  // CSS keyframes (compositor-only, pausable when off screen) instead of a JS loop.
   return (
-    <motion.div
+    <div
       aria-hidden
-      style={{ position: "absolute", left: x, top: y, width: size, height: size, borderRadius: "50%", background: color, filter: "blur(70px)", opacity: 0.55 }}
-      animate={{ x: [0, 60, -40, 0], y: [0, -50, 30, 0], scale: [1, 1.15, 0.92, 1] }}
-      transition={{ duration: dur, delay, repeat: Infinity, ease: "easeInOut" }}
+      className="zks-blob"
+      style={{
+        left: x,
+        top: y,
+        width: size * 1.6,
+        height: size * 1.6,
+        background: `radial-gradient(circle at center, ${color} 0%, transparent 62%)`,
+        animationDuration: `${dur}s`,
+        animationDelay: `${-delay}s`,
+      }}
     />
   );
 }
 
 export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: string; network?: string }) {
   const ref = useRef<HTMLElement>(null);
-  const reduce = useReducedMotion();
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
   const p = useSpring(scrollYProgress, { stiffness: 120, damping: 26, mass: 0.4 });
   // Scroll choreography: text lifts and fades, vault spins away, stickers fly outward.
@@ -46,13 +53,7 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
       <div aria-hidden style={{ position: "absolute", inset: 0, background: "radial-gradient(90% 70% at 70% 35%, #2F1F7A 0%, #170F3A 40%, var(--zk-bg) 75%)" }} />
       <Blob color="var(--zk-purple)" size={520} x="55%" y="0%" delay={0} dur={16} />
       <Blob color="var(--zk-pink)" size={380} x="-8%" y="52%" delay={2} dur={19} />
-      <Blob color="var(--zk-gold)" size={300} x="78%" y="58%" delay={4} dur={14} />
-      <motion.div
-        aria-hidden
-        style={{ position: "absolute", left: "72%", top: "44%", width: 1400, height: 1400, marginLeft: -700, marginTop: -700, background: "var(--zk-sunburst-gold)", opacity: 0.22, borderRadius: "50%" }}
-        animate={reduce ? undefined : { rotate: 360 }}
-        transition={{ duration: 90, repeat: Infinity, ease: "linear" }}
-      />
+      <div aria-hidden className="zks-hero-sun" />
       {/* Retro grid floor */}
       <motion.div aria-hidden style={{ position: "absolute", left: "-20%", right: "-20%", bottom: -40, height: "42%", perspective: 600, y: gridY, pointerEvents: "none" }}>
         <div className="zks-gridfloor" />
@@ -94,8 +95,8 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
             <motion.p
               className="zks-lead"
               style={{ marginTop: 26 }}
-              initial={{ opacity: 0, y: 18, filter: "blur(8px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.75, duration: 0.9, ease: EASE_OUT }}
             >
               Hide ZEC behind a riddle or a match call. The first one to crack it keeps it, in a private wallet. Nobody sees who won.
@@ -138,6 +139,7 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
             >
               <Tilt max={14} radius={999}>
                 <div className="zks-vault-wrap">
+                  <div aria-hidden className="zks-vault-glow" />
                   <Vault mode="loop" size={440} />
                 </div>
               </Tilt>
@@ -189,7 +191,7 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
       >
         SCROLL
         <div style={{ width: 26, height: 42, borderRadius: 14, border: "2px solid var(--zk-border-strong)", display: "flex", justifyContent: "center", paddingTop: 7 }}>
-          <motion.div style={{ width: 4, height: 8, borderRadius: 4, background: "var(--zk-gold)" }} animate={{ y: [0, 12, 0], opacity: [1, 0.2, 1] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }} />
+          <div className="zks-cue-dot" />
         </div>
       </motion.div>
 
@@ -197,16 +199,27 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
         .zks-hero-grid { display: grid; grid-template-columns: 1fr; gap: 28px; align-items: center; }
         @media (min-width: 980px) { .zks-hero-grid { grid-template-columns: 1.08fr 1fr; gap: 20px; } }
         @media (max-width: 979px) { .zks-hero-grid > div:first-child { text-align: left; } }
-        .zks-vault-wrap { filter: drop-shadow(0 40px 80px rgba(0,0,0,.55)) drop-shadow(0 0 60px rgb(var(--zk-gold-rgb) / .25)); }
+        .zks-blob { position: absolute; border-radius: 50%; opacity: .5; will-change: transform; animation: zks-blob 16s ease-in-out infinite; pointer-events: none; }
+        @keyframes zks-blob { 0%, 100% { transform: translate3d(0,0,0) scale(1) } 33% { transform: translate3d(60px,-50px,0) scale(1.15) } 66% { transform: translate3d(-40px,30px,0) scale(.92) } }
+        .zks-hero-sun { position: absolute; left: 72%; top: 44%; width: 1000px; height: 1000px; margin: -500px 0 0 -500px; background: var(--zk-sunburst-gold); opacity: .22; border-radius: 50%; will-change: transform; animation: zk-spin 90s linear infinite; pointer-events: none; }
+        .zks-cue-dot { width: 4px; height: 8px; border-radius: 4px; background: var(--zk-gold); animation: zks-cue 1.8s ease-in-out infinite; }
+        @keyframes zks-cue { 0%, 100% { transform: translate3d(0,0,0); opacity: 1 } 50% { transform: translate3d(0,12px,0); opacity: .2 } }
+        @media (prefers-reduced-motion: reduce) { .zks-hero-sun, .zks-cue-dot, .zks-blob { animation: none } }
+        .zks-vault-wrap { position: relative; }
+        .zks-vault-glow { position: absolute; inset: -14%; border-radius: 50%; background: radial-gradient(circle, rgb(var(--zk-gold-rgb) / .28) 0%, rgb(var(--zk-gold-rgb) / .08) 42%, transparent 66%), radial-gradient(circle at 50% 62%, rgba(0,0,0,.5) 0%, transparent 60%); pointer-events: none; }
+        .zks-vault-wrap > svg, .zks-vault-wrap > div:not(.zks-vault-glow) { position: relative; }
         @media (max-width: 560px) { .zks-vault-wrap > * { width: 300px !important; height: 300px !important; } }
         .zks-gridfloor {
-          position: absolute; inset: 0; transform: rotateX(62deg); transform-origin: 50% 100%;
+          position: absolute; inset: 0; transform: rotateX(62deg); transform-origin: 50% 100%; overflow: hidden;
+        }
+        .zks-gridfloor::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, transparent 10%, var(--zk-bg) 85%); }
+        .zks-gridfloor::before {
+          content: ""; position: absolute; left: 0; right: 0; top: -64px; bottom: 0; will-change: transform;
           background-image: linear-gradient(rgb(var(--zk-purple-rgb) / .35) 1.5px, transparent 1.5px), linear-gradient(90deg, rgb(var(--zk-purple-rgb) / .35) 1.5px, transparent 1.5px);
           background-size: 64px 64px; animation: zks-grid 3.2s linear infinite;
-          -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%); mask-image: linear-gradient(to top, #000 10%, transparent 85%);
         }
-        @keyframes zks-grid { from { background-position: 0 0 } to { background-position: 0 64px } }
-        @media (prefers-reduced-motion: reduce) { .zks-gridfloor { animation: none } }
+        @keyframes zks-grid { from { transform: translate3d(0,0,0) } to { transform: translate3d(0,64px,0) } }
+        @media (prefers-reduced-motion: reduce) { .zks-gridfloor::before { animation: none } }
       `}</style>
     </section>
   );

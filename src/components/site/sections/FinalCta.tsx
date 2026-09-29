@@ -17,17 +17,17 @@ const STICKERS = [
 const CSS = `
 ${SPLIT_FIX_CSS}
 .zkfc { position: relative; overflow: hidden; min-height: 100svh; display: grid; place-items: center; padding-block: clamp(120px, 14vw, 180px); isolation: isolate; }
-.zkfc-bg { position: absolute; inset: 0; z-index: -3; background: radial-gradient(70% 60% at 50% 50%, #5A33E8 0%, #2A1470 38%, transparent 76%);
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent); }
-.zkfc-sun { position: absolute; left: 50%; top: 50%; width: 1800px; height: 1800px; margin: -900px 0 0 -900px; z-index: -2; border-radius: 50%;
-  background: var(--zk-sunburst-gold); opacity: .4; animation: zk-spin 90s linear infinite;
-  -webkit-mask-image: radial-gradient(closest-side, #000 25%, transparent); mask-image: radial-gradient(closest-side, #000 25%, transparent); }
+.zkfc-bg { position: absolute; inset: 0; z-index: -3; background: radial-gradient(70% 55% at 50% 50%, #5A33E8 0%, #2A1470 38%, transparent 76%); }
+.zkfc-sun { position: absolute; left: 50%; top: 50%; width: 1100px; height: 1100px; margin: -550px 0 0 -550px; z-index: -2; border-radius: 50%;
+  background: var(--zk-sunburst-gold); opacity: .35; animation: zk-spin 120s linear infinite; will-change: transform; }
+.zkfc-sunfade { position: absolute; left: 50%; top: 50%; width: 1120px; height: 1120px; margin: -560px 0 0 -560px; z-index: -2; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, transparent 28%, rgb(var(--zk-bg-rgb) / .75) 70%, var(--zk-bg) 100%); }
 .zkfc-vaultwrap { position: absolute; left: 50%; top: 50%; z-index: -1; width: 0; height: 0; pointer-events: none; }
 .zkfc-vaultpos { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); opacity: .3; }
 .zkfc-inner::before { content: ""; position: absolute; left: 50%; top: 50%; width: min(1100px, 140vw); height: 120%; transform: translate(-50%, -50%); z-index: -1; pointer-events: none;
   background: radial-gradient(closest-side, rgb(var(--zk-bg-rgb) / .55), transparent); }
 .zkfc-glow { position: absolute; left: 50%; top: 58%; width: min(760px, 90vw); height: 38%; transform: translate(-50%, -50%); z-index: -1; pointer-events: none; border-radius: 50%;
-  background: radial-gradient(closest-side, rgb(var(--zk-gold-rgb) / .28), transparent); filter: blur(10px); }
+  background: radial-gradient(closest-side, rgb(var(--zk-gold-rgb) / .24), transparent 80%); }
 .zkfc-vault { width: min(640px, 125vw) !important; height: min(640px, 125vw) !important; }
 .zkfc-vault svg { width: 100% !important; height: 100% !important; }
 .zkfc-inner { position: relative; z-index: 2; display: grid; justify-items: center; text-align: center; gap: 26px; width: min(1360px, 100% - 32px); margin-inline: auto; }
@@ -72,10 +72,11 @@ export function FinalCta({ appUrl, demoUrl }: { appUrl: string; demoUrl: string 
       <style>{CSS}</style>
       <div className="zkfc-bg" aria-hidden />
       <div className="zkfc-sun" aria-hidden />
+      <div className="zkfc-sunfade" aria-hidden />
       <div className="zkfc-vaultwrap" aria-hidden>
         <motion.div style={reduce ? undefined : { rotate: vaultRotate, scale: vaultScale }}>
           <div className="zkfc-vaultpos">
-            <Vault mode="spin" size={640} className="zkfc-vault" />
+            <Vault mode="spin" size={520} className="zkfc-vault" />
           </div>
         </motion.div>
       </div>

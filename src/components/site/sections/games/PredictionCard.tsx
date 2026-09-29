@@ -6,8 +6,9 @@ import { Button, Countdown, Icon, LiveBadge, TeamBadge } from "@/components/zk";
 import { EASE_OUT } from "@/components/site/fx";
 import { BallTile, CardShell, PitchLines, RuleChips, Springy, WIN_ZEC } from "./parts";
 
-const HOME = { code: "BAR", name: "Barcelona", color: "#A50044", ink: "#fff" };
-const AWAY = { code: "CHE", name: "Chelsea", color: "#034694", ink: "#fff" };
+const CREST = (espnId: number) => `https://a.espncdn.com/combiner/i?img=/i/teamlogos/soccer/500/${espnId}.png&w=128&h=128`;
+const HOME = { code: "BAR", name: "Barcelona", color: "#A50044", ink: "#fff", logo: CREST(83) };
+const AWAY = { code: "CHE", name: "Chelsea", color: "#034694", ink: "#fff", logo: CREST(363) };
 /** Demo kickoff: a fixed start so server and client render the same first frame, then it ticks. */
 const KICKOFF_IN_SECONDS = 2 * 3600 + 14 * 60 + 37;
 
@@ -159,14 +160,14 @@ export function PredictionCard({ appUrl, reduce }: { appUrl: string; reduce: boo
 
         <div className="zkg-teams">
           <div className="zkg-team">
-            <TeamBadge code={HOME.code} color={HOME.color} ink={HOME.ink} size={60} />
+            <TeamBadge code={HOME.code} color={HOME.color} ink={HOME.ink} logo={HOME.logo} name={HOME.name} size={60} />
             <span>{HOME.name}</span>
           </div>
           <span className="zkg-vs" aria-hidden>
             VS
           </span>
           <div className="zkg-team">
-            <TeamBadge code={AWAY.code} color={AWAY.color} ink={AWAY.ink} size={60} />
+            <TeamBadge code={AWAY.code} color={AWAY.color} ink={AWAY.ink} logo={AWAY.logo} name={AWAY.name} size={60} />
             <span>{AWAY.name}</span>
           </div>
         </div>

@@ -918,9 +918,9 @@ function MatchRow({ m, selected, onSelect }: { m: Match; selected: boolean; onSe
       }}
     >
       <div style={{ display: "flex", flex: "none" }}>
-        <TeamBadge code={m.home.code} color={m.home.color} ink={m.home.ink} size={38} />
+        <TeamBadge code={m.home.code} color={m.home.color} ink={m.home.ink} logo={m.home.logo} name={m.home.name} size={38} />
         <div style={{ marginLeft: -8 }}>
-          <TeamBadge code={m.away.code} color={m.away.color} ink={m.away.ink} size={38} />
+          <TeamBadge code={m.away.code} color={m.away.color} ink={m.away.ink} logo={m.away.logo} name={m.away.name} size={38} />
         </div>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2031,9 +2031,9 @@ function ShareCardPreview({
           {match ? (
             <div style={{ position: "absolute", left: 16, bottom: 12, right: 120, display: "flex", alignItems: "center", gap: "var(--zk-space-8)" }}>
               <div style={{ display: "flex", flex: "none" }}>
-                <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} size={26} />
+                <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} logo={match.home.logo} name={match.home.name} size={26} />
                 <div style={{ marginLeft: -6 }}>
-                  <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} size={26} />
+                  <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} logo={match.away.logo} name={match.away.name} size={26} />
                 </div>
               </div>
               <span
