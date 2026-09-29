@@ -1,0 +1,12 @@
+# wallet data, seed and keys: never commit
+.data/
+# local secrets
+.env
+.env.*
+!.env.example
+# deps and build output
+node_modules/
+dist/
+# engine binaries (built locally, large)
+bin/
+*.log

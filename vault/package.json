@@ -1,0 +1,19 @@
+{
+  "name": "zecked-vault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZECKED vault: Zcash TESTNET hot wallet service (zingo-cli engine)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -6,7 +6,7 @@
 //  - "mainnet"  Same vault protocol, real ZEC. Not enabled until the security review is done.
 //
 // Funding attribution: every stash gets a ZIP-321 request whose memo is "ZK:<stashId>".
-import { sha256 } from "@/lib/server/util";
+import { HttpError, sha256 } from "@/lib/server/util";
 
 export type Network = "sim" | "testnet" | "mainnet";
 
@@ -72,8 +72,14 @@ class VaultEngine implements ZcashEngine {
       signal: AbortSignal.timeout(15_000),
       cache: "no-store",
     });
-    const j = (await r.json().catch(() => ({}))) as T & { error?: string };
-    if (!r.ok) throw new Error(j.error || `Vault error ${r.status}`);
+    const j = (await r.json().catch(() => ({}))) as T & { error?: string; message?: string };
+    if (!r.ok) {
+      console.error("vault error", path, r.status, j.error, j.message);
+      if (r.status === 402 || j.error === "insufficient_funds")
+        throw new HttpError(503, "The prize vault is being topped up. Your win is safe. Try claiming again in a few minutes.");
+      if (r.status === 400) throw new HttpError(400, j.message || "The vault rejected that request");
+      throw new HttpError(502, "Couldn't reach the Zcash vault. Your win is safe. Try again shortly.");
+    }
     return j;
   }
   async requestFunding(stashId: string, amountZat: number) {

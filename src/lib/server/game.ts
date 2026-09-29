@@ -247,7 +247,7 @@ export async function checkFunding(s: StashRecord): Promise<{ fundedZat: number 
 }
 
 export async function simulateFund(s: StashRecord, viewer: PlayerRecord) {
-  if (networkName() !== "sim") throw new HttpError(400, "Simulated payments only work in test mode");
+  if (networkName() !== "sim") throw new HttpError(400, "Simulated payments only work in sim mode. Send real testnet ZEC with the QR");
   if (s.hiderId !== viewer.id) throw new HttpError(403, "Only the hider can fund this stash");
   if (s.status !== "awaiting_funding") return;
   s.simFundedZat = s.funding.amountZat;

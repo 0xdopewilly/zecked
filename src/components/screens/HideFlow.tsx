@@ -2325,7 +2325,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
           qrSrc={qrSrc}
           qrFailed={!!uri && qrFailedFor === uri}
           fundedZat={fundedZat}
-          testMode={!!(config?.testMode ?? s.stash.testMode)}
+          testMode={config ? config.network === "sim" : false}
           checking={checking}
           simulating={simulating}
           refund={refund}
