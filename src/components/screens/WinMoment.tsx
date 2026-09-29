@@ -1,16 +1,18 @@
 "use client";
 // Screen 07 · Win moment. Full-screen overlay over the app column: sunburst, open vault, confetti,
-// "YOU ZECKED IT!", ZEC/USD count-up, unlocked badges, the tier XP bar filling, and "Claim my ZEC".
+// "YOU ZECKED IT!", ZEC/USD count-up, unlocked badges, the tier XP bar filling, and the CTA:
+// signed-in winners see "Added to your ZECKED wallet"; guests are asked to sign up to keep it.
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BadgeId, WinPayload } from "@/lib/types";
 import { ZAT } from "@/lib/types";
-import { Badge, Button, Confetti, CountUp, Emblem, Vault } from "@/components/zk";
+import { Badge, Button, Confetti, CountUp, Emblem, Icon, Vault } from "@/components/zk";
 import { BADGE_META } from "@/components/zk/Badge";
 import { TIER_LABEL } from "@/components/zk/Emblem";
 
 export interface WinMomentProps {
   win: WinPayload;
-  onClaim: () => void;
+  /** @deprecated Kept so older callers still compile. The CTAs now link to /wallet or /signin directly. */
+  onClaim?: () => void;
 }
 
 /** Celebratory lines for the "Badge unlocked" card (falls back to the badge's unlock rule). */
@@ -25,7 +27,7 @@ const card: CSSProperties = {
   borderRadius: "var(--zk-radius-2xl)",
 };
 
-export function WinMoment({ win, onClaim }: WinMomentProps) {
+export function WinMoment({ win }: WinMomentProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [filled, setFilled] = useState(false);
   // Only ever mounted on the client (after a win), so reading window up front is safe.
@@ -67,6 +69,7 @@ export function WinMoment({ win, onClaim }: WinMomentProps) {
   const pct = (x: number) => (end && end > start ? Math.min(100, Math.max(0, ((x - start) / (end - start)) * 100)) : 100);
   const fromPct = pct(oldXp);
   const toPct = pct(newXp);
+  const signUpHref = `/signin?next=${encodeURIComponent(`/s/${win.stashId}`)}&reason=win`;
 
   return (
     <div
@@ -141,7 +144,8 @@ export function WinMoment({ win, onClaim }: WinMomentProps) {
             display: "flex",
             flexDirection: "column",
             gap: "var(--zk-space-12)",
-            padding: `${338 + shift}px var(--zk-screen-pad) calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18))`,
+            // No bottom padding here: the sticky CTA block below carries the safe-area inset itself.
+            padding: `${338 + shift}px var(--zk-screen-pad) 0`,
           }}
         >
           <div role="status" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-8)", textAlign: "center" }}>
@@ -247,16 +251,61 @@ export function WinMoment({ win, onClaim }: WinMomentProps) {
             </div>
           </div>
 
-          {/* Sticky so it stays reachable on short screens; safe-area inset keeps it off the home indicator. */}
+          {/* Sticky so it stays reachable on short screens; safe-area inset keeps it off the home indicator.
+              The fade keeps the pill, ghost button and caption readable over cards scrolling underneath. */}
           <div
             style={{
               marginTop: "auto",
-              paddingTop: "var(--zk-space-8)",
+              marginLeft: "calc(-1 * var(--zk-screen-pad))",
+              marginRight: "calc(-1 * var(--zk-screen-pad))",
+              padding: "var(--zk-space-20) var(--zk-screen-pad) calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18))",
               position: "sticky",
-              bottom: "calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18))",
+              bottom: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "var(--zk-space-10)",
+              background: "linear-gradient(180deg, transparent, rgb(var(--zk-bg-rgb) / .92) var(--zk-space-24))",
             }}
           >
-            <Button label="Claim my ZEC" iconRight="arrowRight" variant="primary" size="lg" onClick={onClaim} />
+            {win.credited ? (
+              <>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "var(--zk-space-6)",
+                    padding: "var(--zk-space-8) var(--zk-space-14)",
+                    borderRadius: "var(--zk-radius-pill)",
+                    background: "var(--zk-mint-tint)",
+                    border: "1px solid rgb(var(--zk-mint-rgb) / .4)",
+                    color: "var(--zk-mint)",
+                    font: "var(--zk-type-body-strong)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <Icon icon="check" size={16} stroke={3} />
+                  Added to your ZECKED wallet
+                </span>
+                <Button label="View my wallet" icon="wallet" variant="primary" size="lg" href="/wallet" />
+                <Button label="Keep playing" variant="ghost" size="md" href="/feed" />
+              </>
+            ) : (
+              <>
+                {/* md type size: the long label must fit a 360px phone on the big lg button. */}
+                <Button
+                  label="Sign up to keep your ZEC"
+                  iconRight="arrowRight"
+                  variant="primary"
+                  size="lg"
+                  href={signUpHref}
+                  style={{ font: "var(--zk-type-btn-md)" }}
+                />
+                <span style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-medium)", color: "var(--zk-text-muted)", textAlign: "center" }}>
+                  Guests can play. Winners sign up to keep it.
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>

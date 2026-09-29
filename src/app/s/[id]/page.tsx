@@ -1,6 +1,7 @@
 "use client";
 // Stash route: loads the stash and shows the riddle or prediction screen. A correct answer / call
-// opens the Win moment overlay; an earlier unclaimed win shows a gold "claim" banner.
+// opens the Win moment overlay. A win you made earlier shows a gold banner: signed in → "It's in your
+// wallet" (/wallet); guest → "Sign up to keep it" (/signin?reason=win, back here after).
 import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -13,16 +14,6 @@ import WinMoment from "@/components/screens/WinMoment";
 
 type StashData = Awaited<ReturnType<typeof api.stash>>;
 type Load = { kind: "loading" } | { kind: "ready"; data: StashData } | { kind: "missing" } | { kind: "error"; message: string };
-
-const claimKey = (id: string) => `zk_claim_${id}`;
-
-function saveWin(id: string, win: WinPayload) {
-  try {
-    sessionStorage.setItem(claimKey(id), JSON.stringify(win));
-  } catch {
-    /* private mode: the claim page falls back to the API */
-  }
-}
 
 const center: CSSProperties = {
   flex: 1,
@@ -51,13 +42,13 @@ export default function StashPage() {
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [win, setWin] = useState<WinPayload | null>(null);
+  const [signedIn, setSignedIn] = useState(false);
 
   const fetchStash = useCallback(async () => {
     if (!id) return;
     setLoad({ kind: "loading" });
     try {
       const data = await api.stash(id);
-      if (data.win) saveWin(id, data.win);
       setLoad({ kind: "ready", data });
     } catch (e) {
       const message = e instanceof Error ? e.message : "";
@@ -74,15 +65,21 @@ export default function StashPage() {
     if (id) router.prefetch(`/s/${id}/claim`);
   }, [id, router]);
 
-  const handleWin = useCallback(
-    (w: WinPayload) => {
-      saveWin(id, w);
-      setWin(w);
-    },
-    [id],
-  );
+  // Only used for the banner copy; a failure just means "treat as guest".
+  useEffect(() => {
+    let alive = true;
+    api
+      .me()
+      .then(({ player }) => {
+        if (alive) setSignedIn(!!player.account?.signedIn);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-  const goClaim = useCallback(() => router.push(`/s/${id}/claim`), [id, router]);
+  const handleWin = useCallback((w: WinPayload) => setWin(w), []);
 
   if (load.kind === "loading") {
     return (
@@ -119,12 +116,25 @@ export default function StashPage() {
   }
 
   const { data } = load;
+  // `win` comes back only while a win is unsettled (a guest's); once credited, the server settles it
+  // and only `result.winnerIsYou` remains.
+  const wonHere = data.stash.status === "zecked" && !!data.stash.result?.winnerIsYou;
+  const banner: "wallet" | "signup" | null = win
+    ? null
+    : data.win
+      ? data.win.credited
+        ? "wallet"
+        : "signup"
+      : wonHere && signedIn
+        ? "wallet"
+        : null;
+  const bannerHref = banner === "wallet" ? "/wallet" : `/signin?next=${encodeURIComponent(`/s/${id}`)}&reason=win`;
 
   return (
     <>
-      {data.win && !win && (
+      {banner && (
         <Link
-          href={`/s/${id}/claim`}
+          href={bannerHref}
           style={{
             display: "flex",
             alignItems: "center",
@@ -137,8 +147,8 @@ export default function StashPage() {
             boxShadow: "0 4px 0 var(--zk-gold-deep)",
           }}
         >
-          <Icon icon="unlock" size={18} stroke={2.4} />
-          <span style={{ flex: 1 }}>You zecked this! Claim your ZEC</span>
+          <Icon icon={banner === "wallet" ? "wallet" : "unlock"} size={18} stroke={2.4} />
+          <span style={{ flex: 1 }}>{banner === "wallet" ? "You zecked this! It’s in your wallet" : "You zecked this! Sign up to keep it"}</span>
           <Icon icon="arrowRight" size={18} stroke={2.4} />
         </Link>
       )}
@@ -147,7 +157,7 @@ export default function StashPage() {
       ) : (
         <PredictionStash key={data.stash.id} initial={data} onWin={handleWin} />
       )}
-      {win && <WinMoment win={win} onClaim={goClaim} />}
+      {win && <WinMoment win={win} />}
     </>
   );
 }

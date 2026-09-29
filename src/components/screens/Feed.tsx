@@ -1,9 +1,9 @@
 "use client";
-// Screen 02 · Home feed. Header (wordmark, streak, prizes to claim), live ticker, filter chips,
+// Screen 02 · Home feed. Header (wordmark, streak, wallet balance), live ticker, filter chips,
 // stash list, floating "Hide a stash" button and the tab bar.
 import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { api, type FeedFilter } from "@/lib/api";
+import { api, formatZec, type FeedFilter } from "@/lib/api";
 import type { Player, PublicStash, TickerItem } from "@/lib/types";
 import { Button, Chip, Icon, Logo, StashCard, TabBar } from "@/components/zk";
 
@@ -144,35 +144,43 @@ const headerChip: CSSProperties = {
   gap: "var(--zk-space-6)",
 };
 
+/** Wallet balance for the header chip: "0.05", "0.0503", "12.3", "1.2k" (rounded down, never up). */
+function compactZec(zat: number): string {
+  const zec = Math.max(0, zat) / 100_000_000;
+  if (zec >= 1000) return `${Math.floor(zec / 100) / 10}k`;
+  if (zec >= 100) return String(Math.floor(zec));
+  if (zec >= 10) return (Math.floor(zec * 10) / 10).toFixed(1);
+  return formatZec(Math.floor(Math.max(0, zat) / 10_000) * 10_000, 4);
+}
+
 function Header({ player }: { player: Player | null }) {
   const streak = player?.stats.streak ?? 0;
-  const pending = player?.pendingClaims ?? [];
-  const balance = (
-    <>
-      <span
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: "50%",
-          background: "var(--zk-grad-tile-gold)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--zk-gold-ink)",
-        }}
-      >
-        <Logo variant="mark" size={14} stroke="var(--zk-gold-ink)" />
-      </span>
-      {pending.length}
-    </>
+  const coin = (
+    <span
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: "50%",
+        background: "var(--zk-grad-tile-gold)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--zk-gold-ink)",
+      }}
+    >
+      <Logo variant="mark" size={14} stroke="var(--zk-gold-ink)" />
+    </span>
   );
   const balanceStyle: CSSProperties = {
     ...headerChip,
     padding: "0 var(--zk-space-12) 0 var(--zk-space-4)",
     font: "var(--zk-type-mono-sm)",
     color: "var(--zk-gold)",
+    textDecoration: "none",
   };
-  const balanceLabel = `${pending.length} ${pending.length === 1 ? "prize" : "prizes"} to claim`;
+  // Signed in: your ZECKED wallet balance → /wallet. Guests: "Sign up" (they have no wallet yet).
+  const signedIn = player?.account?.signedIn;
+  const balanceZat = player?.balanceZat ?? 0;
 
   return (
     <div style={{ padding: "0 var(--zk-screen-pad)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -185,14 +193,25 @@ function Header({ player }: { player: Player | null }) {
           <Icon icon="flame" size={16} filled stroke={1.5} color="var(--zk-pink)" />
           {streak}
         </div>
-        {pending.length > 0 ? (
-          <Link href={`/s/${pending[0]}`} aria-label={balanceLabel} style={balanceStyle}>
-            {balance}
+        {!player ? (
+          <div aria-busy="true" aria-label="Loading your ZEC" style={balanceStyle}>
+            {coin}
+            <span style={{ color: "var(--zk-text-faint)" }}>…</span>
+          </div>
+        ) : signedIn ? (
+          <Link href="/wallet" aria-label={`Your ZEC: ${formatZec(balanceZat, 8)} ZEC. Open your wallet`} style={balanceStyle}>
+            {coin}
+            {compactZec(balanceZat)}
           </Link>
         ) : (
-          <div aria-label={balanceLabel} style={balanceStyle}>
-            {balance}
-          </div>
+          <Link
+            href="/signin?next=/feed"
+            aria-label="Sign up to get your own ZECKED wallet"
+            style={{ ...balanceStyle, font: "var(--zk-type-btn-sm)" }}
+          >
+            {coin}
+            Sign up
+          </Link>
         )}
       </div>
     </div>

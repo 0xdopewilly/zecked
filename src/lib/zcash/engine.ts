@@ -20,11 +20,23 @@ export interface FundingStatus {
   txids: string[];
 }
 
+export interface DepositStatus {
+  receivedZat: number;
+  confirmedZat: number;
+  pendingZat: number;
+  txids: string[];
+}
+
 export interface ZcashEngine {
   network: Network;
   requestFunding(stashId: string, amountZat: number): Promise<FundingRequest>;
   checkFunding(stashId: string, simFundedZat?: number): Promise<FundingStatus>;
-  payout(stashId: string, to: string, amountZat: number, memo: string): Promise<{ txid: string }>;
+  /** Payout, idempotent per stashId (or per opts.key when given, e.g. withdrawals). */
+  payout(stashId: string, to: string, amountZat: number, memo: string, opts?: { key?: string }): Promise<{ txid: string }>;
+  /** A stable personal deposit address for a player (in-app wallet). */
+  userAddress(userId: string): Promise<FundingRequest>;
+  /** Funds received at a player's deposit address. */
+  deposits(userId: string): Promise<DepositStatus>;
 }
 
 export const NETWORK_FEE_ZAT = 30_000; // 0.0003 ZEC buffer the hider adds on top of the prize
@@ -57,8 +69,15 @@ class SimEngine implements ZcashEngine {
   async checkFunding(_stashId: string, simFundedZat = 0) {
     return { fundedZat: simFundedZat, confirmations: simFundedZat ? 1 : 0, txids: simFundedZat ? [sha256(`fund:${_stashId}`)] : [] };
   }
-  async payout(stashId: string, to: string, amountZat: number) {
-    return { txid: sha256(`payout:${stashId}:${to}:${amountZat}:${Date.now()}`) };
+  async payout(stashId: string, to: string, amountZat: number, _memo: string, opts?: { key?: string }) {
+    return { txid: sha256(`payout:${opts?.key || stashId}:${to}:${amountZat}:${Date.now()}`) };
+  }
+  async userAddress(userId: string) {
+    const address = fakeUa(`zecked-sim-user:${userId}`);
+    return { address, uri: `zcash:${address}?memo=${b64url(`ZU:${userId}`)}&message=${encodeURIComponent("Add ZEC to ZECKED")}` };
+  }
+  async deposits() {
+    return { receivedZat: 0, confirmedZat: 0, pendingZat: 0, txids: [] };
   }
 }
 
@@ -88,8 +107,17 @@ class VaultEngine implements ZcashEngine {
   async checkFunding(stashId: string) {
     return this.call<FundingStatus>(`/funding/${encodeURIComponent(stashId)}`);
   }
-  async payout(stashId: string, to: string, amountZat: number, memo: string) {
-    return this.call<{ txid: string }>("/payout", { method: "POST", body: JSON.stringify({ stashId, to, amountZat, memo }) });
+  async payout(stashId: string, to: string, amountZat: number, memo: string, opts?: { key?: string }) {
+    return this.call<{ txid: string }>("/payout", { method: "POST", body: JSON.stringify({ stashId, to, amountZat, memo, key: opts?.key }) });
+  }
+  async userAddress(userId: string) {
+    return this.call<FundingRequest>("/user-address", { method: "POST", body: JSON.stringify({ userId }) });
+  }
+  async deposits(userId: string) {
+    const d = await this.call<Partial<DepositStatus>>(`/deposits/${encodeURIComponent(userId)}`);
+    const received = Number(d.receivedZat || 0);
+    const confirmed = Number(d.confirmedZat ?? received);
+    return { receivedZat: received, confirmedZat: confirmed, pendingZat: Number(d.pendingZat ?? Math.max(0, received - confirmed)), txids: d.txids || [] };
   }
 }
 

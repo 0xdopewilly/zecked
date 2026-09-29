@@ -1,26 +1,19 @@
 "use client";
-// Claim route: the win payload comes from sessionStorage (set by the Win moment), or else from the API.
-import { useEffect, useState, type CSSProperties } from "react";
+// Claim route. The state comes from api.me() (signed in?) and api.stash(id):
+//  · signed-in winner → the win is already in their ZECKED wallet (the server credits it and stops sending `win`)
+//  · guest winner     → `win` is present with credited:false → sign up to keep it
+//  · anyone else      → "Nothing to claim here"
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import type { WinPayload } from "@/lib/types";
 import { Button, Icon } from "@/components/zk";
-import Claim from "@/components/screens/Claim";
+import Claim, { type ClaimProps } from "@/components/screens/Claim";
 
-type Load = { kind: "loading" } | { kind: "none" } | { kind: "ready"; win: WinPayload };
-
-function readStored(id: string): WinPayload | null {
-  try {
-    const raw = sessionStorage.getItem(`zk_claim_${id}`);
-    if (!raw) return null;
-    const w = JSON.parse(raw) as WinPayload;
-    if (!w || typeof w.claimToken !== "string" || !w.claimToken) return null;
-    if (w.stashId && w.stashId !== id) return null;
-    return w;
-  } catch {
-    return null;
-  }
-}
+type Load =
+  | { kind: "loading" }
+  | { kind: "none" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; props: Omit<ClaimProps, "id"> };
 
 const center: CSSProperties = {
   flex: 1,
@@ -37,31 +30,53 @@ export default function ClaimPage() {
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
   const [load, setLoad] = useState<Load>({ kind: "loading" });
 
-  useEffect(() => {
+  const fetchState = useCallback(async (alive: () => boolean) => {
     if (!id) return;
-    let alive = true;
-    const stored = readStored(id);
-    if (stored) {
-      setLoad({ kind: "ready", win: stored });
+    setLoad({ kind: "loading" });
+    const [me, detail] = await Promise.allSettled([api.me(), api.stash(id)]);
+    if (!alive()) return;
+    if (detail.status === "rejected") {
+      const err = detail.reason as { status?: number; message?: string } | undefined;
+      if (err?.status === 404) setLoad({ kind: "none" });
+      else setLoad({ kind: "error", message: err?.message || "Couldn’t load this stash." });
       return;
     }
-    api
-      .stash(id)
-      .then((d) => {
-        if (alive) setLoad(d.win ? { kind: "ready", win: d.win } : { kind: "none" });
-      })
-      .catch(() => {
-        if (alive) setLoad({ kind: "none" });
-      });
+    const { stash, win } = detail.value;
+    const signedIn = me.status === "fulfilled" && !!me.value.player.account?.signedIn;
+    const wonHere = stash.status === "zecked" && !!stash.result?.winnerIsYou;
+
+    let credited: boolean;
+    if (win) credited = win.credited; // unsettled win: credited is false for guests
+    else if (wonHere && signedIn) credited = true; // settled into the ZECKED wallet
+    else {
+      setLoad({ kind: "none" });
+      return;
+    }
+    setLoad({
+      kind: "ready",
+      props: {
+        amountZat: win?.amountZat ?? stash.amountZat,
+        usd: win?.usd ?? stash.usd,
+        credited,
+        testMode: stash.testMode,
+        victoryMessage: stash.result?.victoryMessage,
+      },
+    });
+  }, [id]);
+
+  useEffect(() => {
+    let alive = true;
+    void fetchState(() => alive);
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [fetchState]);
 
-  if (load.kind === "ready") return <Claim id={id} win={load.win} />;
+  if (load.kind === "ready") return <Claim id={id} {...load.props} />;
 
+  const loading = load.kind === "loading";
   return (
-    <main className="zk-screen" style={{ background: "var(--zk-bg)" }} aria-busy={load.kind === "loading"}>
+    <main className="zk-screen" style={{ background: "var(--zk-bg)" }} aria-busy={loading}>
       <div style={center}>
         <div
           style={{
@@ -69,22 +84,37 @@ export default function ClaimPage() {
             height: 72,
             borderRadius: "var(--zk-radius-2xl)",
             background: "var(--zk-surface)",
-            color: load.kind === "loading" ? "var(--zk-gold)" : "var(--zk-text-muted)",
+            color: loading ? "var(--zk-gold)" : "var(--zk-text-muted)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            animation: load.kind === "loading" ? "zk-glow 1.4s ease-in-out infinite" : undefined,
+            animation: loading ? "zk-glow 1.4s ease-in-out infinite" : undefined,
           }}
         >
-          <Icon icon="vault" size={34} stroke={2.2} />
+          <Icon icon={load.kind === "error" ? "signal" : "vault"} size={34} stroke={2.2} />
         </div>
-        {load.kind === "loading" ? (
+        {loading ? (
           <p style={{ margin: 0, font: "var(--zk-type-body-strong)", color: "var(--zk-text-muted)" }}>Loading…</p>
+        ) : load.kind === "error" ? (
+          <>
+            <h1 style={{ margin: 0, font: "var(--zk-type-h2)" }}>Couldn’t load this stash</h1>
+            <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)", maxWidth: 300 }}>{load.message}</p>
+          </>
         ) : (
           <h1 style={{ margin: 0, font: "var(--zk-type-h2)" }}>Nothing to claim here</h1>
         )}
       </div>
-      {load.kind === "none" && <Button label="Back to stashes" variant="primary" size="lg" href="/feed" />}
+      {!loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>
+          {load.kind === "error" && <Button label="Try again" variant="primary" size="lg" onClick={() => void fetchState(() => true)} />}
+          <Button
+            label="Back to stashes"
+            variant={load.kind === "error" ? "ghost" : "primary"}
+            size={load.kind === "error" ? "md" : "lg"}
+            href="/feed"
+          />
+        </div>
+      )}
     </main>
   );
 }

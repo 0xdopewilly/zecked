@@ -7,6 +7,11 @@
  *        └─▶ prediction ─┴─▶ amount ──(api.create)──▶ fund ──(funding detected)──▶ live
  *
  * `?resume=<stashId>` jumps straight to `fund` (awaiting_funding) or `live` (already funded).
+ *
+ * Hiding needs an account: guests get a sign-up gate at step 1 (also for `?resume=`).
+ * `fund` offers one-tap "Pay from my ZECKED wallet" when the balance covers the stash, with the QR
+ * flow folded underneath; otherwise the QR flow is open. Uncracked ZEC goes back to the hider's
+ * ZECKED wallet, so there is no refund address.
  */
 
 import Link from "next/link";
@@ -203,7 +208,7 @@ function matchesQuery(m: Match, q: string): boolean {
   return tokens.every((t) => hay.includes(t));
 }
 
-const looksLikeZcashAddress = (a: string) => /^(u1|utest1|zs1|ztestsapling1|t1|t3|tm|t2)[0-9a-z]{20,}$/i.test(a);
+const errStatus = (e: unknown) => (e as { status?: number } | null)?.status;
 
 /* ───────────────────────── state machine ───────────────────────── */
 
@@ -589,6 +594,101 @@ function TypeStep({ type, onPick, onContinue }: { type: StashType; onPick: (t: S
       </div>
       <div style={CTA}>
         <Button label="Continue" variant="primary" size="lg" onClick={onContinue} />
+      </div>
+    </>
+  );
+}
+
+/* ───────────────────────── step 1 · sign-up gate (guests) ───────────────────────── */
+
+function GateStep({ href }: { href: string }) {
+  return (
+    <>
+      <h1 style={H1}>Sign up to hide a stash.</h1>
+      <div
+        style={{
+          position: "relative",
+          height: 280,
+          flex: "none",
+          borderRadius: "var(--zk-radius-3xl)",
+          overflow: "hidden",
+          background: "radial-gradient(circle at 75% 30%,var(--zk-purple-light) 0%,var(--zk-purple-vivid) 40%,var(--zk-purple-shade) 100%)",
+          boxShadow: "0 8px 0 var(--zk-purple-night), var(--zk-glow-purple)",
+        }}
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            right: -30,
+            top: -30,
+            width: 220,
+            height: 220,
+            borderRadius: "50%",
+            background: "repeating-conic-gradient(rgb(var(--zk-white-rgb) / .1) 0 10deg,transparent 10deg 22deg)",
+            willChange: "transform",
+            animation: "zk-spin 30s linear infinite",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={
+            {
+              position: "absolute",
+              right: 40,
+              top: 30,
+              width: 110,
+              height: 110,
+              borderRadius: "var(--zk-radius-3xl)",
+              background: "var(--zk-grad-tile-gold)",
+              boxShadow: "inset 0 4px 0 rgb(var(--zk-white-rgb) / .5),0 8px 0 var(--zk-gold-deep),var(--zk-glow-gold)",
+              color: "var(--zk-gold-ink)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transform: "rotate(6deg)",
+              animation: "zk-bob 3s ease-in-out infinite",
+              "--zk-tilt": "6deg",
+            } as CSSProperties
+          }
+        >
+          <Icon icon="wallet" size={58} stroke={2.4} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: 20,
+            top: 20,
+            padding: "var(--zk-space-4) var(--zk-space-10)",
+            borderRadius: "var(--zk-radius-sm)",
+            background: "var(--zk-pink)",
+            font: "var(--zk-type-label)",
+            letterSpacing: ".06em",
+            transform: "rotate(-4deg)",
+            boxShadow: "var(--zk-shadow-sticker-pink)",
+          }}
+        >
+          HIDERS NEED A WALLET
+        </div>
+        <div style={{ position: "absolute", left: 20, bottom: 20, right: 20 }}>
+          <div style={{ font: "var(--zk-fw-black) var(--zk-fs-26)/1.1 var(--zk-font-display)" }}>
+            Your stash, your wallet, your rules.
+          </div>
+          <div
+            style={{
+              font: "var(--zk-type-body)",
+              fontWeight: "var(--zk-fw-semibold)" as CSSProperties["fontWeight"],
+              color: "rgb(var(--zk-white-rgb) / .85)",
+              marginTop: "var(--zk-space-6)",
+            }}
+          >
+            Fund it in one tap. If nobody cracks it, the ZEC comes straight back to you.
+          </div>
+        </div>
+      </div>
+      <div style={CTA}>
+        <Button label="Sign up" variant="primary" size="lg" href={href} />
+        <Button label="Just crack stashes for now" variant="ghost" size="md" href="/feed" />
       </div>
     </>
   );
@@ -1434,6 +1534,34 @@ function AmountStep({
 
 /* ───────────────────────── step 4a · fund ───────────────────────── */
 
+function RefundNote() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "var(--zk-space-10)",
+        alignItems: "flex-start",
+        padding: "var(--zk-space-12) var(--zk-space-14)",
+        borderRadius: "var(--zk-radius-lg)",
+        background: "var(--zk-surface)",
+        font: "var(--zk-type-small)",
+        fontWeight: "var(--zk-fw-medium)" as CSSProperties["fontWeight"],
+        color: "var(--zk-text-muted)",
+      }}
+    >
+      <span style={{ color: "var(--zk-purple-light)", display: "flex", flex: "none" }}>
+        <Icon icon="shield" size={18} />
+      </span>
+      <span>If nobody cracks it, the ZEC goes back to your ZECKED wallet.</span>
+    </div>
+  );
+}
+
+/**
+ * Two ways to fund:
+ *  - enough in the ZECKED wallet → one-tap "Pay from my ZECKED wallet", the QR flow folded underneath;
+ *  - balance too low (or unknown) → the QR flow, open, with "Your balance" + an "Add ZEC" link.
+ */
 function FundStep({
   stash,
   qrSrc,
@@ -1442,8 +1570,10 @@ function FundStep({
   testMode,
   checking,
   simulating,
-  refund,
-  setRefund,
+  walletBalance,
+  walletLoading,
+  paying,
+  onPayFromBalance,
   onCopyAddress,
   onSent,
   onSimulate,
@@ -1457,21 +1587,30 @@ function FundStep({
   testMode: boolean;
   checking: boolean;
   simulating: boolean;
-  refund: string;
-  setRefund: (v: string) => void;
+  /** ZECKED wallet balance, or null when there is no wallet info. */
+  walletBalance: number | null;
+  walletLoading: boolean;
+  paying: boolean;
+  onPayFromBalance: () => void;
   onCopyAddress: () => void;
   onSent: () => void;
   onSimulate: () => void;
   onGoLive: () => void;
   onStartOver: () => void;
 }) {
+  const [qrOpen, setQrOpen] = useState(false);
   const funding = stash.funding;
   const paid = isFunded(stash);
   const dead = isDead(stash);
   const amountZat = funding?.amountZat ?? stash.amountZat;
   const partial = !paid && fundedZat > 0 && fundedZat < amountZat;
-  const refundTrim = refund.trim();
-  const refundState = !refundTrim ? undefined : looksLikeZcashAddress(refundTrim) ? "success" : "error";
+  // The server charges the stash amount (`stash.amountZat`) from the balance.
+  const chargeZat = stash.amountZat;
+  const open = !paid && !dead;
+  const canPay = open && walletBalance != null && walletBalance >= chargeZat;
+  // While the balance loads, assume the one-tap path (fold the QR) so the screen doesn't jump.
+  const payPath = open && (walletLoading || canPay);
+  const showQr = !payPath || qrOpen;
 
   const statusText = paid
     ? "ZEC detected!"
@@ -1481,18 +1620,8 @@ function FundStep({
         ? `Got ${formatZec(fundedZat, 8)} ZEC so far. Send the remaining ${formatZec(amountZat - fundedZat, 8)} ZEC.`
         : "Waiting for your ZEC… usually under a minute.";
 
-  return (
+  const qrBlock = (
     <>
-      <h1 style={H1}>Fund it.</h1>
-      <p style={{ margin: "calc(var(--zk-space-4) * -1) 0 0", font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
-        Scan from any Zcash wallet and send exactly
-      </p>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-10)", flexWrap: "wrap" }}>
-        <span style={{ font: "var(--zk-type-mono-lg)", fontSize: "var(--zk-fs-26)", color: "var(--zk-gold)" }}>
-          {formatZec(amountZat, 8)} ZEC
-        </span>
-        <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(stash.usd)}</span>
-      </div>
       <div
         role="img"
         aria-label="Payment QR code"
@@ -1574,7 +1703,7 @@ function FundStep({
             </span>
             <Button label="Copy" icon="copy" variant="secondary" size="sm" full={false} onClick={onCopyAddress} />
           </div>
-          {!paid && !dead ? <Button label="Open in wallet" icon="wallet" variant="ghost" size="md" href={funding.uri} /> : null}
+          {open ? <Button label="Open in wallet" icon="wallet" variant="ghost" size="md" href={funding.uri} /> : null}
         </>
       ) : null}
       <div
@@ -1628,20 +1757,175 @@ function FundStep({
         )}
         <div style={{ font: "var(--zk-type-small)" }}>{statusText}</div>
       </div>
-      {!paid && !dead ? (
-        <Input
-          label="Refund address (if nobody cracks it)"
-          size="sm"
-          font="mono"
-          value={refund}
-          onChange={(v) => setRefund(v.trim().slice(0, 256))}
-          placeholder="u1… or zs…"
-          autoComplete="off"
-          spellCheck={false}
-          state={refundState}
-          message={refundState === "error" ? "That doesn’t look like a Zcash address." : undefined}
-        />
+    </>
+  );
+
+  const simulateBtn = testMode ? (
+    <Button
+      label={simulating ? "Simulating…" : "Simulate payment (test mode)"}
+      icon="bolt"
+      variant="secondary"
+      size="md"
+      disabled={simulating}
+      onClick={onSimulate}
+    />
+  ) : null;
+
+  /* ── one-tap path: enough ZEC in the ZECKED wallet ── */
+  if (payPath) {
+    return (
+      <>
+        <h1 style={H1}>Fund it.</h1>
+        <p style={{ margin: "calc(var(--zk-space-4) * -1) 0 0", font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
+          Your stash holds
+        </p>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-10)", flexWrap: "wrap" }}>
+          <span style={{ font: "var(--zk-type-mono-lg)", fontSize: "var(--zk-fs-26)", color: "var(--zk-gold)" }}>
+            {formatZec(chargeZat, 8)} ZEC
+          </span>
+          <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(stash.usd)}</span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)", marginTop: "var(--zk-space-4)" }}>
+          {walletLoading ? (
+            <div
+              aria-busy="true"
+              style={{
+                height: "var(--zk-h-btn-lg)",
+                borderRadius: "var(--zk-radius-2xl)",
+                background: "var(--zk-surface)",
+                animation: "zk-glow 1.6s ease-in-out infinite",
+              }}
+            >
+              <span className="zk-sr-only">Checking your ZECKED wallet…</span>
+            </div>
+          ) : (
+            <Button
+              label={paying ? "Paying…" : "Pay from my ZECKED wallet"}
+              icon="wallet"
+              variant="primary"
+              size="lg"
+              disabled={paying}
+              onClick={onPayFromBalance}
+              style={{ font: "var(--zk-type-btn-md)" }}
+            />
+          )}
+          <div style={{ textAlign: "center", font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
+            {walletLoading || walletBalance == null ? (
+              " "
+            ) : (
+              <>
+                Balance <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-gold)" }}>{formatZec(walletBalance, 4)} ZEC</span>
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-expanded={qrOpen}
+          onClick={() => setQrOpen((o) => !o)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--zk-space-10)",
+            width: "100%",
+            padding: "var(--zk-space-14) var(--zk-space-16)",
+            borderRadius: "var(--zk-radius-lg)",
+            background: "var(--zk-surface)",
+            border: "1px solid var(--zk-border)",
+            color: "var(--zk-text)",
+            font: "var(--zk-type-body-strong)",
+            textAlign: "left",
+            cursor: "pointer",
+            WebkitTapHighlightColor: "transparent",
+          }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
+            <span style={{ color: "var(--zk-text-muted)", display: "flex" }}>
+              <Icon icon="camera" size={18} />
+            </span>
+            Or send from another Zcash wallet
+          </span>
+          <Icon
+            icon="back"
+            size={18}
+            stroke={2.6}
+            style={{
+              color: "var(--zk-text-muted)",
+              transform: qrOpen ? "rotate(90deg)" : "rotate(-90deg)",
+              transition: "transform var(--zk-dur-base) var(--zk-ease-out)",
+            }}
+          />
+        </button>
+        {showQr ? (
+          <>
+            <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
+              Scan from any Zcash wallet and send exactly{" "}
+              <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>
+                {formatZec(amountZat, 8)} ZEC
+              </span>
+            </p>
+            {qrBlock}
+            <Button label={checking ? "Checking…" : "I’ve sent it"} variant="ghost" size="md" disabled={checking} onClick={onSent} />
+          </>
+        ) : null}
+        <RefundNote />
+        {simulateBtn ? <div style={CTA}>{simulateBtn}</div> : null}
+      </>
+    );
+  }
+
+  /* ── QR path: balance too low / unknown, or already paid / expired ── */
+  return (
+    <>
+      <h1 style={H1}>Fund it.</h1>
+      <p style={{ margin: "calc(var(--zk-space-4) * -1) 0 0", font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
+        Scan from any Zcash wallet and send exactly
+      </p>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-10)", flexWrap: "wrap" }}>
+        <span style={{ font: "var(--zk-type-mono-lg)", fontSize: "var(--zk-fs-26)", color: "var(--zk-gold)" }}>
+          {formatZec(amountZat, 8)} ZEC
+        </span>
+        <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(stash.usd)}</span>
+      </div>
+      {open && walletBalance != null ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--zk-space-10)",
+            padding: "var(--zk-space-10) var(--zk-space-14)",
+            borderRadius: "var(--zk-radius-lg)",
+            background: "var(--zk-surface)",
+            font: "var(--zk-type-small)",
+          }}
+        >
+          <span style={{ color: "var(--zk-text-muted)", display: "flex", flex: "none" }}>
+            <Icon icon="wallet" size={18} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0, color: "var(--zk-text-muted)" }}>
+            Your balance:{" "}
+            <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-text)" }}>{formatZec(walletBalance, 4)} ZEC</span>
+          </span>
+          <Link
+            href="/wallet?action=add"
+            style={{
+              flex: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--zk-space-4)",
+              font: "var(--zk-type-body-strong)",
+              color: "var(--zk-gold)",
+              textDecoration: "none",
+            }}
+          >
+            <Icon icon="plus" size={14} stroke={2.8} />
+            Add ZEC
+          </Link>
+        </div>
       ) : null}
+      {qrBlock}
+      {open ? <RefundNote /> : null}
       <div style={CTA}>
         {dead ? (
           <Button label="Hide a new stash" variant="primary" size="lg" onClick={onStartOver} />
@@ -1650,16 +1934,7 @@ function FundStep({
         ) : (
           <>
             <Button label={checking ? "Checking…" : "I’ve sent it"} variant="primary" size="lg" disabled={checking} onClick={onSent} />
-            {testMode ? (
-              <Button
-                label={simulating ? "Simulating…" : "Simulate payment (test mode)"}
-                icon="bolt"
-                variant="secondary"
-                size="md"
-                disabled={simulating}
-                onClick={onSimulate}
-              />
-            ) : null}
+            {simulateBtn}
           </>
         )}
       </div>
@@ -1977,8 +2252,12 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   const [fundedZat, setFundedZat] = useState(0);
   const [checking, setChecking] = useState(false);
   const [simulating, setSimulating] = useState(false);
-  // Refund address: synced to the server (PATCH /stashes/:id/refund-address) once a stash exists.
-  const [refund, setRefund] = useState("");
+  /** Hiding needs an account: "unknown" (couldn't check) lets the flow run and the server decides. */
+  const [auth, setAuth] = useState<"loading" | "in" | "out" | "unknown">("loading");
+  // ZECKED wallet balance for one-tap funding (null = no wallet info). Refunds go back to this wallet.
+  const [walletBal, setWalletBal] = useState<number | null>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
   const [qr, setQr] = useState<{ uri: string; src: string } | null>(null);
   const [qrFailedFor, setQrFailedFor] = useState<string | null>(null);
   const [loc, setLoc] = useState({ origin: "", host: "" });
@@ -2015,9 +2294,30 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     };
   }, []);
 
-  // ?resume=<id>: jump straight to funding (or to the live screen if it is already funded).
+  // Account: guests see the sign-up gate instead of the flow.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .me()
+      .then(({ player }) => {
+        if (!cancelled) setAuth(player.account ? (player.account.signedIn ? "in" : "out") : "unknown");
+      })
+      .catch((e) => {
+        if (!cancelled) setAuth(errStatus(e) === 401 ? "out" : "unknown");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ?resume=<id>: jump straight to funding (or to the live screen if it is already funded). Needs sign-in.
   useEffect(() => {
     if (!resumeId || knownIds.current.has(resumeId)) {
+      setResuming(false);
+      return;
+    }
+    if (auth === "loading") return;
+    if (auth === "out") {
       setResuming(false);
       return;
     }
@@ -2045,7 +2345,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     return () => {
       cancelled = true;
     };
-  }, [resumeId, showToast]);
+  }, [resumeId, showToast, auth]);
 
   // Matches: load when the prediction step opens.
   const loadMatches = useCallback(() => {
@@ -2113,14 +2413,16 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     }
     setCreating(true);
     try {
-      const { stash } = await api.create(refund.trim() ? { ...body, refundAddress: refund.trim() } : body);
+      // No refund address: if nobody cracks it, the ZEC goes back to the hider's ZECKED wallet.
+      const { stash } = await api.create(body);
       knownIds.current.add(stash.id);
       setFundedZat(0);
       dispatch({ t: "created", stash, key });
       // A reload (or coming back from the wallet app) resumes funding.
       window.history.replaceState(null, "", `/hide?resume=${encodeURIComponent(stash.id)}`);
     } catch (e) {
-      showToast(errMsg(e), "error");
+      if (errStatus(e) === 401) setAuth("out");
+      else showToast(errMsg(e), "error");
     } finally {
       setCreating(false);
     }
@@ -2175,17 +2477,57 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   );
 
   const stashId = s.stash?.id;
-  // Save the refund address to the stash (debounced) once it looks valid.
-  useEffect(() => {
-    const a = refund.trim();
-    if (!stashId || !s.stash?.isMine || s.stash.status !== "awaiting_funding") return;
-    if (a && !looksLikeZcashAddress(a)) return;
-    const t = setTimeout(() => {
-      api.setRefundAddress(stashId, a).catch(() => undefined);
-    }, 700);
-    return () => clearTimeout(t);
-  }, [refund, stashId, s.stash?.isMine, s.stash?.status]);
   const awaiting = s.stash?.status === "awaiting_funding";
+
+  // Step 4a: the ZECKED wallet balance decides between one-tap funding and the QR flow.
+  const loadWallet = useCallback(async () => {
+    try {
+      const w = await api.wallet();
+      setWalletBal(w.balanceZat);
+    } catch (e) {
+      if (errStatus(e) === 401) setWalletBal(null);
+      /* otherwise keep the last known balance; the QR flow always works */
+    } finally {
+      setWalletLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (s.step !== "fund" || !stashId || !awaiting || auth === "out") return;
+    void loadWallet();
+    // Back from /wallet (added ZEC in another tab) or from a wallet app: refresh the balance.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadWallet();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [s.step, stashId, awaiting, auth, loadWallet]);
+
+  const payFromBalance = async () => {
+    if (!s.stash || paying) return;
+    const id = s.stash.id;
+    setPaying(true);
+    try {
+      const res = await api.fundFromBalance(id);
+      setWalletBal(res.wallet.balanceZat);
+      dispatch({ t: "update", stash: res.stash });
+      if (isFunded(res.stash)) {
+        dispatch({ t: "next" }); // straight to 4b, no need to wait for "ZEC detected"
+        showToast("Paid from your ZECKED wallet", "success", "wallet");
+      } else {
+        void checkFunding(id, false);
+      }
+    } catch (e) {
+      const status = errStatus(e);
+      if (status === 401) setAuth("out");
+      else if (status === 402) {
+        showToast("Not enough ZEC in your wallet. Add ZEC or send from another wallet.", "error");
+        void loadWallet();
+      } else showToast(errMsg(e), "error");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   useEffect(() => {
     if (s.step !== "fund" || !stashId || !awaiting) return;
     let stopped = false;
@@ -2248,7 +2590,6 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   };
   const startOver = () => {
     window.history.replaceState(null, "", "/hide");
-    setRefund("");
     setFundedZat(0);
     dispatch({ t: "reset" });
   };
@@ -2272,7 +2613,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     </div>
   ) : null;
 
-  if (resuming) {
+  if (resuming || auth === "loading") {
     return (
       <main
         className="zk-screen"
@@ -2280,7 +2621,21 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
         style={{ background: "var(--zk-bg)", alignItems: "center", justifyContent: "center", gap: "var(--zk-space-12)" }}
       >
         <Spinner size={28} />
-        <span style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>Opening your stash…</span>
+        <span style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
+          {resumeId ? "Opening your stash…" : "Opening the vault…"}
+        </span>
+      </main>
+    );
+  }
+
+  // Guests: step 1 shows the sign-up gate instead of the type cards (also for ?resume= links).
+  if (auth === "out") {
+    const next = resumeId ? encodeURIComponent(`/hide?resume=${resumeId}`) : "/hide";
+    return (
+      <main className="zk-screen" style={{ background: STEP_BG.type, gap: "var(--zk-space-12)" }}>
+        <StepHeader n={1} />
+        <GateStep href={`/signin?next=${next}&reason=hide`} />
+        {toastLayer}
       </main>
     );
   }
@@ -2328,8 +2683,10 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
           testMode={config ? config.network === "sim" : false}
           checking={checking}
           simulating={simulating}
-          refund={refund}
-          setRefund={setRefund}
+          walletBalance={walletBal}
+          walletLoading={walletLoading}
+          paying={paying}
+          onPayFromBalance={() => void payFromBalance()}
           onCopyAddress={() => s.stash?.funding && void copy(s.stash.funding.address, "Address copied")}
           onSent={() => s.stash && void checkFunding(s.stash.id, true)}
           onSimulate={() => void simulate()}

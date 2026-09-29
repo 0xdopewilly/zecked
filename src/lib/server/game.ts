@@ -19,6 +19,7 @@ import { NETWORK_FEE_ZAT, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
 import { XP, bumpBoard, ensurePlayer, getPlayer, grant, savePlayer, tierOf, toPublicPlayer, touchPlay, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
+import { balanceOf, credit, debit } from "./wallet";
 import { getMatch } from "./sports";
 import {
   HttpError,
@@ -71,11 +72,12 @@ export interface StashRecord {
   zeckedAt?: string;
   crackSeconds?: number;
   claimToken?: string;
-  claimed?: { txid: string; to: string; at: string; shielded: boolean };
+  claimed?: { txid: string; to: string; at: string; shielded: boolean; internal?: boolean };
+  fundedFrom?: "balance" | "chain";
   victoryMessage?: string;
   finalScore?: string;
   correctCalls?: number;
-  refund?: { txid?: string; at: string; reason: string };
+  refund?: { txid?: string; at: string; reason: string; internal?: boolean };
   seeded?: boolean;
 }
 
@@ -135,6 +137,7 @@ export async function createStash(
   },
   opts: { seeded?: boolean; now?: number } = {}
 ): Promise<StashRecord> {
+  if (!opts.seeded && !hider.email) throw new HttpError(401, "Sign up to hide a stash");
   const usd = Number(body.usd);
   if (!(usd >= MIN_USD && usd <= MAX_USD)) throw new HttpError(400, `Stash size must be between $${MIN_USD} and $${MAX_USD}`);
   const rate = await zecUsd();
@@ -258,7 +261,14 @@ export async function simulateFund(s: StashRecord, viewer: PlayerRecord) {
 // ---------- refunds ----------
 async function refund(s: StashRecord, reason: string) {
   let txid: string | undefined;
-  if (s.refundAddress) {
+  const hider = s.seeded ? null : await getPlayer(s.hiderId);
+  const wasFunded = !!s.liveAt;
+  if (hider?.email && wasFunded) {
+    await credit(hider.id, s.amountZat, "refund", reason === "Nobody cracked it" || reason === "Nobody called it" ? "Uncrackable! Your stash came back" : `Stash returned · ${reason}`, { stashId: s.id });
+    s.refund = { at: nowIso(), reason, internal: true };
+    return;
+  }
+  if (s.refundAddress && wasFunded) {
     try {
       txid = (await zcash().payout(s.id, s.refundAddress, s.amountZat, `ZECKED refund · ${reason}`)).txid;
     } catch (e) {
@@ -376,11 +386,68 @@ async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinP
   if (kind === "prediction" && s.prediction?.kind === "exact" && p.badges.includes("oracle") && p.stats.oracle === 3) badges.push("oracle");
   badges.push(...touchPlay(p));
   p.xp += xp;
-  if (!p.pendingClaims.includes(s.id)) p.pendingClaims.push(s.id);
+  if (kind === "riddle") await kv().set(`celebrated:${s.id}`, 1, { nx: true, exSeconds: 30 * 86400 }); // riddle winners celebrate from the guess response
+  if (p.email) {
+    await creditWin(s, p);
+  } else if (!p.pendingClaims.includes(s.id)) p.pendingClaims.push(s.id);
   await savePlayer(p);
   await bumpBoard("crackers", pid, 1);
   if (!s.seeded) await tick_(`${p.handle} just ZECKED ${zecStr(s.amountZat)} ZEC`, "zecked");
   return winPayload(s, p, xp, badges);
+}
+
+/** Credit a won stash into the winner's ZECKED wallet (once). Mutates s and p; saves s. */
+async function creditWin(s: StashRecord, p: PlayerRecord) {
+  if (s.claimed) return 0;
+  if (!(await kv().set(`credited:${s.id}`, p.id, { nx: true }))) return 0;
+  await credit(p.id, s.amountZat, "win", s.type === "riddle" ? "Cracked a riddle stash 🔓" : "Called it! Prediction stash", { stashId: s.id });
+  s.claimed = { txid: "internal", to: "ZECKED wallet", at: nowIso(), shielded: true, internal: true };
+  await saveStash(s);
+  p.pendingClaims = p.pendingClaims.filter((x) => x !== s.id);
+  return s.amountZat;
+}
+
+/** On sign-in: move any wins made as a guest into the new wallet. */
+export async function creditPendingClaims(p: PlayerRecord): Promise<number> {
+  let total = 0;
+  const guestIds = new Set([p.id, ...(p.mergedGuests || [])]);
+  for (const id of [...p.pendingClaims]) {
+    const s = await getStash(id);
+    if (!s || s.status !== "zecked" || !s.winnerId || !guestIds.has(s.winnerId)) {
+      p.pendingClaims = p.pendingClaims.filter((x) => x !== id);
+      continue;
+    }
+    if (s.winnerId !== p.id) {
+      s.winnerId = p.id;
+      await kv().set(K.win(s.id), p.id);
+    }
+    total += await creditWin(s, p);
+  }
+  await savePlayer(p);
+  return total;
+}
+
+/** Pay for an awaiting stash straight from the hider's ZECKED balance. */
+export async function fundFromBalance(s: StashRecord, p: PlayerRecord) {
+  if (!p.email) throw new HttpError(401, "Sign up first");
+  if (s.hiderId !== p.id) throw new HttpError(403, "Only the hider can fund this stash");
+  if (s.status !== "awaiting_funding") throw new HttpError(400, "This stash is already funded");
+  if (!(await kv().set(`fundlock:${s.id}`, 1, { nx: true, exSeconds: 30 }))) throw new HttpError(409, "Funding in progress");
+  try {
+    await debit(p.id, s.amountZat, "hide", s.type === "riddle" ? "Hid a riddle stash 🔐" : "Hid a prediction stash ⚽", { stashId: s.id });
+    s.fundedFrom = "balance";
+    await saveStash(s);
+    await goLive(s);
+  } finally {
+    await kv().del(`fundlock:${s.id}`);
+  }
+}
+
+export async function setVictoryMessage(s: StashRecord, p: PlayerRecord, message: string) {
+  if (s.status !== "zecked" || s.winnerId !== p.id) throw new HttpError(403, "Only the winner can leave a victory message");
+  const msg = (message || "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 80);
+  s.victoryMessage = msg || undefined;
+  await saveStash(s);
 }
 
 async function winPayload(s: StashRecord, p: PlayerRecord, xpGained: number, badges: BadgeId[]): Promise<WinPayload> {
@@ -391,8 +458,9 @@ async function winPayload(s: StashRecord, p: PlayerRecord, xpGained: number, bad
     usd: Math.round((s.amountZat / 1e8) * rate * 100) / 100,
     xpGained,
     badgesUnlocked: badges,
-    player: toPublicPlayer(p),
+    player: toPublicPlayer(p, p.email ? await balanceOf(p.id) : 0),
     claimToken: s.claimToken!,
+    credited: !!s.claimed?.internal,
   };
 }
 
@@ -477,6 +545,7 @@ export async function setRefundAddress(s: StashRecord, p: PlayerRecord, address:
 // ---------- claim ----------
 export async function claim(s: StashRecord, p: PlayerRecord, body: { claimToken: string; address: string; message?: string }): Promise<ClaimResult> {
   if (s.status !== "zecked" || s.winnerId !== p.id) throw new HttpError(403, "Nothing to claim here");
+  if (s.claimed?.internal) throw new HttpError(409, "Already in your ZECKED wallet");
   if (s.claimed) throw new HttpError(409, "Already claimed");
   if (!body.claimToken || body.claimToken !== s.claimToken) throw new HttpError(403, "Claim link expired. Open the stash again");
   if (Date.now() - Date.parse(s.zeckedAt!) > CLAIM_WINDOW_MS) throw new HttpError(410, "The 7-day claim window has closed");
@@ -596,8 +665,11 @@ export async function stashDetail(id: string, viewer: PlayerRecord) {
     const m = stash.prediction!.match;
     if (m.status !== "scheduled" || s.status !== "live") extra.runners = await runners(s, m, viewer.id);
   }
-  if (s.status === "zecked" && s.winnerId === viewer.id && !s.claimed) {
-    extra.win = await winPayload(s, viewer, 0, []);
+  if (s.status === "zecked" && s.winnerId === viewer.id) {
+    if (!s.claimed) extra.win = await winPayload(s, viewer, 0, []);
+    else if (s.claimed.internal && (await kv().set(`celebrated:${s.id}`, 1, { nx: true, exSeconds: 30 * 86400 }))) {
+      extra.win = await winPayload(s, viewer, s.type === "prediction" ? XP.winPrediction : XP.crackRiddle, []);
+    }
   }
   return { stash, ...extra };
 }

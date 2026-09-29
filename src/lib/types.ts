@@ -141,6 +141,7 @@ export interface WinPayload {
   badgesUnlocked: BadgeId[];
   player: Player;
   claimToken: string;
+  credited: boolean; // true = already added to the winner's ZECKED wallet; false = guest must sign up to keep it
 }
 
 export interface Player {
@@ -160,8 +161,45 @@ export interface Player {
     streak: number; // days in a row played
   };
   badges: BadgeId[];
-  pendingClaims: string[]; // stash ids won but not yet claimed
+  pendingClaims: string[]; // stash ids won but not yet claimed (guests) — credited to the wallet on sign-up
   shielded: boolean;
+  account: {
+    signedIn: boolean; // verified email account (guests can browse and play, but must sign up to keep winnings / hide)
+    email?: string; // masked, e.g. "ni***@gmail.com"
+  };
+  balanceZat: number; // in-app ZECKED wallet balance (0 for guests)
+}
+
+// ---------- in-app wallet ----------
+export type WalletTxKind = "deposit" | "win" | "refund" | "hide" | "withdraw" | "bonus";
+
+export interface WalletTx {
+  id: string;
+  kind: WalletTxKind;
+  amountZat: number; // signed: + credit, − debit
+  at: string;
+  label: string; // "Won a riddle stash", "Hid a stash", "Withdrew to u1…9x4q"
+  stashId?: string;
+  txid?: string;
+  status: "done" | "pending" | "failed";
+}
+
+export interface WalletInfo {
+  balanceZat: number;
+  usd: number;
+  pendingDepositZat: number; // seen on-chain, waiting for confirmation
+  depositAddress?: string; // your personal ZEC address (signed-in only)
+  depositUri?: string; // ZIP-321 (no amount) for the QR
+  activity: WalletTx[]; // newest first
+  minWithdrawZat: number;
+  withdrawFeeZat: number;
+  network: "sim" | "testnet" | "mainnet";
+}
+
+export interface AuthStartResult {
+  sentTo: string; // masked email
+  expiresAt: string;
+  devCode?: string; // TEST MODE ONLY, when no email sender is configured: the code is shown on screen
 }
 
 export interface ClaimResult {

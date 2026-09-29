@@ -32,6 +32,11 @@ export interface PlayerRecord {
   pendingClaims: string[];
   shielded: boolean;
   lastPlayedDay?: string; // YYYY-MM-DD (UTC)
+  email?: string; // verified email = signed-in account
+  verifiedAt?: string;
+  depositAddress?: string; // personal in-app wallet address
+  depositUri?: string;
+  mergedGuests?: string[];
 }
 
 const ADJ = ["night", "quiet", "shadow", "ghost", "zero", "gold", "vault", "cipher", "silent", "lucky", "neon", "velvet", "hidden", "sly", "misty"];
@@ -45,7 +50,12 @@ function tierFor(xp: number) {
   return idx;
 }
 
-export function toPublicPlayer(p: PlayerRecord): Player {
+function maskEmail(e: string) {
+  const [u, d] = e.split("@");
+  return `${u.slice(0, 2)}${"*".repeat(Math.max(1, Math.min(3, u.length - 2)))}@${d}`;
+}
+
+export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
   const i = tierFor(p.xp);
   const next = TIERS[i + 1];
   return {
@@ -61,6 +71,8 @@ export function toPublicPlayer(p: PlayerRecord): Player {
     badges: p.badges,
     pendingClaims: p.pendingClaims,
     shielded: p.shielded,
+    account: { signedIn: !!p.email, email: p.email ? maskEmail(p.email) : undefined },
+    balanceZat: p.email ? balanceZat : 0,
   };
 }
 
@@ -85,7 +97,7 @@ export async function ensurePlayer(id?: string | null): Promise<{ player: Player
     const p = await getPlayer(id);
     if (p) return { player: p, created: false };
   }
-  const pid = id && /^[A-Za-z0-9_-]{8,40}$/.test(id) ? id : `p_${newId()}${newId()}`;
+  const pid = `p_${newId()}${newId()}`; // always server-generated
   let handle = "";
   for (let i = 0; i < 6; i++) {
     const r = () => Math.floor(Math.random() * 15);

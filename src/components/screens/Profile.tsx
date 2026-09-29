@@ -1,10 +1,12 @@
 "use client";
-// Screen 10 · Profile. Avatar + editable handle, tier card with XP bar, 5 stats, badge grid,
-// and a "My stashes" list (hider dashboard).
+// Screen 10 · Profile. Avatar + editable handle, account card (signed in: email, ZECKED wallet
+// balance, sign out; guest: sign up), tier card with XP bar, 5 stats, badge grid, and a
+// "My stashes" list (hider dashboard).
 import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { api } from "@/lib/api";
+import { api, formatUsd, formatZec } from "@/lib/api";
 import type { BadgeId, Player, PublicStash } from "@/lib/types";
+import { ZAT } from "@/lib/types";
 import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar } from "@/components/zk";
 
 const ALL_BADGES: BadgeId[] = [
@@ -245,6 +247,158 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
         </Link>
       )}
     </div>
+  );
+}
+
+/* ---------- account card ---------- */
+
+const accountCard: CSSProperties = {
+  background: "var(--zk-surface)",
+  borderRadius: "var(--zk-radius-2xl)",
+  padding: "var(--zk-space-14) var(--zk-space-16)",
+  display: "flex",
+  flexDirection: "column",
+  gap: "var(--zk-space-12)",
+};
+
+const tile = (bg: string, fg: string, size = 40): CSSProperties => ({
+  width: size,
+  height: size,
+  flex: "none",
+  borderRadius: "var(--zk-radius-md)",
+  background: bg,
+  color: fg,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+});
+
+function AccountCard({ player }: { player: Player }) {
+  const signedIn = !!player.account?.signedIn;
+  const [zecUsd, setZecUsd] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!signedIn) return;
+    let alive = true;
+    api
+      .config()
+      .then((c) => {
+        if (alive && c.zecUsd > 0) setZecUsd(c.zecUsd);
+      })
+      .catch(() => {
+        /* balance still shows in ZEC */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [signedIn]);
+
+  const signOut = async () => {
+    if (leaving) return;
+    setLeaving(true);
+    setError("");
+    try {
+      await api.logout();
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "Couldn’t sign you out. Try again.");
+      setLeaving(false);
+    }
+  };
+
+  if (!signedIn) {
+    return (
+      <section aria-label="Account" style={{ ...accountCard, border: "1.5px dashed var(--zk-border-strong)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-12)" }}>
+          <div style={tile("var(--zk-purple-tint)", "var(--zk-purple-light)")}>
+            <Icon icon="user" size={20} stroke={2.4} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "var(--zk-type-h4)" }}>You’re playing as a guest</div>
+            <div style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-medium)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>
+              Sign up to keep your wins and hide stashes. Your XP and badges come with you.
+            </div>
+          </div>
+        </div>
+        <Button label="Sign up to save your progress" variant="primary" size="md" href="/signin?next=%2Fme" />
+      </section>
+    );
+  }
+
+  const bal = player.balanceZat || 0;
+  const usd = zecUsd != null ? formatUsd((bal / ZAT) * zecUsd) : null;
+
+  return (
+    <section aria-label="Account" style={accountCard}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
+        <div style={tile("var(--zk-mint-tint)", "var(--zk-mint)", 32)}>
+          <Icon icon="shieldCheck" size={17} stroke={2.4} />
+        </div>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            font: "var(--zk-type-small)",
+            color: "var(--zk-text-muted)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {player.account.email ? (
+            <>
+              Signed in as <span style={{ color: "var(--zk-text)", fontWeight: "var(--zk-fw-bold)" }}>{player.account.email}</span>
+            </>
+          ) : (
+            "Signed in"
+          )}
+        </div>
+        <Button
+          label={leaving ? "Signing out…" : "Sign out"}
+          variant="ghost"
+          size="sm"
+          full={false}
+          disabled={leaving}
+          onClick={() => void signOut()}
+        />
+      </div>
+
+      <Link
+        href="/wallet"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--zk-space-12)",
+          padding: "var(--zk-space-12)",
+          borderRadius: "var(--zk-radius-xl)",
+          background: "var(--zk-surface-raised)",
+          color: "var(--zk-text)",
+          textDecoration: "none",
+        }}
+      >
+        <div style={{ ...tile("var(--zk-grad-tile-gold)", "var(--zk-gold-ink)", 44), borderRadius: "var(--zk-radius-lg)", boxShadow: "0 3px 0 var(--zk-gold-deep)" }}>
+          <Icon icon="wallet" size={22} stroke={2.4} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: "var(--zk-type-h4)" }}>ZECKED wallet</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-6)", marginTop: "var(--zk-space-2)", whiteSpace: "nowrap" }}>
+            <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)" }}>{formatZec(bal)} ZEC</span>
+            {usd && <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>~{usd}</span>}
+          </div>
+        </div>
+        <span style={{ color: "var(--zk-text-muted)", display: "flex" }}>
+          <Icon icon="arrowRight" size={18} stroke={2.4} />
+        </span>
+      </Link>
+
+      {error && (
+        <span role="alert" style={{ font: "var(--zk-type-caption)", color: "var(--zk-red)" }}>
+          {error}
+        </span>
+      )}
+    </section>
   );
 }
 
@@ -578,6 +732,7 @@ export default function Profile() {
         {player ? (
           <>
             <IdentityRow player={player} onSaved={setPlayer} />
+            <AccountCard player={player} />
             <TierCard player={player} />
             <Stats player={player} />
             <Badges player={player} />

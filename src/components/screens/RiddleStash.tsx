@@ -910,7 +910,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         {endedCard("Cracked", true)}
         {statusBlock("You zecked this!", [ago ? `Zecked ${ago}` : "", crackStats].filter(Boolean).join(" · ") || undefined, "var(--zk-gold)")}
         {victoryQuote}
-        {myWin ? endedButton("Claim my ZEC", `/s/${id}/claim`) : endedButton("Find another stash", "/feed")}
+        {myWin ? endedButton("Sign up to keep my ZEC", `/s/${id}/claim`) : endedButton("Find another stash", "/feed")}
       </>
     );
   } else if (mode === "expired") {

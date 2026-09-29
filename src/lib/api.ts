@@ -2,6 +2,8 @@
 // Typed client for the ZECKED API. All screens talk to the server through this file.
 import type {
   AppConfig,
+  AuthStartResult,
+  WalletInfo,
   ClaimResult,
   GuessResult,
   Leaderboard,
@@ -66,6 +68,27 @@ export const api = {
   leaderboard: (board: Leaderboard["board"], period: Leaderboard["period"]) =>
     req<Leaderboard>(`/leaderboard?board=${board}&period=${period}`),
   ticker: () => req<{ items: TickerItem[] }>("/ticker"),
+
+  // ---- accounts (email code sign-in) ----
+  authStart: (email: string) => req<AuthStartResult>("/auth/email/start", { method: "POST", body: JSON.stringify({ email }) }),
+  authVerify: (email: string, code: string) =>
+    req<{ player: Player; creditedZat: number }>("/auth/email/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
+  logout: () => req<{ ok: true }>("/auth/logout", { method: "POST" }),
+
+  // ---- in-app wallet ----
+  wallet: () => req<WalletInfo>("/wallet"),
+  withdraw: (address: string, amountZat: number) =>
+    req<{ txid: string; amountZat: number; feeZat: number; to: string; wallet: WalletInfo }>("/wallet/withdraw", {
+      method: "POST",
+      body: JSON.stringify({ address, amountZat }),
+    }),
+  /** Test mode (sim) only: pretend ZEC arrived at your deposit address. */
+  simulateDeposit: (amountZat?: number) =>
+    req<WalletInfo>("/wallet/simulate-deposit", { method: "POST", body: JSON.stringify({ amountZat }) }),
+  /** Fund an awaiting stash straight from your ZECKED balance (instant, no QR). */
+  victory: (id: string, message: string) =>
+    req<{ ok: true }>(`/stashes/${id}/victory`, { method: "POST", body: JSON.stringify({ message }) }),
+  fundFromBalance: (id: string) => req<{ stash: PublicStash; wallet: WalletInfo }>(`/stashes/${id}/fund-from-balance`, { method: "POST" }),
 };
 
 export function formatZec(zat: number, decimals = 4): string {
