@@ -182,6 +182,7 @@ export interface WalletTx {
   stashId?: string;
   txid?: string;
   status: "done" | "pending" | "failed";
+  payoutKey?: string; // server-side: vault payout key for reconciling pending withdrawals
 }
 
 export interface WalletInfo {

@@ -27,6 +27,14 @@ export interface DepositStatus {
   txids: string[];
 }
 
+/** Thrown when a payout's outcome is unknown (timeout, in-flight, interrupted): the money may have been sent. Never refund on this. */
+export class PayoutUncertainError extends HttpError {
+  uncertain = true;
+  constructor(message = "Your withdrawal is processing. Check your wallet activity in a minute.") {
+    super(502, message);
+  }
+}
+
 export interface ZcashEngine {
   network: Network;
   requestFunding(stashId: string, amountZat: number): Promise<FundingRequest>;
@@ -37,6 +45,8 @@ export interface ZcashEngine {
   userAddress(userId: string): Promise<FundingRequest>;
   /** Funds received at a player's deposit address. */
   deposits(userId: string): Promise<DepositStatus>;
+  /** Look up a keyed payout (to reconcile uncertain withdrawals). */
+  payoutStatus(key: string): Promise<{ state: "sent" | "failed" | "pending" | "unknown"; txid?: string }>;
 }
 
 export const NETWORK_FEE_ZAT = 30_000; // 0.0003 ZEC buffer the hider adds on top of the prize
@@ -79,16 +89,19 @@ class SimEngine implements ZcashEngine {
   async deposits() {
     return { receivedZat: 0, confirmedZat: 0, pendingZat: 0, txids: [] };
   }
+  async payoutStatus() {
+    return { state: "sent" as const };
+  }
 }
 
 // ---------- vault (testnet / mainnet) ----------
 class VaultEngine implements ZcashEngine {
   constructor(public network: "testnet" | "mainnet", private url: string, private token: string) {}
-  private async call<T>(path: string, init?: RequestInit): Promise<T> {
+  private async call<T>(path: string, init?: RequestInit, timeoutMs = 15_000): Promise<T> {
     const r = await fetch(`${this.url.replace(/\/$/, "")}${path}`, {
       ...init,
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
     const j = (await r.json().catch(() => ({}))) as T & { error?: string; message?: string };
@@ -97,6 +110,7 @@ class VaultEngine implements ZcashEngine {
       if (r.status === 402 || j.error === "insufficient_funds")
         throw new HttpError(503, "The prize vault is being topped up. Your win is safe. Try claiming again in a few minutes.");
       if (r.status === 400) throw new HttpError(400, j.message || "The vault rejected that request");
+      if (r.status === 404) throw new HttpError(404, j.message || "Not found in the vault");
       throw new HttpError(502, "Couldn't reach the Zcash vault. Your win is safe. Try again shortly.");
     }
     return j;
@@ -108,7 +122,30 @@ class VaultEngine implements ZcashEngine {
     return this.call<FundingStatus>(`/funding/${encodeURIComponent(stashId)}`);
   }
   async payout(stashId: string, to: string, amountZat: number, memo: string, opts?: { key?: string }) {
-    return this.call<{ txid: string }>("/payout", { method: "POST", body: JSON.stringify({ stashId, to, amountZat, memo, key: opts?.key }) });
+    // Only 400 (bad request/address) and 402 (insufficient funds) mean "definitely not sent".
+    // Anything else (timeout, 409 in-flight/unresolved, 5xx) is uncertain: the caller must NOT refund.
+    try {
+      return await this.call<{ txid: string }>(
+        "/payout",
+        { method: "POST", body: JSON.stringify({ stashId, to, amountZat, memo, key: opts?.key }) },
+        120_000
+      );
+    } catch (e) {
+      if (e instanceof HttpError && (e.status === 400 || e.status === 503)) throw e; // definite
+      throw new PayoutUncertainError();
+    }
+  }
+  async payoutStatus(key: string) {
+    try {
+      const r = await this.call<{ state?: string; txid?: string }>(`/payout/${encodeURIComponent(key)}`);
+      const st = String(r.state || "");
+      if (r.txid && /sent|done|broadcast|confirmed|success/i.test(st || "sent")) return { state: "sent" as const, txid: r.txid };
+      if (/fail|error|rejected/i.test(st)) return { state: "failed" as const };
+      return { state: "pending" as const };
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return { state: "unknown" as const };
+      return { state: "pending" as const };
+    }
   }
   async userAddress(userId: string) {
     return this.call<FundingRequest>("/user-address", { method: "POST", body: JSON.stringify({ userId }) });

@@ -201,6 +201,9 @@ export class ZingoEngine extends EventEmitter {
             this.pending = undefined;
             this.staleSentinels.add(`Command ${sentinel} not found`);
           }
+          // Not recycled here: during a long catch-up sync, zingo holds the wallet lock and
+          // lock-taking commands legitimately wait minutes. A session that is truly wedged
+          // is recycled by the vault's sync-progress watchdog instead.
           reject(new EngineError(`zingo-cli command '${tokens[0]}' timed out after ${timeoutMs}ms`, "timeout"));
         }, timeoutMs);
         this.pending = {
@@ -223,6 +226,20 @@ export class ZingoEngine extends EventEmitter {
     const next = this.chain.then(task, task);
     this.chain = next.catch(() => {});
     return next;
+  }
+
+  /** Kills a wedged or stalled session (SIGTERM, then SIGKILL); the exit handler restarts it. */
+  recycle(reason: string): void {
+    const child = this.child;
+    if (!child || this.stopping) return;
+    this.ready = false;
+    this.emit("recycle", reason);
+    child.kill("SIGTERM");
+    const t = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }, 10_000);
+    t.unref();
+    child.once("exit", () => clearTimeout(t));
   }
 
   /** Runs a command whose stdout is a JSON document and parses it. */

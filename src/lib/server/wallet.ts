@@ -2,7 +2,7 @@
 // Each signed-in player gets their own deposit address; wins and refunds are internal credits;
 // withdrawals are real shielded payouts from the vault.
 import type { WalletInfo, WalletTx, WalletTxKind } from "@/lib/types";
-import { NETWORK_FEE_ZAT, networkName, zcash } from "@/lib/zcash/engine";
+import { NETWORK_FEE_ZAT, PayoutUncertainError, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
 import { savePlayer, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
@@ -97,9 +97,27 @@ export async function syncDeposits(p: PlayerRecord): Promise<number> {
   return pendingZat;
 }
 
+/** Settle withdrawals whose outcome was uncertain: mark sent (with txid) or refund if the vault says it failed. */
+async function reconcileWithdrawals(pid: string) {
+  const list = await activity(pid);
+  for (const t of list) {
+    if (t.kind !== "withdraw" || t.status !== "pending" || !t.payoutKey) continue;
+    if (!(await kv().set(`reconcile:${t.id}`, 1, { nx: true, exSeconds: 20 }))) continue;
+    const st = await zcash().payoutStatus(t.payoutKey);
+    if (st.state === "sent") await kv().rpush(K.ledger(pid), { ...t, status: "done", txid: st.txid });
+    else if ((st.state === "failed" || st.state === "unknown") && Date.now() - Date.parse(t.at) > 10 * 60_000) {
+      if (await kv().set(`refunded-wd:${t.id}`, 1, { nx: true })) {
+        await kv().incr(K.bal(pid), -t.amountZat); // amountZat is negative for a debit
+        await kv().rpush(K.ledger(pid), { ...t, status: "failed", label: `${t.label} (failed, refunded)` });
+      }
+    }
+  }
+}
+
 export async function walletInfo(p: PlayerRecord): Promise<WalletInfo> {
   if (!p.email) throw new HttpError(401, "Sign up to get your own ZECKED wallet");
   const { address, uri } = await ensureDepositAddress(p);
+  if (networkName() !== "sim") await reconcileWithdrawals(p.id).catch((e) => console.error("reconcile failed", (e as Error).message));
   const pending = await syncDeposits(p);
   const bal = await balanceOf(p.id);
   const rate = await zecUsd();
@@ -137,9 +155,10 @@ export async function withdraw(p: PlayerRecord, rawAddress: string, amountZat: n
   const amt = Math.round(Number(amountZat));
   if (!(amt >= MIN_WITHDRAW_ZAT)) throw new HttpError(400, `Minimum withdrawal is ${(MIN_WITHDRAW_ZAT / 1e8).toFixed(3)} ZEC`);
   const nonce = newId() + newId();
-  const t = await debit(p.id, amt + WITHDRAW_FEE_ZAT, "withdraw", `Withdrew to ${shortAddr(to)}`, { status: "pending" });
+  const key = `withdraw:${p.id}:${nonce}`;
+  const t = await debit(p.id, amt + WITHDRAW_FEE_ZAT, "withdraw", `Withdrew to ${shortAddr(to)}`, { status: "pending", payoutKey: key });
   try {
-    const { txid } = await zcash().payout(`withdraw:${p.id}:${nonce}`, to, amt, "ZECKED withdrawal 🔓", { key: `withdraw:${p.id}:${nonce}` });
+    const { txid } = await zcash().payout(key, to, amt, "ZECKED withdrawal 🔓", { key });
     await kv().rpush(K.ledger(p.id), { ...t, status: "done", txid });
     if (isShieldedAddress(to) && !p.shielded) {
       p.shielded = true;
@@ -148,7 +167,9 @@ export async function withdraw(p: PlayerRecord, rawAddress: string, amountZat: n
     }
     return { txid, amountZat: amt, feeZat: WITHDRAW_FEE_ZAT, to: shortAddr(to), wallet: await walletInfo(p) };
   } catch (e) {
-    // Payout failed: put the money back.
+    // Outcome unknown (timeout / in flight): keep it debited as "pending" and reconcile later. Never refund here.
+    if (e instanceof PayoutUncertainError) throw e;
+    // Definitely not sent (bad address / vault low): put the money back.
     await kv().incr(K.bal(p.id), amt + WITHDRAW_FEE_ZAT);
     await kv().rpush(K.ledger(p.id), { ...t, status: "failed", label: `${t.label} (failed, refunded)` });
     throw e;

@@ -4,18 +4,30 @@
 import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-export interface StashRecord {
-  stashId: string;
+/** A wallet address handed out for a stash or a user. */
+export interface AddressRecord {
   address: string;
-  amountZat: number;
+  /** zingo-cli's unified address index (from `new_address`), when known. */
+  addressIndex?: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface StashRecord extends AddressRecord {
+  stashId: string;
+  amountZat: number;
+}
+
+export interface UserRecord extends AddressRecord {
+  userId: string;
 }
 
 export type PayoutState = "sending" | "sent" | "failed";
 
 export interface PayoutRecord {
-  stashId: string;
+  /** Idempotency key: the request's `key`, or the stashId when no key was given. */
+  key: string;
+  stashId?: string;
   to: string;
   amountZat: number;
   memo: string;
@@ -28,6 +40,7 @@ export interface PayoutRecord {
 
 interface VaultState {
   stashes: Record<string, StashRecord>;
+  users: Record<string, UserRecord>;
   payouts: Record<string, PayoutRecord>;
 }
 
@@ -39,9 +52,12 @@ export class Store {
     this.path = join(dataDir, "vault-state.json");
     this.state = existsSync(this.path)
       ? (JSON.parse(readFileSync(this.path, "utf8")) as VaultState)
-      : { stashes: {}, payouts: {} };
+      : { stashes: {}, users: {}, payouts: {} };
     this.state.stashes ??= {};
+    this.state.users ??= {};
     this.state.payouts ??= {};
+    // Records written before `key` existed were keyed by stashId.
+    for (const [k, p] of Object.entries(this.state.payouts)) p.key ??= k;
   }
 
   private flush(): void {
@@ -59,12 +75,29 @@ export class Store {
     this.flush();
   }
 
-  getPayout(id: string): PayoutRecord | undefined {
-    return this.state.payouts[id];
+  getUser(id: string): UserRecord | undefined {
+    return this.state.users[id];
+  }
+
+  putUser(rec: UserRecord): void {
+    this.state.users[rec.userId] = rec;
+    this.flush();
+  }
+
+  /** Every address handed out to a stash or a user. */
+  assignedAddresses(): Set<string> {
+    const s = new Set<string>();
+    for (const r of Object.values(this.state.stashes)) s.add(r.address);
+    for (const r of Object.values(this.state.users)) s.add(r.address);
+    return s;
+  }
+
+  getPayout(key: string): PayoutRecord | undefined {
+    return this.state.payouts[key];
   }
 
   putPayout(rec: PayoutRecord): void {
-    this.state.payouts[rec.stashId] = rec;
+    this.state.payouts[rec.key] = rec;
     this.flush();
   }
 }

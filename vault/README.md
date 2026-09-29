@@ -2,80 +2,53 @@
 
 A small always-on HTTP service that holds ZECKED's **testnet** hot wallet. The Vercel app calls it to:
 
-1. get a funding request (a shielded address plus a ZIP-321 URI) for each stash,
-2. see when a stash has been funded, and
-3. pay the winner, or refund the hider, in shielded testnet ZEC (TAZ).
+1. give each stash, and each signed-up user, its own shielded deposit address (plus a ZIP-321 URI),
+2. see what has arrived at those addresses (stash funding, user deposits), and
+3. send shielded testnet ZEC (TAZ) out: pay a winner, refund a hider, or process a user withdrawal.
 
 **TESTNET ONLY.** The engine always runs with `--chain testnet`. At startup the service refuses any lightwalletd that doesn't report chain `test`. It creates only `utest1...` addresses, and it rejects payout addresses that aren't testnet.
 
 ## How it works
 
 ```
-Vercel app ──HTTPS──► tunnel ──► vault  (node src/server.ts, 127.0.0.1:$PORT)
-                                   │  one long-lived child process, stdin/stdout pipes
-                                   ▼
-                                 zingo-cli  (zingolib 6.0.0, Ironwood / NU6.3)
-                                   │  gRPC over TLS
-                                   ▼
-                                 testnet.zec.rocks:443  (lightwalletd, Zebra 6.3.0)
+Vercel app ──HTTPS──► vault  (node src/server.ts; Railway, or local + tunnel)
+                        │  one long-lived child process, stdin/stdout pipes
+                        ▼
+                      zingo-cli  (zingolib 6.0.0, Ironwood / NU6.3, + ZECKED patch)
+                        │  gRPC over TLS
+                        ▼
+                      testnet.zec.rocks:443  (lightwalletd, Zebra 6.3.0)
 ```
 
-- **Engine:** `zingo-cli` from [zingolib](https://github.com/zingolabs/zingolib) tag `zingolib_v6.0.0` (released 2026-09-08, "Zingo CLI 0.1.1", git description `zl_6.0.0`). It is built from source with the Ironwood (NU6.3) code paths enabled.
-- **Transport:**
-  - `clearnet` (default): `bin/zingo-cli` is built with `--no-default-features --features clearnet-test-mode`, so sync and broadcast go straight to lightwalletd over TLS. The indexer sees the vault's IP address, which is fine for a testnet server.
-  - `mixnet`: the stock zingo-cli 6.x build, which forces every send over the Nym mixnet through `bin/nym-proxy`. **It didn't work reliably from this machine.** Bringing up the mixnet session failed with `no proven exit: 6 births each proved nothing`: zingolib races random Nym exits, and most of the ones it drew here didn't carry traffic. One try in about eight succeeded. It's built and available as `ZINGO_TRANSPORT=mixnet` for later.
-- The vault keeps **one** interactive zingo-cli session open, so the wallet stays loaded and only one process ever writes the wallet file. Commands are queued one at a time. If the child crashes, it restarts with backoff; recovery took about 2 s in testing.
-- Wallet data lives in `vault/.data/` (dir 700, files 600): `zingo-wallet.dat`, `vault-state.json` (stash to address map, payout records), `vault.log` and `zingo-cli.log`. **The seed phrase never leaves the wallet file.** The service refuses to run `recovery_info`, `export_ufvk`, `delete` or `clear`, and never logs raw engine output.
-- A background loop runs every `SYNC_INTERVAL_MS` (20 s by default). It keeps the sync task running and refreshes the balance and height that `/health` returns.
+- **Engine:** `zingo-cli` from [zingolib](https://github.com/zingolabs/zingolib) tag `zingolib_v6.0.0` ("Zingo CLI 0.1.1", `zl_6.0.0`). It is built from source with the Ironwood (NU6.3) code paths, as `--no-default-features --features clearnet-test-mode`, plus one small patch (`engine/zingo-cli-received-by-address.patch`; see Attribution).
+- **Transport:** clearnet. Sync and broadcast go straight to lightwalletd over TLS, and the indexer sees the vault's IP address, which is fine for testnet. The stock 6.x build forces sends over the Nym mixnet, and that failed on most tries from the dev machine (`no proven exit`). It can still be built as `ZINGO_TRANSPORT=mixnet` (`BUILD_MIXNET=1`).
+- The vault keeps **one** interactive zingo-cli session open. Only one process ever touches the wallet file, and commands are queued one at a time. If the child crashes, it restarts with backoff; recovery takes about 2 s.
+- Wallet data lives in `VAULT_DATA_DIR` (`vault/.data` locally, `/data` in the container; dir 700, files 600): `zingo-wallet.dat`, `vault-state.json` (stash and user address maps, payout records), and the logs. **The seed phrase never leaves the wallet file.** The service refuses to run `recovery_info`, `export_ufvk`, `delete` or `clear`, and never logs raw engine output.
+- **First boot:** if there's no wallet in `VAULT_DATA_DIR`, the vault creates a NEW testnet wallet offline, with its birthday 10 blocks below the current tip, and logs only the birthday number.
+- A background loop runs every 20 s. It keeps the sync task running and refreshes `/health`.
+- **Self-healing.** If the wallet is behind and makes no sync progress for 10 minutes (`SYNC_STALL_MS`), including when the engine stops answering, the vault kills and restarts the zingo-cli session.
+  - This was seen once after a network drop: a dead gRPC connection wedged the session.
+  - A single slow command doesn't trigger it, because a catch-up sync legitimately holds the wallet lock for minutes. While catching up, `/health` keeps its last balances and shows `synced:false`.
+  - A payout interrupted by a restart stays locked as `sending`, so it's never sent twice.
 
-## Build the engine (once)
+## Attribution: who gets credited for incoming funds
 
-You need rustup (the minimal profile is fine), `build-essential` and `protoc`. None of them need root:
+Every stash and every user gets a **fresh diversified unified address** (Orchard/Ironwood + Sapling receivers, no transparent receiver). All of them come from the one wallet seed, so the wallet sees every payment to any of them.
 
-```bash
-curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
-# protoc: unzip protoc-<ver>-linux-x86_64.zip from github.com/protocolbuffers/protobuf/releases into ~/.local
-vault/scripts/build-engine.sh                  # clearnet engine -> vault/bin/zingo-cli  (~17 min cold)
-BUILD_MIXNET=1 vault/scripts/build-engine.sh   # also bin/zingo-cli-mixnet + bin/nym-proxy (~20 min more)
-```
+Stock zingo-cli 6.x doesn't say *which* of our addresses a payment went to. Its value transfers are grouped per pool per transaction, with no receiving address. The vault therefore builds zingo-cli with a 56-line patch. The patch makes `notes all` also return `received_by_address`: every note the wallet holds, including spent ones, with the wallet address whose receiver it was paid to. It compares the note's recipient with the Orchard and Sapling receivers of each wallet address.
 
-- The script clones `zingolib_v6.0.0` into `~/src/zingolib`, and rustup fetches the pinned toolchain (1.97.1).
-- Don't set `RUSTFLAGS`: zingolib's `.cargo/config.toml` enables Ironwood with `--cfg zcash_unstable="nu6.3"`, and `RUSTFLAGS` would override it.
-- The mixnet build carries one local patch: `SENTINEL_BUDGET` is raised from 3.5 s to 12 s, because a single exit-proof round trip often takes longer than 3.5 s on a slow link.
+Funds are credited:
 
-## Run
+1. **By receiving address (primary).** A payment to Alice's deposit address is Alice's, even if the sender's wallet or faucet dropped the memo.
+2. **By memo tag (secondary).** `ZU:<userId>` or `ZK:<stashId>` only counts when the note landed on an address that isn't assigned to any user or stash, for example the vault's main address. A memo can never move funds away from the address they were paid to, so nothing is credited twice.
 
-```bash
-cd vault
-npm install            # dev-only deps (typescript, @types/node); the service itself has no runtime deps
-scripts/start.sh       # background; creates .env (mode 600) with a random VAULT_TOKEN on first run
-tail -f .data/vault.log
-scripts/stop.sh        # saves the wallet and stops
-node src/server.ts     # or in the foreground
-```
+What counts: external-scope notes with status `confirmed`, `mempool` or `transmitted`. Change notes, `failed` and `calculated` never count. Amounts are cumulative, so later spending of the notes doesn't reduce them. `confirmations` is `tip - height + 1`.
 
-On the first start, zingo-cli creates the wallet in `.data/`, with its birthday near the current tip. This wallet was created offline with `--birthday tip-10`, and zingolib set the birthday to 4411314. You need Node 22.18+ or 24; the TypeScript runs directly through Node's type stripping.
-
-> On this machine, port 8787 is already taken by another app (gig-scout, uvicorn), so `.env` sets `PORT=8788`.
-
-### Environment variables (`vault/.env` is loaded automatically)
-
-| Var | Default | Meaning |
-| --- | --- | --- |
-| `VAULT_TOKEN` | (required, at least 32 chars) | Bearer token for every endpoint except `/healthz` |
-| `LIGHTWALLETD_URL` | `https://testnet.zec.rocks:443` | Testnet lightwalletd or zaino endpoint. Also working: `https://zaino.testnet.unsafe.zec.rocks:443` |
-| `PORT` | `8787` | HTTP port (`8788` here) |
-| `HOST` | `127.0.0.1` | Bind address. Keep it on loopback and expose it through a tunnel. |
-| `ZINGO_TRANSPORT` | `clearnet` | `clearnet` (bin/zingo-cli) or `mixnet` (bin/zingo-cli-mixnet + bin/nym-proxy) |
-| `SYNC_INTERVAL_MS` | `20000` | Background sync and refresh interval |
-| `ZINGO_CLI` | depends on transport | Engine binary override |
-| `ZINGO_NYM_PROXY` | `bin/nym-proxy` | Mixnet proxy (mixnet transport only) |
-| `VAULT_DATA_DIR` | `vault/.data` | Wallet and state directory |
-| `VAULT_ACCESS_LOG` | unset | Set it to log one line per request |
+If the engine binary lacks the patch, `/health` shows `addressAttribution:false`, `/deposits` returns `501 engine_unpatched`, and `/funding` falls back to memo-only (`attribution:"memo-only"`).
 
 ## API
 
-Every endpoint except `GET /healthz` requires `Authorization: Bearer $VAULT_TOKEN`. Errors look like `{ "error": "<code>", "message": "..." }`.
+Every endpoint except `GET /healthz` requires `Authorization: Bearer $VAULT_TOKEN`. Errors look like `{ "error": "<code>", "message": "...", ...details }`. Ids: `userId` and `stashId` must match `[A-Za-z0-9_-]{1,64}`, and payout keys must match `[A-Za-z0-9_:.-]{1,128}`.
 
 ```bash
 cd vault && set -a && . ./.env && set +a
@@ -83,112 +56,162 @@ V=http://127.0.0.1:$PORT; H="Authorization: Bearer $VAULT_TOKEN"
 ```
 
 ### `GET /health`
-```bash
-curl -s -H "$H" $V/health
-# {"network":"testnet","transport":"clearnet","synced":true,"height":4411626,"balanceZat":0,"spendableZat":0,
-#  "address":"utest1...","chainTip":4411626,"pendingRanges":[],"engineReady":true,"lastSyncAt":"...","lastError":null,"pools":{...}}
+```json
+{"network":"testnet","transport":"clearnet","synced":true,"height":4412452,"balanceZat":0,"spendableZat":0,
+ "address":"utest1...","chainTip":4412452,"pendingRanges":[],"addressAttribution":true,"engineReady":true,
+ "lastSyncAt":"2026-09-29T03:25:00.000Z","lastError":null,"pools":{"total_ironwood_balance":0,"...":0}}
 ```
-- `height` is the wallet's fully scanned height, and `chainTip` is the lightwalletd tip. `synced` means `height >= chainTip - 1`.
-- `balanceZat` is the total across pools, including unconfirmed funds. `spendableZat` is what can be spent now (zingo-cli requires 3 confirmations).
-- `address` is the wallet's default unified address, with an Orchard/Ironwood receiver. Fund the vault by sending to it.
+- `height` is the wallet's scanned height, and `synced` means `height >= chainTip - 1`.
+- `spendableZat` needs 3 confirmations.
+- `address` is the vault's main address. Send funds there to top it up.
 
-### `POST /stash-address`
-```bash
-curl -s -H "$H" -H 'content-type: application/json' -d '{"stashId":"abc123","amountZat":12500000}' $V/stash-address
-# {"address":"utest1...","uri":"zcash:utest1...?amount=0.125&memo=Wks6YWJjMTIz"}
+### `POST /user-address` `{ "userId": "user_123" }`
+```json
+{"address":"utest1...","uri":"zcash:utest1...?memo=WlU6dXNlcl8xMjM"}
 ```
-- The first call for a `stashId` creates a fresh diversified unified address with Orchard/Ironwood and Sapling receivers and no transparent receiver. Later calls return the same address, and the URI picks up the new `amountZat`.
-- `uri` is ZIP-321: `amount` is in decimal ZEC, and `memo` is the base64url of `ZK:<stashId>` without padding.
-- `stashId` must match `[A-Za-z0-9_-]{1,64}`.
+- The address is stable per `userId`: repeat calls, including concurrent ones, return the same address.
+- The URI has no amount. Its memo is base64url(`ZU:<userId>`) with no padding, and only acts as a fallback tag.
 
-### `GET /funding/:stashId`
-```bash
-curl -s -H "$H" $V/funding/abc123
-# {"fundedZat":0,"confirmations":0,"txids":[],"synced":true,"transfers":[]}
+### `GET /deposits/:userId[?minConf=N]`
+```json
+{"userId":"user_123","address":"utest1...","receivedZat":0,"confirmedZat":0,"pendingZat":0,"confirmations":0,
+ "txids":[],"lastTxAt":null,"transfers":[],"minConf":1,"synced":true}
 ```
-- This sums every **received** transfer whose memo is `ZK:<stashId>`, or starts with `ZK:<stashId>` followed by whitespace. `ZK:abc` doesn't match `ZK:abcd`.
-- Mempool transactions count, with 0 confirmations. `confirmations` is the minimum across the funding transactions.
-- Suggested rule: treat a stash as funded when `fundedZat >= amount && confirmations >= 3`.
-- Attribution is **by memo only**. A payment without the memo isn't attributed to any stash, even if it went to the stash's address.
+- `receivedZat = confirmedZat + pendingZat`. `confirmedZat` sums transactions with at least `minConf` confirmations (default 1). `pendingZat` covers the mempool and younger transactions.
+- `confirmations` is the minimum across transactions, and `lastTxAt` is ISO time or `null`.
+- `transfers` has one entry per transaction: `[{txid, valueZat, status, confirmations, height, at, pools:["ironwood"|"orchard"|"sapling"], matchedBy:"address"|"memo"}]`.
+- Returns `404 unknown_user` if `POST /user-address` wasn't called first.
+- **Ledger tip:** credit a user when `confirmedZat` rises, e.g. with `?minConf=3`, and key the credits by txid (from `transfers`) so a transaction is never credited twice.
 
-### `POST /payout`
-```bash
-curl -s -H "$H" -H 'content-type: application/json' \
-  -d '{"stashId":"abc123","to":"utest1...","amountZat":12000000,"memo":"You got ZECKED!"}' $V/payout
-# 200 {"txid":"..."}
-# 402 {"error":"insufficient_funds","message":"insufficient funds: can send at most 0 zat after fees, requested 12000000 zat",
-#      "requestedZat":12000000,"maxSendableZat":0,"spendableZat":0,"balanceZat":0,"synced":true}
+### `POST /stash-address` `{ "stashId": "abc123", "amountZat": 12500000 }`
+```json
+{"address":"utest1...","uri":"zcash:utest1...?amount=0.125&memo=Wks6YWJjMTIz"}
 ```
-- `to` must be a testnet unified address with a shielded receiver, or a Sapling address (`ztestsapling1...`). The API returns `400 not_testnet` for mainnet addresses and `400 not_shielded` for transparent or TEX addresses.
-- The fee (ZIP-317) is paid by the vault on top of `amountZat`.
-- `memo` is optional, up to 512 bytes. It defaults to `ZECKED ZK:<stashId>`.
-- **One payout per stash, either the winner or the refund.**
-  - Retrying with the same `to` and `amountZat` returns the original `{txid, duplicate:true}`. A different body gets `409 already_paid`.
-  - A concurrent retry gets `409 payout_in_progress`.
-  - A failure before a transaction is built (insufficient funds, a proposal error) can be retried.
-  - A failure at or after broadcast, a timeout, or an engine crash mid-send locks the stash (`502` or `409 payout_unresolved`) until someone checks it. Look at `GET /payout/:stashId`, `.data/vault-state.json`, and zingo-cli's `transactions` list. Then fix or delete the record in `vault-state.json` while the vault is stopped.
+Stable per stash. Later calls with a new `amountZat` return the same address with an updated URI amount. The memo is base64url(`ZK:<stashId>`).
 
-### `GET /payout/:stashId`
-Returns `{stashId, state: "sending"|"sent"|"failed", txid, to, amountZat, error, updatedAt}`, or `404` if there's no payout for that stash.
+### `GET /funding/:stashId[?minConf=N]`
+```json
+{"fundedZat":0,"confirmations":0,"txids":[],"confirmedZat":0,"pendingZat":0,"lastTxAt":null,
+ "address":"utest1...","attribution":"address+memo","synced":true,"transfers":[]}
+```
+This covers funds at the stash's own address, plus notes on unassigned addresses whose memo carries `ZK:<stashId>`. The fields `fundedZat`, `confirmations` and `txids` are unchanged from before.
+
+### `POST /payout` `{ "key"?, "stashId"?, "to", "amountZat", "memo"? }`
+```json
+{"txid":"...","key":"withdraw:user_123:8f2c"}
+```
+- **Idempotent per key.** `key` is optional. With no `key`, the key is the `stashId`, which keeps the old one-payout-per-stash rule.
+- Use `key` for withdrawals, e.g. `withdraw:<userId>:<nonce>`. At least one of `key` or `stashId` is required.
+- `to` must be a testnet unified address with a shielded receiver, or a Sapling address (`ztestsapling1...`).
+- The fee (ZIP-317) is paid by the vault on top of `amountZat`. `memo` is optional, up to 512 bytes. It defaults to `ZECKED ZK:<stashId>` or `ZECKED withdrawal`.
+
+| Case | Response |
+| --- | --- |
+| sent | `200 {"txid","key"}` |
+| retry with the same key and the same `to`+`amountZat` | `200 {"txid","key","duplicate":true}` (no second send) |
+| same key, different body | `409 already_paid` (includes the original `txid`, `to`, `amountZat`) |
+| same key already in flight | `409 payout_in_progress` |
+| earlier send with this key timed out or crashed mid-send | `409 payout_unresolved` (`lastError`); check the wallet, then fix the record in `vault-state.json` |
+| not enough spendable funds | `402 insufficient_funds` (`maxSendableZat`, `requestedZat`, `spendableZat`, `balanceZat`, `synced`) |
+| bad address | `400 bad_address` / `not_testnet` / `not_shielded` |
+
+A failure before a transaction is built (insufficient funds, a proposal error) doesn't use up the key.
+
+### `GET /payout/:key`
+Returns `{key, stashId, state:"sending"|"sent"|"failed", txid, to, amountZat, error, updatedAt}`, or `404`. A plain stashId works as the key.
 
 ### `GET /healthz`
-Unauthenticated liveness check that returns `{"ok":true}`.
+Unauthenticated liveness check that returns `{"ok":true}`. Railway's health check uses it.
 
-## Exposing it to the Vercel app
+## Deploy on Railway
 
-The vault binds to `127.0.0.1`. Put a tunnel in front of it and store `VAULT_URL` and `VAULT_TOKEN` in Vercel env vars. Only call the vault from server code: route handlers or server actions, never the browser.
+You'll need a Railway account, and this repo on GitHub with the `vault/` folder pushed.
 
-**Cloudflare quick tunnel** (free, no account). The binary is at `vault/bin/cloudflared` (2026.9.3):
+1. **New project.** In Railway, click **New Project**, choose **Deploy from GitHub repo**, and pick the ZECKED repo.
+2. **Point it at the vault folder.** Open the new service, then **Settings**:
+   - **Root Directory:** `vault`
+   - **Config-as-code / Railway config file:** `/vault/railway.json`. Include the leading slash; Railway doesn't look inside the root directory for this file by itself.
+
+   Railway then builds with `vault/Dockerfile`. It only redeploys when something under `vault/` changes, and it checks `/healthz` after each deploy.
+3. **Add a volume.** Right-click the service (or press **⌘K**), choose **Add Volume**, and set the mount path to **`/data`**. The wallet lives there. **Without the volume, every redeploy would create a brand-new empty wallet.**
+4. **Set the variables.** Open **Variables** and add:
+   - `VAULT_TOKEN`: a long random secret, at least 32 characters. Generate one with `openssl rand -hex 32` or a password manager. Put the **same value** into Vercel's env vars as `VAULT_TOKEN`.
+   - `LIGHTWALLETD_URL`: `https://testnet.zec.rocks:443`. If `/health` stays `synced:false` for a long time, switch to the backup `https://zaino.testnet.unsafe.zec.rocks:443`. zec.rocks briefly stopped serving block ranges once during testing.
+   - Don't set `PORT`; Railway provides it.
+5. **Deploy.** Click **Deploy** and wait. The first build compiles the Zcash wallet engine from source and takes a while; see "Build time and memory" below.
+   When it's up, the **Deploy Logs** show `created new testnet wallet` (first boot only), then `vault listening` and `engine ready`.
+6. **Give it a public address.** Go to **Settings → Networking → Generate Domain**. If Railway asks for a port, use the `port` value from the `vault listening` log line. You'll get something like `https://zecked-vault-production.up.railway.app`.
+7. **Connect the app.** In Vercel, set `VAULT_URL` to that domain and `VAULT_TOKEN` to the same secret, then redeploy the app.
+8. **Check it.** Open `https://<your-domain>/healthz` in a browser; it should show `{"ok":true}`. `/health` needs the token.
+9. **Fund it.** Get the vault's address from `/health` (or a user's address from the app), and use a testnet faucet: https://faucet.testnet.valargroup.dev or https://zcashfaucet.jinolabs.xyz.
+
+Things to know:
+- Keep it to **one replica**. Railway doesn't allow replicas with a volume anyway. Two copies would fight over the same wallet.
+- Redeploys cause a short downtime, because Railway stops the old container before the new one mounts the volume.
+- The container runs as root so it can write to Railway's root-owned volume.
+- **Back up the seed** once the wallet has real test funds. Open a Railway shell on the service and run `/app/bin/zingo-cli --chain testnet --data-dir /data --offline recovery_info`. Only do this while the vault is stopped (for example, with the start command temporarily set to `sleep infinity`), because two zingo-cli processes must never open the wallet at once. Store the seed privately.
+
+### Build time and memory
+
+The Dockerfile compiles about 370 Rust crates, including heavy zero-knowledge proving libraries.
+
+- **Time:** on the dev machine (8 cores, `JOBS=4`), a from-scratch build through `scripts/build-engine.sh` took **6 min 40 s** once the Rust sources were downloaded. The very first build took **~17 min**, including the toolchain and ~400 MB of crate downloads over a slow link. Expect roughly **10-20 min** on Railway for a cold build. Later builds may reuse Railway's layer cache, but that's not guaranteed.
+- **Memory:** peak compiler memory was **2.3 GB** with `JOBS=4` (measured). Keep at least 4 GB free for the build. The build argument `JOBS=2` lowers the peak, at the cost of time.
+- **Railway's build limits:** Railway doesn't publish exact build timeout or build RAM figures per plan, and community reports mention timeouts somewhere between about 10 and 30 minutes depending on plan. So a from-source build **may time out, especially on the trial or free plan.**
+
+If it does, use a prebuilt engine instead of compiling on Railway:
+1. Build the image once somewhere with enough time, e.g. a GitHub Actions job running `docker build vault/`, and push it to a registry such as GHCR. In Railway, deploy the service from that **Docker image** instead of the repo.
+2. Or publish a prebuilt `zingo-cli` binary and set the Railway variables `ZINGO_CLI_URL` (and `ZINGO_CLI_SHA256`). The Dockerfile then downloads that binary instead of compiling it, which cuts the build to about a minute. The binary must be built inside Debian **bookworm** (glibc 2.36) or older, for example with this Dockerfile's first stage. A binary compiled on a newer distro, like the Ubuntu 26.04 dev machine (glibc 2.43), **won't start** in the container.
+
+## Run locally
+
 ```bash
-vault/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://localhost:8788
-# prints https://<random-words>.trycloudflare.com  -> set VAULT_URL to that in Vercel
+cd vault
+npm install                 # dev-only deps (typescript, @types/node); the service itself has no runtime deps
+scripts/build-engine.sh     # once: builds bin/zingo-cli (see below)
+scripts/start.sh            # background; creates .env (mode 600) with a random VAULT_TOKEN on first run
+tail -f .data/vault.log
+scripts/stop.sh             # saves the wallet and stops
 ```
-- Use `--protocol http2`. The default QUIC connection dropped here with `datagram manager error`. Over HTTP/2, `/healthz`, the 401 path and an authorized `/health` all worked through the tunnel.
-- Right after the tunnel starts, the new hostname can take a few seconds to resolve.
-- The quick-tunnel URL changes every time cloudflared restarts. For a stable hostname, use a named tunnel with a free Cloudflare account (`cloudflared tunnel login && cloudflared tunnel create zecked-vault`), or host the vault elsewhere:
-  - **Fly.io / Railway:** run `node src/server.ts` in a container with `bin/zingo-cli`, set `HOST=0.0.0.0`, and mount a **persistent volume** at `VAULT_DATA_DIR`. The wallet file must survive redeploys. Run exactly one instance, because two instances would double-spend the same notes.
 
-Minimal server-side client for the Next.js app:
-```ts
-// server-only
-async function vault<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
-  const res = await fetch(`${process.env.VAULT_URL}${path}`, {
-    method: init?.method ?? "GET",
-    headers: { authorization: `Bearer ${process.env.VAULT_TOKEN}`, "content-type": "application/json" },
-    body: init?.body ? JSON.stringify(init.body) : undefined,
-    cache: "no-store",
-  });
-  const json = await res.json();
-  if (!res.ok) throw Object.assign(new Error(json.message ?? res.statusText), { status: res.status, code: json.error });
-  return json as T;
-}
-// const { address, uri } = await vault("/stash-address", { method: "POST", body: { stashId, amountZat } });
-// const { fundedZat, confirmations } = await vault(`/funding/${stashId}`);
-// const { txid } = await vault("/payout", { method: "POST", body: { stashId, to, amountZat, memo } });
-```
-Payouts include proof generation, so give that route enough `maxDuration`, or fire and poll with `GET /payout/:stashId`. Retrying `POST /payout` with the same body is safe.
+On the dev machine, port 8787 is taken by another app, so `.env` sets `PORT=8788`. To expose a local vault, run `bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://localhost:8788`. The default QUIC protocol dropped here, and the URL changes on every restart.
 
-## Funding the vault (testnet faucets)
+### Build the engine
 
-Send TAZ to the `address` from `/health`:
-- Valar Group faucet: https://faucet.testnet.valargroup.dev. It pays 0.125 TAZ per IP per day, shielded, from zecd. Its API is `POST /api/claim {"address":"utest1..."}`.
-- Jino Labs faucet: https://zcashfaucet.jinolabs.xyz. It sends shielded z2z drips and uses a browser proof-of-work.
+`scripts/build-engine.sh` is what the Dockerfile runs, step for step:
 
-If a faucet can't pay to an Orchard-only unified address, use an address from `POST /stash-address`. It also has a Sapling receiver, and funds sent there land in the same wallet. Funds become spendable after 3 confirmations, about 4 minutes at 75 s per block.
+1. It installs rustup (minimal profile) and protoc 36.2 into `$HOME` if they're missing.
+2. It clones `zingolib_v6.0.0` into `~/src/zingolib` and applies `engine/zingo-cli-received-by-address.patch`. The patch step is idempotent.
+3. It installs the pinned toolchain from `rust-toolchain.toml` (1.97.1).
+4. It runs `cargo build --release -p zingo-cli --no-default-features --features clearnet-test-mode`, then installs and strips `bin/zingo-cli`.
 
-## Backup and recovery
+Needs: `build-essential`, `git`, `curl` (and `unzip` if protoc has to be downloaded). Don't set `RUSTFLAGS`, because zingolib's `.cargo/config.toml` enables Ironwood with `--cfg zcash_unstable="nu6.3"` and `RUSTFLAGS` would override it. `BUILD_MIXNET=1` also builds `bin/zingo-cli-mixnet` and `bin/nym-proxy`.
 
-The seed phrase is only in `.data/zingo-wallet.dat`. To back it up, stop the vault and read it yourself in a private terminal. Never paste it anywhere or commit it:
-```bash
-scripts/stop.sh
-bin/zingo-cli --chain testnet --data-dir .data --offline recovery_info
-```
-If you lose `.data/` without a seed backup, you lose the testnet funds.
+### Environment variables
+
+| Var | Default | Meaning |
+| --- | --- | --- |
+| `VAULT_TOKEN` | (required, at least 32 chars) | Bearer token |
+| `LIGHTWALLETD_URL` | `https://testnet.zec.rocks:443` | Testnet lightwalletd or zaino endpoint |
+| `PORT` | `8787` | HTTP port (Railway sets it) |
+| `HOST` | `127.0.0.1` (`0.0.0.0` in the container) | Bind address |
+| `VAULT_DATA_DIR` (alias `ZINGO_DATA_DIR`) | `vault/.data` (`/data` in the container) | Wallet and state |
+| `ZINGO_TRANSPORT` | `clearnet` | `clearnet` or `mixnet` |
+| `ZINGO_CLI`, `ZINGO_NYM_PROXY` | `bin/...` | Engine binary overrides |
+| `SYNC_INTERVAL_MS` | `20000` | Background sync interval |
+| `SYNC_STALL_MS` | `600000` | Recycle the engine after this long with no sync progress |
+| `VAULT_ACCESS_LOG` | unset | Set it to log one line per request |
+| Build args: `JOBS`, `ZINGOLIB_TAG`, `ZINGO_CLI_URL`, `ZINGO_CLI_SHA256` | `4`, `zingolib_v6.0.0`, empty | Dockerfile only |
+
+## Testnet faucets
+- Valar Group: https://faucet.testnet.valargroup.dev (0.125 TAZ per IP per day)
+- Jino Labs: https://zcashfaucet.jinolabs.xyz (shielded, browser proof-of-work)
+
+If a faucet refuses an address, try a user or stash address. Those include a Sapling receiver.
 
 ## Development
-
 ```bash
-npm test          # ZIP-321 and memo-matching unit tests
+npm test            # ZIP-321, memo, and attribution unit tests
 npm run typecheck
 ```
-Source layout: `src/server.ts` (HTTP, auth, loop), `src/vault.ts` (endpoint logic), `src/zingo.ts` (zingo-cli session driver), `src/lightwalletd.ts` (chain tip and chain name over gRPC), `src/zip321.ts`, `src/store.ts`.
+Source layout: `src/server.ts` (HTTP, auth, loop, first-boot wallet), `src/vault.ts` (endpoint logic and attribution), `src/zingo.ts` (zingo-cli session driver), `src/lightwalletd.ts` (chain tip and chain name over gRPC), `src/zip321.ts`, `src/store.ts`, `engine/*.patch`.

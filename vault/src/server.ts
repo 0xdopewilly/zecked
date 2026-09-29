@@ -2,6 +2,7 @@
 // wallet (zingo-cli). See ../README.md.
 import http from "node:http";
 import { existsSync, mkdirSync, chmodSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual, createHash } from "node:crypto";
@@ -18,7 +19,8 @@ const TOKEN = process.env.VAULT_TOKEN ?? "";
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const LIGHTWALLETD_URL = process.env.LIGHTWALLETD_URL ?? "https://testnet.zec.rocks:443";
-const DATA_DIR = resolve(process.env.VAULT_DATA_DIR ?? join(ROOT, ".data"));
+// The container image sets VAULT_DATA_DIR=/data (a Railway volume). ZINGO_DATA_DIR is accepted as an alias.
+const DATA_DIR = resolve(process.env.VAULT_DATA_DIR ?? process.env.ZINGO_DATA_DIR ?? join(ROOT, ".data"));
 // clearnet: zingo-cli built with `--no-default-features --features clearnet-test-mode` (sync
 //           and broadcast go straight to lightwalletd over TLS). Reliable; the default.
 // mixnet:   the stock zingo-cli 6.x build, which forces sends over the Nym mixnet via nym-proxy.
@@ -70,6 +72,25 @@ if (info.chainName !== "test") {
 }
 log("lightwalletd ok", { url: LIGHTWALLETD_URL, vendor: info.vendor, version: info.version, tip: info.blockHeight, transport: TRANSPORT });
 
+// First boot: create a NEW testnet wallet with its birthday just below the tip, so the
+// first sync is quick. Offline and silent: none of zingo-cli's output is printed or kept,
+// only the birthday number is parsed. The seed stays inside the wallet file.
+if (!existsSync(join(DATA_DIR, "zingo-wallet.dat"))) {
+  const birthday = Math.max(1, info.blockHeight - 10);
+  const r = spawnSync(ZINGO_CLI, ["--chain", "testnet", "--data-dir", DATA_DIR, "--offline", "--birthday", String(birthday), "birthday"], {
+    cwd: DATA_DIR,
+    stdio: ["ignore", "pipe", "ignore"],
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  if (r.status !== 0 || !existsSync(join(DATA_DIR, "zingo-wallet.dat"))) {
+    console.error(`could not create a new testnet wallet in ${DATA_DIR} (zingo-cli exit ${r.status})`);
+    process.exit(1);
+  }
+  const walletBirthday = /^\s*(\d+)\s*$/m.exec(r.stdout ?? "")?.[1] ?? null;
+  log("created new testnet wallet", { dataDir: DATA_DIR, requestedBirthday: birthday, walletBirthday: walletBirthday ? Number(walletBirthday) : null });
+}
+
 const engine = new ZingoEngine({
   bin: ZINGO_CLI,
   dataDir: DATA_DIR,
@@ -80,10 +101,12 @@ const engine = new ZingoEngine({
 const store = new Store(DATA_DIR);
 const vault = new Vault(engine, store, LIGHTWALLETD_URL, TRANSPORT);
 
-engine.on("exit", (why: string) => log("engine exited; restarting", { why }));
+engine.on("exit", (why: string) => log(shuttingDown ? "engine stopped" : "engine exited; restarting", { why }));
+engine.on("recycle", (reason: string) => log("recycling wedged engine", { reason }));
 engine.on("error", (e: Error) => log("engine restart failed", { error: e.message }));
-engine.on("ready", () => {
-  log("engine ready");
+engine.on("ready", async () => {
+  await vault.onEngineReady();
+  log("engine ready", { addressAttribution: vault.health().addressAttribution });
   void vault.syncTick();
 });
 
@@ -129,21 +152,24 @@ const server = http.createServer(async (req, res) => {
 
     if (route === "GET /health") return send(res, 200, vault.health());
     if (route === "POST /stash-address") return send(res, 200, await vault.stashAddress(await readJson(req)));
+    if (route === "POST /user-address") return send(res, 200, await vault.userAddress(await readJson(req)));
+    const dm = /^\/deposits\/([^/]+)$/.exec(url.pathname);
+    if (req.method === "GET" && dm) return send(res, 200, await vault.deposits(decodeURIComponent(dm[1]), url.searchParams.get("minConf")));
     const fm = /^\/funding\/([^/]+)$/.exec(url.pathname);
-    if (req.method === "GET" && fm) return send(res, 200, await vault.funding(decodeURIComponent(fm[1])));
+    if (req.method === "GET" && fm) return send(res, 200, await vault.funding(decodeURIComponent(fm[1]), url.searchParams.get("minConf")));
     const pm = /^\/payout\/([^/]+)$/.exec(url.pathname);
     if (req.method === "GET" && pm) return send(res, 200, vault.payoutStatus(decodeURIComponent(pm[1])));
     if (route === "POST /payout") {
       const body = await readJson(req);
       const out = await vault.payout(body);
-      log("payout sent", { stashId: body.stashId, amountZat: body.amountZat, txid: out.txid, duplicate: !!out.duplicate });
+      log("payout sent", { key: out.key, stashId: body.stashId, amountZat: body.amountZat, txid: out.txid, duplicate: !!out.duplicate });
       return send(res, 200, out);
     }
     return send(res, 404, { error: "not_found" });
   } catch (e) {
     const err = e instanceof HttpError ? e : new HttpError(500, "internal", (e as Error)?.message ?? "error");
     if (err.status >= 500) log("request failed", { route, status: err.status, code: err.code, error: err.message });
-    return send(res, err.status, { error: err.code, message: err.message, ...err.extra });
+    return send(res, err.status, { ...err.extra, error: err.code, message: err.message });
   } finally {
     if (process.env.VAULT_ACCESS_LOG) log("request", { route, ms: Date.now() - started, status: res.statusCode });
   }

@@ -1,0 +1,71 @@
+diff --git a/zingo-cli/src/commands.rs b/zingo-cli/src/commands.rs
+index c5a4938..f6db660 100644
+--- a/zingo-cli/src/commands.rs
++++ b/zingo-cli/src/commands.rs
+@@ -511,10 +511,66 @@ async fn notes(
+         "ironwood_notes" => json::JsonValue::from(wallet.note_summaries::<IronwoodNote>(all_notes)),
+         "orchard_notes" => json::JsonValue::from(wallet.note_summaries::<OrchardNote>(all_notes)),
+         "sapling_notes" => json::JsonValue::from(wallet.note_summaries::<SaplingNote>(all_notes)),
++        // ZECKED vault patch: which wallet address received each note.
++        "received_by_address" => received_by_address(&wallet),
+     }
+     .pretty(JSON_INDENT))
+ }
+ 
++/// ZECKED vault patch. Every shielded note the wallet holds, spent or not,
++/// paired with the wallet unified address whose receiver it was paid to, so a
++/// deposit can be attributed by receiving (diversified) address instead of
++/// relying on the sender to carry a memo.
++fn received_by_address(wallet: &zingolib::wallet::LightWallet) -> json::JsonValue {
++    let mut out = Vec::new();
++    collect_received::<IronwoodNote>(wallet, "ironwood", &mut out, |note, ua| {
++        ua.orchard() == Some(&note.recipient())
++    });
++    collect_received::<OrchardNote>(wallet, "orchard", &mut out, |note, ua| {
++        ua.orchard() == Some(&note.recipient())
++    });
++    collect_received::<SaplingNote>(wallet, "sapling", &mut out, |note, ua| {
++        ua.sapling() == Some(&note.recipient())
++    });
++    json::JsonValue::Array(out)
++}
++
++fn collect_received<N>(
++    wallet: &zingolib::wallet::LightWallet,
++    pool: &str,
++    out: &mut Vec<json::JsonValue>,
++    paid_to: impl Fn(&N::ZcashNote, &zcash_keys::address::UnifiedAddress) -> bool,
++) where
++    N: pepper_sync::wallet::NoteInterface<KeyId = pepper_sync::keys::KeyId>,
++{
++    let chain_type = wallet.chain_type();
++    for note in wallet.wallet_outputs::<N>() {
++        let matched = wallet
++            .unified_addresses()
++            .iter()
++            .find(|(_, ua)| paid_to(note.note(), ua));
++        let transaction = wallet.output_transaction(note);
++        let memo = match note.memo() {
++            zcash_protocol::memo::Memo::Text(text) => json::JsonValue::from(text.to_string()),
++            _ => json::JsonValue::Null,
++        };
++        out.push(json::object! {
++            "pool" => pool,
++            "txid" => note.output_id().txid().to_string(),
++            "output_index" => note.output_id().output_index(),
++            "value" => note.value(),
++            "status" => transaction.status().to_string(),
++            "block_height" => u32::from(transaction.status().get_height()),
++            "datetime" => transaction.datetime(),
++            "scope" => format!("{:?}", note.key_id().scope),
++            "spend_status" => wallet.output_spend_status(note).to_string(),
++            "memo" => memo,
++            "address_index" => matched.map_or(json::JsonValue::Null, |(id, _)| json::JsonValue::from(id.address_index)),
++            "address" => matched.map_or(json::JsonValue::Null, |(_, ua)| json::JsonValue::from(ua.encode(&chain_type))),
++        });
++    }
++}
++
+ async fn coins(
+     scope: Option<OutputScope>,
+     lightclient: &mut LightClient,

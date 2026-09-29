@@ -1,0 +1,12 @@
+# Never ship wallet data, secrets, local binaries or deps into the image.
+.data
+.data/**
+.env
+.env.*
+bin
+bin/**
+node_modules
+node_modules/**
+*.log
+test
+README.md
