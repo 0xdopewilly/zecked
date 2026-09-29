@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { Icon } from "@/components/zk";
 import { Eyebrow, Reveal, SPRING, SplitText } from "../fx";
 import { Count } from "./extras/Count";
-import { SPLIT_FIX_CSS, srOnly, useReduced } from "./extras/kit";
+import { SPLIT_FIX_CSS, srOnly, useReduced, useScrolling } from "./extras/kit";
 
 export type SiteStats = {
   network: string;
@@ -112,7 +112,9 @@ function ZeroState({ accent }: { accent: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const seen = useInView(ref, { amount: 0.5 });
   const reduce = useReduced();
-  const live = seen && !reduce;
+  // Loops rest while the page scrolls (see useScene), then pick up again.
+  const moving = useScrolling();
+  const live = seen && !reduce && !moving;
   return (
     <span ref={ref} className="zkls-zero">
       <span style={srOnly}>Zero so far. You could be first.</span>

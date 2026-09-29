@@ -144,7 +144,7 @@ export function Footer({ appUrl, demoUrl }: { appUrl: string; demoUrl: string })
         </div>
       </div>
 
-      <motion.div aria-hidden className="zkft-mark" style={reduce ? undefined : { y: markY, opacity: markOpacity }}>
+      <motion.div aria-hidden className="zkft-mark" style={reduce ? undefined : { y: markY, opacity: markOpacity, willChange: "transform, opacity" }}>
         {LETTERS.map((l, i) => (
           <motion.span key={i} whileHover={{ y: "-10%", color: "rgba(244, 183, 40, 0.28)" }} transition={SPRING}>
             {l}

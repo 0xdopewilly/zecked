@@ -37,8 +37,8 @@
 .zks-btn-gold { background: var(--zk-grad-gold); color: var(--zk-gold-ink); box-shadow: 0 6px 0 var(--zk-gold-deep), 0 20px 50px rgb(var(--zk-gold-rgb) / .35); }
 .zks-btn-gold:hover { filter: brightness(1.06); box-shadow: 0 7px 0 var(--zk-gold-deep), 0 26px 70px rgb(var(--zk-gold-rgb) / .5); color: var(--zk-gold-ink); }
 .zks-btn-gold:active { box-shadow: 0 2px 0 var(--zk-gold-deep), 0 10px 30px rgb(var(--zk-gold-rgb) / .3); }
-.zks-btn-ghost { background: rgb(255 255 255 / .04); color: var(--zk-text); border: 1.5px solid var(--zk-border-strong); }
-.zks-btn-ghost:hover { background: rgb(255 255 255 / .09); color: var(--zk-text); }
+.zks-btn-ghost { background: rgb(24 18 52 / .78); color: var(--zk-text); border: 1.5px solid var(--zk-border-strong); }
+.zks-btn-ghost:hover { background: rgb(40 32 82 / .86); color: var(--zk-text); }
 .zks-btn-purple { background: var(--zk-purple); color: #fff; box-shadow: 0 6px 0 var(--zk-purple-deep), 0 20px 50px rgb(var(--zk-purple-rgb) / .35); }
 .zks-btn-purple:hover { color: #fff; filter: brightness(1.08); }
 @media (max-width: 520px) { .zks-btn { height: 58px; padding: 0 22px; font: var(--zk-type-btn-md); } }
@@ -52,8 +52,13 @@
 }
 
 /* Marquee */
-.zks-marquee { overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
-.zks-marquee-track { display: flex; width: max-content; gap: var(--zks-gap); animation: zks-marquee var(--zks-speed) linear infinite; }
+/* Edge fades are colour overlays, not mask-image: a mask over a moving layer is re-applied by the GPU every frame. */
+.zks-marquee { position: relative; overflow: hidden; }
+.zks-marquee.is-open { overflow: visible; }
+.zks-marquee.is-fade::before, .zks-marquee.is-fade::after { content: ""; position: absolute; top: 0; bottom: 0; width: 8%; z-index: 1; pointer-events: none; }
+.zks-marquee.is-fade::before { left: 0; background: linear-gradient(90deg, var(--zks-fade, var(--zk-bg)), transparent); }
+.zks-marquee.is-fade::after { right: 0; background: linear-gradient(270deg, var(--zks-fade, var(--zk-bg)), transparent); }
+.zks-marquee-track { display: flex; width: max-content; gap: var(--zks-gap); animation: zks-marquee var(--zks-speed) linear infinite; will-change: transform; }
 .zks-marquee-track.is-reverse { animation-direction: reverse; }
 .zks-marquee:hover .zks-marquee-track { animation-play-state: paused; }
 .zks-marquee-group { display: flex; gap: var(--zks-gap); flex: none; }
@@ -92,7 +97,13 @@
   .zks-marquee-track, .zks-grain, .zks-shimmer { animation: none !important; }
 }
 
+/* Float: gentle bob + tilt (fx.tsx). Keyframes read the per-element amplitude and tilt. */
+.zks-float { display: inline-block; will-change: transform; transform: rotate(var(--zks-rot, 0deg)); animation: zks-float 4.5s ease-in-out infinite; }
+@keyframes zks-float {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--zks-rot, 0deg)); }
+  50% { transform: translate3d(0, var(--zks-amp, -10px), 0) rotate(calc(var(--zks-rot, 0deg) + 2.5deg)); }
+}
+@media (prefers-reduced-motion: reduce) { .zks-float { animation: none; } }
+
 /* Off-screen sections pause their CSS animations (toggled by Landing's IntersectionObserver). */
 [data-zks-off] *, [data-zks-off] *::before, [data-zks-off] *::after { animation-play-state: paused !important; }
-:root { --zks-nav-blur: blur(8px); }
-@media (pointer: coarse), (max-width: 880px) { :root { --zks-nav-blur: none; } }

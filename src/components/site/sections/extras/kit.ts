@@ -1,7 +1,7 @@
 "use client";
 // Small shared helpers for the WhyZcash / LiveStats / GetTestZec / Faq / FinalCta / Footer sections.
 import { useInView, useReducedMotion } from "motion/react";
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 
 /** Deterministic PRNG (mulberry32). Same seed gives the same numbers on server and client. */
 export function seeded(seed: number) {
@@ -31,17 +31,46 @@ export function useSafeId(prefix: string) {
   return prefix + useId().replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
+/* Page-wide "is the user scrolling right now" flag: true from the first scroll event until 160ms after the last. */
+let scrolling = false;
+let idleTimer = 0;
+const scrollSubs = new Set<() => void>();
+function onScroll() {
+  if (!scrolling) {
+    scrolling = true;
+    scrollSubs.forEach((f) => f());
+  }
+  window.clearTimeout(idleTimer);
+  idleTimer = window.setTimeout(() => {
+    scrolling = false;
+    scrollSubs.forEach((f) => f());
+  }, 160);
+}
+function subscribeScrolling(cb: () => void) {
+  if (scrollSubs.size === 0) window.addEventListener("scroll", onScroll, { passive: true });
+  scrollSubs.add(cb);
+  return () => {
+    scrollSubs.delete(cb);
+    if (scrollSubs.size === 0) window.removeEventListener("scroll", onScroll);
+  };
+}
+export function useScrolling() {
+  return useSyncExternalStore(subscribeScrolling, () => scrolling, () => false);
+}
+
 /**
  * Scene state for in-view SVG illustrations.
  * on:   has entered the viewport once (play the intro).
- * live: on screen right now and motion allowed (run the loops).
+ * live: on screen, not mid-scroll, and motion allowed (run the loops). SVG loops repaint the whole
+ *       drawing every frame, so they rest while the page scrolls and pick up again when it stops.
  */
 export function useScene(amount = 0.35) {
   const ref = useRef<HTMLDivElement>(null);
   const started = useInView(ref, { once: true, amount });
   const visible = useInView(ref, { amount: 0.05 });
   const reduce = useReduced();
-  return { ref, on: started, live: started && visible && !reduce, reduce };
+  const moving = useScrolling();
+  return { ref, on: started, live: started && visible && !reduce && !moving, reduce };
 }
 
 /** Rotate/scale an SVG element around its own centre. */

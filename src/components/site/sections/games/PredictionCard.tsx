@@ -4,11 +4,11 @@ import { AnimatePresence, motion, useAnimate } from "motion/react";
 import { useId, useState } from "react";
 import { Button, Countdown, Icon, LiveBadge, TeamBadge } from "@/components/zk";
 import { EASE_OUT } from "@/components/site/fx";
+import { clubCrest, DEMO_BARCELONA } from "@/lib/crest";
 import { BallTile, CardShell, PitchLines, RuleChips, Springy, WIN_ZEC } from "./parts";
 
-const CREST = (espnId: number) => `https://a.espncdn.com/combiner/i?img=/i/teamlogos/soccer/500/${espnId}.png&w=128&h=128`;
-const HOME = { code: "BAR", name: "Barcelona", color: "#A50044", ink: "#fff", logo: CREST(83) };
-const AWAY = { code: "CHE", name: "Chelsea", color: "#034694", ink: "#fff", logo: CREST(363) };
+const HOME = DEMO_BARCELONA;
+const AWAY = { code: "CHE", name: "Chelsea", color: "#034694", ink: "#fff", logo: clubCrest(363) };
 /** Demo kickoff: a fixed start so server and client render the same first frame, then it ticks. */
 const KICKOFF_IN_SECONDS = 2 * 3600 + 14 * 60 + 37;
 

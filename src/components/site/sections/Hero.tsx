@@ -1,7 +1,8 @@
 "use client";
 import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { useRef } from "react";
-import { Icon, Vault } from "@/components/zk";
+import { Icon, TeamBadge, Vault } from "@/components/zk";
+import { DEMO_BARCELONA } from "@/lib/crest";
 import { EASE_OUT, Float, Magnetic, Sticker, Tilt } from "../fx";
 
 const LINES: { text: string; gold?: boolean }[] = [{ text: "Hide it." }, { text: "Crack it." }, { text: "Get Zecked.", gold: true }];
@@ -39,6 +40,7 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
     x: useTransform(p, [0, 1], [0, dx]),
     y: useTransform(p, [0, 1], [0, dy]),
     rotate: useTransform(p, [0, 1], [0, r]),
+    willChange: "transform",
   });
   const s1 = fly(-260, -120, -40);
   const s2 = fly(240, -160, 35);
@@ -55,14 +57,14 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
       <Blob color="var(--zk-pink)" size={380} x="-8%" y="52%" delay={2} dur={19} />
       <div aria-hidden className="zks-hero-sun" />
       {/* Retro grid floor */}
-      <motion.div aria-hidden style={{ position: "absolute", left: "-20%", right: "-20%", bottom: -40, height: "42%", perspective: 600, y: gridY, pointerEvents: "none" }}>
+      <motion.div aria-hidden className="zks-gridwrap" style={{ position: "absolute", left: "-20%", right: "-20%", bottom: -40, height: "42%", perspective: 600, y: gridY, pointerEvents: "none", willChange: "transform" }}>
         <div className="zks-gridfloor" />
       </motion.div>
 
       <div className="zks-container" style={{ position: "relative", zIndex: 2, display: "grid", gap: 40, alignItems: "center" }}>
         <div className="zks-hero-grid">
           {/* Copy */}
-          <motion.div style={{ y: textY, opacity: textO }}>
+          <motion.div style={{ y: textY, opacity: textO, willChange: "transform, opacity" }}>
             <motion.span
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
@@ -131,18 +133,20 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
 
           {/* Vault + orbiting stickers */}
           <div style={{ position: "relative", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 420 }}>
-            <motion.div
-              style={{ y: vaultY, rotate: vaultR, scale: vaultS }}
-              initial={{ opacity: 0, scale: 0.6, rotate: -25 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              transition={{ type: "spring", stiffness: 70, damping: 12, delay: 0.3 }}
-            >
-              <Tilt max={14} radius={999}>
-                <div className="zks-vault-wrap">
-                  <div aria-hidden className="zks-vault-glow" />
-                  <Vault mode="loop" size={440} />
-                </div>
-              </Tilt>
+            {/* Scroll layer (own GPU layer, only shrinks) wraps the one-off intro zoom so the vault stays sharp. */}
+            <motion.div style={{ y: vaultY, rotate: vaultR, scale: vaultS, willChange: "transform" }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.6, rotate: -25 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 70, damping: 12, delay: 0.3 }}
+              >
+                <Tilt max={14} radius={999} flat>
+                  <div className="zks-vault-wrap">
+                    <div aria-hidden className="zks-vault-glow" />
+                    <Vault mode="loop" size={440} />
+                  </div>
+                </Tilt>
+              </motion.div>
             </motion.div>
 
             <motion.div style={{ position: "absolute", left: "2%", top: "10%", ...s1 }}>
@@ -155,7 +159,7 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
             <motion.div style={{ position: "absolute", right: "0%", top: "22%", ...s2 }}>
               <Float amplitude={10} duration={5} delay={0.6} rotate={7}>
                 <Sticker bg="var(--zk-sky)" fg="var(--zk-sky-ink)" edge="var(--zk-sky-deep)" rotate={7}>
-                  <Icon icon="ball" size={18} stroke={2.4} /> BAR 2–1?
+                  <TeamBadge {...DEMO_BARCELONA} size={24} /> BAR 2–1?
                 </Sticker>
               </Float>
             </motion.div>
@@ -187,7 +191,7 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
       {/* Scroll cue */}
       <motion.div
         aria-hidden
-        style={{ position: "absolute", bottom: 22, left: "50%", x: "-50%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--zk-text-faint)", font: "var(--zk-type-label)", letterSpacing: ".2em", zIndex: 3, opacity: textO }}
+        style={{ position: "absolute", bottom: 22, left: "50%", x: "-50%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--zk-text-faint)", font: "var(--zk-type-label)", letterSpacing: ".2em", zIndex: 3, opacity: textO, willChange: "opacity" }}
       >
         SCROLL
         <div style={{ width: 26, height: 42, borderRadius: 14, border: "2px solid var(--zk-border-strong)", display: "flex", justifyContent: "center", paddingTop: 7 }}>
@@ -209,17 +213,16 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
         .zks-vault-glow { position: absolute; inset: -14%; border-radius: 50%; background: radial-gradient(circle, rgb(var(--zk-gold-rgb) / .28) 0%, rgb(var(--zk-gold-rgb) / .08) 42%, transparent 66%), radial-gradient(circle at 50% 62%, rgba(0,0,0,.5) 0%, transparent 60%); pointer-events: none; }
         .zks-vault-wrap > svg, .zks-vault-wrap > div:not(.zks-vault-glow) { position: relative; }
         @media (max-width: 560px) { .zks-vault-wrap > * { width: 300px !important; height: 300px !important; } }
+        /* One tilted plane that slides itself (compositor-only), with no clip inside the 3D transform.
+           The fade is a static mask on the flat wrapper, so it stays put while the grid moves under it. */
         .zks-gridfloor {
-          position: absolute; inset: 0; transform: rotateX(62deg); transform-origin: 50% 100%; overflow: hidden;
-        }
-        .zks-gridfloor::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, transparent 10%, var(--zk-bg) 85%); }
-        .zks-gridfloor::before {
-          content: ""; position: absolute; left: 0; right: 0; top: -64px; bottom: 0; will-change: transform;
+          position: absolute; left: 0; right: 0; top: -64px; bottom: 0; transform-origin: 50% 100%; will-change: transform;
           background-image: linear-gradient(rgb(var(--zk-purple-rgb) / .35) 1.5px, transparent 1.5px), linear-gradient(90deg, rgb(var(--zk-purple-rgb) / .35) 1.5px, transparent 1.5px);
-          background-size: 64px 64px; animation: zks-grid 3.2s linear infinite;
+          background-size: 64px 64px; transform: rotateX(62deg); animation: zks-grid 3.2s linear infinite;
         }
-        @keyframes zks-grid { from { transform: translate3d(0,0,0) } to { transform: translate3d(0,64px,0) } }
-        @media (prefers-reduced-motion: reduce) { .zks-gridfloor::before { animation: none } }
+        .zks-gridwrap { -webkit-mask-image: linear-gradient(to top, #000 8%, transparent 72%); mask-image: linear-gradient(to top, #000 8%, transparent 72%); }
+        @keyframes zks-grid { from { transform: rotateX(62deg) translate3d(0,0,0) } to { transform: rotateX(62deg) translate3d(0,64px,0) } }
+        @media (prefers-reduced-motion: reduce) { .zks-gridfloor { animation: none } }
       `}</style>
     </section>
   );

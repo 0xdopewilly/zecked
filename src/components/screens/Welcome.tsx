@@ -2,7 +2,8 @@
 // Screen 01 · Welcome. Vault door loop, floating stickers, wordmark, tagline and the "Start zecking" CTA.
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { Button, Icon, Logo, Vault } from "@/components/zk";
+import { Button, Icon, Logo, TeamBadge, Vault } from "@/components/zk";
+import { DEMO_BARCELONA } from "@/lib/crest";
 
 const sticker: CSSProperties = {
   position: "absolute",
@@ -86,7 +87,7 @@ export default function Welcome() {
               } as CSSProperties
             }
           >
-            <Icon icon="ball" size={15} stroke={2.4} />
+            <TeamBadge {...DEMO_BARCELONA} size={20} />
             BAR 2–1?
           </div>
           <div

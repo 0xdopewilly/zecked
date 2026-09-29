@@ -5,16 +5,17 @@ import { useState } from "react";
 import type { Match, PublicStash, Team } from "@/lib/types";
 import { StashCard } from "@/components/zk";
 import { Marquee } from "@/components/site/fx";
+import { clubCrest } from "@/lib/crest";
 
 /** Illustrative USD rate for the mock cards only (the app's own fallback rate). Not a price claim. */
 const DEMO_RATE = 1500;
 const H = 3_600_000;
 
 const TEAMS: Record<string, Team> = {
-  MAD: { code: "MAD", name: "Real Madrid", color: "#FFFFFF", ink: "#3B1F7A" },
-  LIV: { code: "LIV", name: "Liverpool", color: "#C8102E", ink: "#FFFFFF" },
-  PSG: { code: "PSG", name: "Paris SG", color: "#004170", ink: "#FFFFFF" },
-  BAY: { code: "BAY", name: "Bayern", color: "#DC052D", ink: "#FFFFFF" },
+  RMA: { code: "RMA", name: "Real Madrid", color: "#FFFFFF", ink: "#00529F", logo: clubCrest(86) },
+  LIV: { code: "LIV", name: "Liverpool", color: "#C8102E", ink: "#FFFFFF", logo: clubCrest(364) },
+  PSG: { code: "PSG", name: "Paris SG", color: "#004170", ink: "#FFFFFF", logo: clubCrest(160) },
+  BAY: { code: "BAY", name: "Bayern", color: "#DC052D", ink: "#FFFFFF", logo: clubCrest(132) },
 };
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -89,7 +90,7 @@ function buildMocks(anchor: number): PublicStash[] {
 
   return [
     riddle("m1", "@vaultgoblin", "cracker", 0.02, "What has keys but can’t open a single lock?", 38, 2, 10),
-    prediction("m2", "@offsidequeen", 0.0134, match("m2", "MAD", "LIV", 5), "exact", 142),
+    prediction("m2", "@offsidequeen", 0.0134, match("m2", "RMA", "LIV", 5), "exact", 142),
     riddle("m3", "@satoshisghost", "safecracker", 0.1, "The more you take, the more you leave behind. What am I?", 211, 4, 20, { whale: true }),
     prediction(
       "m4",

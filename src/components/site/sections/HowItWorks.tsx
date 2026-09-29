@@ -20,6 +20,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { PhoneFrame } from "@/components/site/PhoneFrame";
 import { EASE_OUT, Eyebrow, Float, Parallax, SPRING, SplitText } from "@/components/site/fx";
 import { Icon } from "@/components/zk";
+import { DEMO_BARCELONA } from "@/lib/crest";
 import { SCREENS } from "./how/screens";
 import { ShareTile, StorySticker, type StickerSpec } from "./how/bits";
 import { clamp, phoneHeight, phoneWidthForHeight, useElementSize, useMediaQuery, useMotionState, useReducedSafe } from "./how/hooks";
@@ -262,7 +263,7 @@ function DesktopStep({
 /* Stickers that orbit the phone on an ellipse as you scroll (behind or in front of it). */
 const ORBIT: (StickerSpec & { a0: number; a1: number; layer: "back" | "front"; amp: number; dur: number })[] = [
   { tone: "pink", icon: "unlock", label: "+0.02 ZEC", rotate: -8, a0: 152, a1: 204, layer: "front", amp: 9, dur: 4.2 },
-  { tone: "sky", icon: "ball", label: "BAR 2–1?", rotate: 7, a0: -8, a1: -48, layer: "back", amp: 11, dur: 5.1 },
+  { tone: "sky", icon: "ball", label: "BAR 2–1?", crest: DEMO_BARCELONA, rotate: 7, a0: -8, a1: -48, layer: "back", amp: 11, dur: 5.1 },
   { tone: "mint", icon: "trophy", label: "First one wins", rotate: -5, a0: 46, a1: 8, layer: "front", amp: 8, dur: 4.6 },
   { tone: "purple", icon: "mask", label: "Private win", rotate: 8, a0: 128, a1: 168, layer: "back", amp: 10, dur: 5.6 },
 ];
@@ -457,13 +458,13 @@ const CSS = `
 .zkh-num[data-on="true"] { background: var(--zk-grad-gold); color: var(--zk-gold-ink); border-color: transparent; box-shadow: 0 4px 0 var(--zk-gold-deep), 0 0 28px rgb(var(--zk-gold-rgb) / .45); }
 .zkh-num-ping { position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--zk-gold); animation: zk-ping var(--zk-dur-pulse) ease-out infinite; pointer-events: none; }
 .zkh-seg { position: absolute; left: 20.5px; top: 50px; bottom: calc(6px - var(--zkh-gap)); width: 3px; border-radius: 2px; background: rgb(255 255 255 / .1); overflow: hidden; }
-.zkh-seg-fill { position: absolute; inset: 0; background: linear-gradient(180deg, var(--zk-gold-light), var(--zk-gold)); transform-origin: 50% 0%; box-shadow: 0 0 12px rgb(var(--zk-gold-rgb) / .8); }
+.zkh-seg-fill { position: absolute; inset: 0; background: linear-gradient(180deg, var(--zk-gold-light), var(--zk-gold)); transform-origin: 50% 0%; box-shadow: 0 0 12px rgb(var(--zk-gold-rgb) / .8); will-change: transform; }
 .zkh-hint { margin-top: clamp(16px, 3vh, 30px); display: inline-flex; align-items: center; gap: 8px; font: var(--zk-type-label); letter-spacing: .14em; text-transform: uppercase; color: var(--zk-text-faint); }
 .zkh-stagecol { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; min-width: 0; }
 .zkh-stage { position: relative; perspective: 1400px; }
 .zkh-phone { position: relative; z-index: 2; transform-style: preserve-3d; }
 .zkh-numeral { position: absolute; right: -52%; top: -9%; z-index: 0; font-family: var(--zk-font-display); font-weight: 800; line-height: .8; letter-spacing: -0.06em; color: transparent; -webkit-text-stroke: 2px rgb(255 255 255 / .09); pointer-events: none; user-select: none; }
-.zkh-orbit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+.zkh-orbit { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; will-change: transform; }
 .zkh-fly { position: absolute; left: 50%; top: 50%; width: 354px; height: 199px; margin: -99.5px 0 0 -177px; z-index: 5; pointer-events: none; will-change: transform, opacity; }
 @media (max-height: 700px) and (min-width: 880px) { .zkh-step-body { display: none; } .zkh-hint { display: none; } }
 

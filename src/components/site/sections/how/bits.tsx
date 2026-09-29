@@ -2,7 +2,8 @@
 // Small visual pieces used inside the HowItWorks phone screens (and the flying share card).
 import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties, ReactNode } from "react";
-import { Icon, Logo } from "@/components/zk";
+import { Icon, Logo, TeamBadge } from "@/components/zk";
+import { DEMO_BARCELONA } from "@/lib/crest";
 import { Sticker } from "@/components/site/fx";
 
 export const RIDDLE = "I have cities, but no houses. Forests, but no trees. Water, but no fish. What am I?";
@@ -204,14 +205,14 @@ const TONE: Record<Tone, { bg: string; fg: string; edge: string }> = {
   light: { bg: "var(--zk-text)", fg: "var(--zk-bg)", edge: "var(--zk-light-edge)" },
 };
 
-export type StickerSpec = { tone: Tone; icon: string; label: string; rotate: number };
+export type StickerSpec = { tone: Tone; icon: string; label: string; rotate: number; crest?: typeof DEMO_BARCELONA };
 
 /** A brand sticker pill with an icon. */
 export function StorySticker({ spec, small = false }: { spec: StickerSpec; small?: boolean }) {
   const t = TONE[spec.tone];
   return (
     <Sticker bg={t.bg} fg={t.fg} edge={t.edge} rotate={spec.rotate} style={small ? { padding: "8px 12px", gap: 6, fontSize: 13 } : undefined}>
-      <Icon icon={spec.icon} size={small ? 14 : 16} stroke={2.6} />
+      {spec.crest ? <TeamBadge {...spec.crest} size={small ? 18 : 22} /> : <Icon icon={spec.icon} size={small ? 14 : 16} stroke={2.6} />}
       {spec.label}
     </Sticker>
   );

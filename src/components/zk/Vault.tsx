@@ -20,6 +20,12 @@ for (let i = 0; i < 8; i++) {
 
 const HANDLE_ROTATIONS = [undefined, "rotate(60 50 50)", "rotate(120 50 50)"];
 
+/* Bricolage Grotesque ExtraBold "Z" (font units, 1000/em, advance 577) drawn as a path: SVG <text> gets its
+   layout redone every frame inside the animated door, a path never does. Placed where the centred text sat. */
+const Z_GLYPH = "M33 0V152L355 514V526H43V660H531V494L220 145V134H544V0Z";
+const zAt = (cx: number, baseline: number, size: number) =>
+  `translate(${(cx - (0.577 * size) / 2).toFixed(3)} ${baseline}) scale(${size / 1000} ${-size / 1000})`;
+
 export function Vault({ mode = "loop", size = 260, style, className }: VaultProps) {
   const gid = "zkv" + useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const m = mode;
@@ -67,9 +73,7 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
           <ellipse cx="50" cy="52.5" rx="15" ry="5.5" style={{ fill: "var(--zk-gold-deep)" }} />
           <ellipse cx="50" cy="50.5" rx="15" ry="5.5" style={{ fill: "var(--zk-gold-pale)" }} />
         </g>
-        <text x="50" y="53" textAnchor="middle" style={{ font: "800 7px var(--zk-font-display)", fill: "var(--zk-gold-deep)" }}>
-          Z
-        </text>
+        <path d={Z_GLYPH} transform={zAt(50, 53, 7)} style={{ fill: "var(--zk-gold-deep)" }} />
       </svg>
       {/* Door (hinged on the left). The door, its shadow and the dial are separate layers so the
           animations only move pixels (GPU) and never re-rasterize the SVG or re-blur a filter. */}
@@ -135,14 +139,7 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
               <rect key={i} x="23" y="47.3" width="54" height="5.4" rx="2.7" transform={tf} fill={`url(#${gid}h)`} />
             ))}
             <circle cx="50" cy="50" r="11.5" fill={`url(#${gid}h)`} style={{ stroke: "var(--zk-gold-deep)", strokeWidth: 1.2 }} />
-            <text
-              x="50"
-              y="54.5"
-              textAnchor="middle"
-              style={{ font: "800 13px var(--zk-font-display)", fill: "var(--zk-vault-hub-ink)" }}
-            >
-              Z
-            </text>
+            <path d={Z_GLYPH} transform={zAt(50, 54.5, 13)} style={{ fill: "var(--zk-vault-hub-ink)" }} />
           </svg>
         </div>
       </div>

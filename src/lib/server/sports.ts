@@ -1,6 +1,7 @@
 // Live football fixtures and results.
 // Source: ESPN's public scoreboard JSON (no key). Swap for a licensed provider before a real-money launch.
 // Test mode also offers quick "demo" matches that play out in a few minutes.
+import { crestUrl } from "@/lib/crest";
 import type { Match, MatchEvent, MatchStatus, Team } from "@/lib/types";
 import { hashSeed, prng } from "./util";
 
@@ -36,15 +37,6 @@ function luminance(h: string) {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-/**
- * Official crest (clubs) or flag (national teams) from ESPN's logo CDN, resized to 128px by ESPN's
- * image combiner (~6KB instead of ~25KB). Anything that isn't an ESPN team logo is dropped.
- */
-export function crestUrl(raw?: string | null): string | undefined {
-  const m = raw?.match(/^https:\/\/a\.espncdn\.com(\/i\/teamlogos\/(?:soccer|countries)\/500\/[\w.-]+\.png)$/);
-  return m ? `https://a.espncdn.com/combiner/i?img=${m[1]}&w=128&h=128` : undefined;
-}
-
 export function teamFrom(abbr: string, name: string, color?: string | null, alt?: string | null, logo?: string | null): Team {
   let c = hex(color) || hex(alt) || "#7C5CFF";
   // Near-white primaries read poorly on dark cards; prefer the alternate if it has colour.

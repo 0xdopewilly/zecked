@@ -170,7 +170,7 @@ function Connector({ progress, from, reduce }: { progress: MotionValue<number>; 
   const y = useTransform(progress, [from, from + 0.5], ["-100%", "0%"]);
   return (
     <div className="zktz-link" aria-hidden>
-      <motion.div className="zktz-link-fill" style={{ y: reduce ? "0%" : y }} />
+      <motion.div className="zktz-link-fill" style={{ y: reduce ? "0%" : y, willChange: "transform" }} />
     </div>
   );
 }

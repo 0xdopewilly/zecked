@@ -74,7 +74,7 @@ export function FinalCta({ appUrl, demoUrl }: { appUrl: string; demoUrl: string 
       <div className="zkfc-sun" aria-hidden />
       <div className="zkfc-sunfade" aria-hidden />
       <div className="zkfc-vaultwrap" aria-hidden>
-        <motion.div style={reduce ? undefined : { rotate: vaultRotate, scale: vaultScale }}>
+        <motion.div style={reduce ? undefined : { rotate: vaultRotate, scale: vaultScale, willChange: "transform" }}>
           <div className="zkfc-vaultpos">
             <Vault mode="spin" size={520} className="zkfc-vault" />
           </div>
@@ -97,7 +97,7 @@ export function FinalCta({ appUrl, demoUrl }: { appUrl: string; demoUrl: string 
         <Eyebrow>
           <Icon icon="flame" size={14} stroke={2.4} /> Your move
         </Eyebrow>
-        <motion.div style={reduce ? { marginBottom: 12 } : { scale: titleScale, y: titleY, transformOrigin: "50% 100%", marginBottom: 12 }}>
+        <motion.div style={reduce ? { marginBottom: 12 } : { scale: titleScale, y: titleY, transformOrigin: "50% 100%", marginBottom: 12, willChange: "transform" }}>
           <h2 className="zkfc-title" style={{ position: "relative" }}>
             <span className="zkfc-glow" aria-hidden />
             <span style={srOnly}>Ready to get Zecked?</span>

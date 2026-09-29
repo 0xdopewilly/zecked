@@ -71,9 +71,8 @@ ${SPLIT_FIX_CSS}
 .zkwz-word.is-fill { color: var(--zk-text); text-shadow: 0 .05em 0 var(--zk-purple); }
 .zkwz-word.is-gold { color: var(--zk-gold); text-shadow: 0 .05em 0 var(--zk-gold-text-edge), 0 0 60px rgb(var(--zk-gold-rgb) / .35); }
 .zkwz-dot { font: 800 clamp(40px, 6vw, 96px)/1 var(--zk-font-display); color: var(--zk-gold); align-self: center; }
-.zkwz-tape { position: relative; margin-top: -6px; transform: rotate(-2.2deg); background: var(--zk-grad-gold); padding-block: 14px;
+.zkwz-tape { position: relative; margin: -6px -32px 0; transform: rotate(-2.2deg); background: var(--zk-grad-gold); padding-block: 14px;
   box-shadow: 0 8px 0 var(--zk-gold-deep), 0 30px 60px rgb(0 0 0 / .45); width: 110%; margin-left: -5%; }
-.zkwz-tape .zks-marquee { -webkit-mask-image: none; mask-image: none; }
 .zkwz-tapeword { font: 800 clamp(20px, 2.6vw, 34px)/1 var(--zk-font-display); letter-spacing: -.01em; color: var(--zk-gold-ink); white-space: nowrap; }
 .zkwz-tapestar { color: var(--zk-gold-ink); display: inline-flex; align-self: center; opacity: .75; }
 `;
@@ -119,8 +118,8 @@ function StatementBand() {
     <div ref={ref} className="zkwz-band">
       <p style={srOnly}>Encrypted. Private by default. First one wins. Hide it. Crack it. Get Zecked.</p>
       <div aria-hidden>
-        <motion.div className="zkwz-row" style={reduce ? undefined : { x: x1, skewX: skew }}>
-          <Marquee speed={70} gap={36}>
+        <motion.div className="zkwz-row" style={reduce ? undefined : { x: x1, skewX: skew, willChange: "transform" }}>
+          <Marquee speed={70} gap={36} fade={false} clip={false}>
             {WORDS.map((w, i) => (
               <span key={w} style={{ display: "inline-flex", gap: 36, alignItems: "center" }}>
                 <span className={`zkwz-word ${w === "GET ZECKED" ? "is-gold" : i % 2 === 0 ? "is-outline" : "is-fill"}`}>{w}</span>
@@ -130,8 +129,8 @@ function StatementBand() {
           </Marquee>
         </motion.div>
         <div className="zkwz-tape">
-          <motion.div style={reduce ? undefined : { x: x2 }}>
-            <Marquee speed={36} gap={28} reverse>
+          <motion.div style={reduce ? undefined : { x: x2, willChange: "transform" }}>
+            <Marquee speed={36} gap={28} reverse fade={false} clip={false}>
               {TAPE.map((w) => (
                 <span key={w} style={{ display: "inline-flex", gap: 28, alignItems: "center" }}>
                   <span className="zkwz-tapeword">{w}</span>

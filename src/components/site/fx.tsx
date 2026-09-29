@@ -44,14 +44,22 @@ export function Reveal({
   style?: CSSProperties;
   className?: string;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const layer = (on: boolean) => {
+    if (ref.current) ref.current.style.willChange = on ? "transform, opacity" : "";
+  };
   return (
     <motion.div
+      ref={ref}
       className={className}
       style={style}
       initial={{ opacity: 0, y, x, scale }}
       whileInView={{ opacity: 1, y: 0, x: 0, scale: 1 }}
       viewport={{ once, amount }}
       transition={{ duration: 0.9, delay, ease: EASE_OUT }}
+      // A GPU layer only while it moves: no per-frame repaints, and no idle layers afterwards.
+      onAnimationStart={() => layer(true)}
+      onAnimationComplete={() => layer(false)}
     >
       {children}
     </motion.div>
@@ -84,6 +92,14 @@ export function SplitText({
   const ref = useRef<HTMLElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.4 });
   const words = text.split(" ");
+  const count = by === "char" ? text.replace(/ /g, "").length : words.length;
+  // Each piece gets its own GPU layer while it springs in, then gives it back.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!inView) return;
+    const id = window.setTimeout(() => setSettled(true), (delay + count * stagger + 1.4) * 1000);
+    return () => window.clearTimeout(id);
+  }, [inView, delay, count, stagger]);
   let n = 0;
   return (
     <Tag ref={ref} className={className} style={{ margin: 0, ...style }} aria-label={text}>
@@ -98,7 +114,7 @@ export function SplitText({
               return (
                 <motion.span
                   key={pi}
-                  style={{ display: "inline-block", willChange: "transform", color: gold ? "var(--zk-gold)" : undefined, ...(wordStyle?.(w, wi) || {}) }}
+                  style={{ display: "inline-block", willChange: settled ? undefined : "transform", color: gold ? "var(--zk-gold)" : undefined, ...(wordStyle?.(w, wi) || {}) }}
                   initial={{ y: "115%", rotate: 8, opacity: 0 }}
                   animate={inView ? { y: "0%", rotate: 0, opacity: 1 } : undefined}
                   transition={{ ...SPRING, delay: delay + i * stagger }}
@@ -147,6 +163,7 @@ export function Tilt({
   max = 12,
   glare = true,
   radius = 28,
+  flat = false,
   style,
   className,
 }: {
@@ -154,6 +171,8 @@ export function Tilt({
   max?: number;
   glare?: boolean;
   radius?: number;
+  /** Skip preserve-3d when children don't need real depth (cheaper to composite). */
+  flat?: boolean;
   style?: CSSProperties;
   className?: string;
 }) {
@@ -169,7 +188,7 @@ export function Tilt({
     <div style={{ perspective: 1100, ...style }} className={className}>
       <motion.div
         ref={ref}
-        style={{ rotateX: rx, rotateY: ry, transformStyle: "preserve-3d", position: "relative", borderRadius: radius }}
+        style={{ rotateX: rx, rotateY: ry, transformStyle: flat ? "flat" : "preserve-3d", position: "relative", borderRadius: radius }}
         onPointerMove={(e) => {
           const r = ref.current!.getBoundingClientRect();
           px.set((e.clientX - r.left) / r.width);
@@ -195,25 +214,21 @@ export function Parallax({ children, speed = 0.25, x = 0, rotate = 0, style }: {
   const tx = useTransform(scrollYProgress, [0, 1], [x * -1, x]);
   const rot = useTransform(scrollYProgress, [0, 1], [-rotate, rotate]);
   return (
-    <motion.div ref={ref} style={{ y, x: tx, rotate: rot, ...style }}>
+    <motion.div ref={ref} style={{ y, x: tx, rotate: rot, willChange: "transform", ...style }}>
       {children}
     </motion.div>
   );
 }
 
-/** Gentle infinite bob (+ optional tilt). */
+/** Gentle infinite bob (+ optional tilt). A CSS animation, so it runs on the GPU and pauses off screen. */
 export function Float({ children, amplitude = 10, duration = 4.5, delay = 0, rotate = 0, style }: { children: ReactNode; amplitude?: number; duration?: number; delay?: number; rotate?: number; style?: CSSProperties }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const onScreen = useInView(ref, { margin: "120px" });
   return (
-    <motion.div
-      ref={ref}
-      style={{ display: "inline-block", ...style }}
-      animate={onScreen ? { y: [0, -amplitude, 0], rotate: [rotate, rotate + 2.5, rotate] } : { y: 0, rotate }}
-      transition={onScreen ? { duration, delay, repeat: Infinity, ease: "easeInOut" } : { duration: 0.3 }}
+    <div
+      className="zks-float"
+      style={{ ["--zks-amp" as string]: `${-amplitude}px`, ["--zks-rot" as string]: `${rotate}deg`, animationDuration: `${duration}s`, animationDelay: `${delay}s`, ...style }}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -243,9 +258,13 @@ export function CountUpInView({ to, decimals = 0, prefix = "", suffix = "", dura
 }
 
 /** Infinite horizontal marquee (content duplicated; pauses on hover). */
-export function Marquee({ children, speed = 38, reverse = false, gap = 28, style }: { children: ReactNode; speed?: number; reverse?: boolean; gap?: number; style?: CSSProperties }) {
+/**
+ * Endless horizontal strip. `fade` softens the edges with colour overlays (set --zks-fade to the backdrop);
+ * `clip={false}` for strips inside rotated/skewed parents, where a clip would cost a GPU pass every frame.
+ */
+export function Marquee({ children, speed = 38, reverse = false, gap = 28, fade = true, clip = true, style }: { children: ReactNode; speed?: number; reverse?: boolean; gap?: number; fade?: boolean; clip?: boolean; style?: CSSProperties }) {
   return (
-    <div className="zks-marquee" style={{ ["--zks-speed" as string]: `${speed}s`, ["--zks-gap" as string]: `${gap}px`, ...style }}>
+    <div className={`zks-marquee${fade ? " is-fade" : ""}${clip ? "" : " is-open"}`} style={{ ["--zks-speed" as string]: `${speed}s`, ["--zks-gap" as string]: `${gap}px`, ...style }}>
       <div className={`zks-marquee-track${reverse ? " is-reverse" : ""}`}>
         <div className="zks-marquee-group">{children}</div>
         <div className="zks-marquee-group" aria-hidden>
@@ -330,7 +349,7 @@ export function useSectionProgress(offset: ["start start", "end end"] | ["start 
 export function ScrollProgressBar() {
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 120, damping: 24 });
-  return <motion.div aria-hidden style={{ position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "var(--zk-grad-gold)", transformOrigin: "0% 50%", scaleX, zIndex: 120 }} />;
+  return <motion.div aria-hidden style={{ position: "fixed", top: 0, left: 0, right: 0, height: 3, background: "var(--zk-grad-gold)", transformOrigin: "0% 50%", scaleX, zIndex: 120, willChange: "transform" }} />;
 }
 
 /** Big soft glow that follows the pointer (desktop only). */
