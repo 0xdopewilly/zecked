@@ -17,7 +17,6 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", title: "ZECKED", description: "Hide it. Crack it. Get Zecked." },
   appleWebApp: { capable: true, title: "ZECKED", statusBarStyle: "black-translucent" },
-  icons: { icon: "/icon.svg" },
 };
 
 export const viewport: Viewport = {
