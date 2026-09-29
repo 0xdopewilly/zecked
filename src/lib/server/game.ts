@@ -209,6 +209,7 @@ export async function createStash(
 // ---------- funding ----------
 async function goLive(s: StashRecord) {
   invalidateFeed();
+  if (!s.seeded) await kv().incr("stats:hidden");
   const now = Date.now();
   s.status = "live";
   s.liveAt = new Date(now).toISOString();
@@ -367,6 +368,10 @@ async function resolvePrediction(s: StashRecord, m: Match) {
 // ---------- winning ----------
 async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinPayload> {
   invalidateFeed();
+  if (!s.seeded) {
+    await kv().incr("stats:zecked");
+    await kv().incr("stats:zeckedZat", s.amountZat);
+  }
   const now = Date.now();
   s.status = "zecked";
   s.winnerId = pid;
@@ -757,3 +762,18 @@ export async function loadStash(id: string) {
 }
 
 export { ensurePlayer };
+
+// ---------- public stats (for the website) ----------
+export async function publicStats() {
+  const [hidden, zecked, zeckedZat, players] = await Promise.all(["stats:hidden", "stats:zecked", "stats:zeckedZat", "stats:accounts"].map((k) => kv().get<number>(k)));
+  const live = (await feed("all")).filter((s) => s.status === "live" || s.status === "locked").length;
+  return {
+    network: networkName(),
+    stashesHidden: Number(hidden || 0),
+    stashesZecked: Number(zecked || 0),
+    zecZecked: Number(zeckedZat || 0) / 1e8,
+    players: Number(players || 0),
+    liveNow: live,
+    zecUsd: await zecUsd(),
+  };
+}

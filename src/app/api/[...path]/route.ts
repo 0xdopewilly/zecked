@@ -11,6 +11,7 @@ import {
   makeCall,
   myStashes,
   creditPendingClaims,
+  publicStats,
   fundFromBalance,
   setRefundAddress,
   setVictoryMessage,
@@ -24,6 +25,7 @@ import { createSession, destroySession, sessionPlayer, startEmailSignIn, verifyE
 import { SIM_WELCOME_BONUS_ZAT, balanceOf, credit, simulateDeposit, walletInfo, withdraw } from "@/lib/server/wallet";
 import { ensureSeeded } from "@/lib/server/seed";
 import { upcomingMatches } from "@/lib/server/sports";
+import { kv } from "@/lib/server/kv";
 import { HttpError } from "@/lib/server/util";
 import { networkName } from "@/lib/zcash/engine";
 
@@ -68,6 +70,20 @@ async function handle(req: NextRequest, ctx: Ctx) {
   const method = req.method;
   try {
     await ensureSeeded();
+    // Public, cookie-less reads never create a guest profile (website stats, crawlers, link previews).
+    const hasSession = !!(req.cookies.get(SID)?.value || req.cookies.get(LEGACY_PID)?.value);
+    if (method === "GET" && !hasSession) {
+      if (a === "health") return json({ ok: true, network: networkName() });
+      if (a === "config") return json(await appConfig());
+      if (a === "ticker") return json({ items: await ticker() });
+      if (a === "matches") return json({ matches: await upcomingMatches(5, networkName() === "sim") });
+      if (a === "stats") {
+        const res = json(await publicStats());
+        res.headers.set("access-control-allow-origin", "*");
+        res.headers.set("cache-control", "public, s-maxage=30, stale-while-revalidate=120");
+        return res;
+      }
+    }
     const { player, sid, setCookie } = await withPlayer(req);
     const out = (data: unknown, status = 200) => json(data, { status, sid, setCookie });
     const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "local";
@@ -80,6 +96,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
     if (a === "auth" && b === "email" && c === "verify" && method === "POST") {
       const { email, code } = await body<{ email: string; code: string }>(req);
       const { player: account, isNew } = await verifyEmailSignIn(email, code, player);
+      if (isNew) await kv().incr("stats:accounts");
       if (isNew && networkName() === "sim") await credit(account.id, SIM_WELCOME_BONUS_ZAT, "bonus", "Test-mode welcome bonus 🎁");
       const creditedZat = await creditPendingClaims(account);
       await destroySession(sid);
@@ -105,6 +122,12 @@ async function handle(req: NextRequest, ctx: Ctx) {
     }
 
     if (a === "config" && method === "GET") return out(await appConfig());
+    if (a === "stats" && method === "GET") {
+      const res = json(await publicStats());
+      res.headers.set("access-control-allow-origin", "*");
+      res.headers.set("cache-control", "public, s-maxage=30, stale-while-revalidate=120");
+      return res;
+    }
     if (a === "health") return out({ ok: true, network: networkName() });
 
     if (a === "me" && !b) {

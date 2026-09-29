@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
+import "@/styles/site.css";
+import { surface } from "@/lib/surface";
+import { SmoothScroll } from "@/components/site/SmoothScroll";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.vercel.app";
 
@@ -28,7 +31,8 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const testMode = (process.env.ZECKED_NETWORK || "sim") !== "mainnet";
+  const isSite = surface() === "site";
+  const testMode = !isSite && (process.env.ZECKED_NETWORK || "sim") !== "mainnet";
   return (
     <html lang="en">
       <head>
@@ -41,8 +45,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        {testMode && <div className="zk-testmode">Test mode · play ZEC, not real money</div>}
-        <div className="zk-app">{children}</div>
+        {isSite ? (
+          <SmoothScroll>{children}</SmoothScroll>
+        ) : (
+          <>
+            {testMode && (
+              <div className="zk-testmode">
+                {process.env.ZECKED_NETWORK === "testnet" ? "Testnet · test ZEC, not real money" : "Demo · play ZEC, not real money"}
+              </div>
+            )}
+            <div className="zk-app">{children}</div>
+          </>
+        )}
       </body>
     </html>
   );

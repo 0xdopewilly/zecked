@@ -189,7 +189,7 @@ export function Input({
     color: fg,
     opacity: op,
     outline: "none",
-    textDecoration: strike ? "line-through" : "none",
+    textDecorationLine: strike ? "line-through" : "none",
     textDecorationColor: "var(--zk-red)",
     appearance: "none",
     transition: TRANSITION,

@@ -1,0 +1,213 @@
+"use client";
+import { motion, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
+import { useRef } from "react";
+import { Icon, Vault } from "@/components/zk";
+import { EASE_OUT, Float, Magnetic, Sticker, Tilt } from "../fx";
+
+const LINES: { text: string; gold?: boolean }[] = [{ text: "Hide it." }, { text: "Crack it." }, { text: "Get Zecked.", gold: true }];
+
+function Blob({ color, size, x, y, delay, dur }: { color: string; size: number; x: string; y: string; delay: number; dur: number }) {
+  return (
+    <motion.div
+      aria-hidden
+      style={{ position: "absolute", left: x, top: y, width: size, height: size, borderRadius: "50%", background: color, filter: "blur(70px)", opacity: 0.55 }}
+      animate={{ x: [0, 60, -40, 0], y: [0, -50, 30, 0], scale: [1, 1.15, 0.92, 1] }}
+      transition={{ duration: dur, delay, repeat: Infinity, ease: "easeInOut" }}
+    />
+  );
+}
+
+export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: string; network?: string }) {
+  const ref = useRef<HTMLElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
+  const p = useSpring(scrollYProgress, { stiffness: 120, damping: 26, mass: 0.4 });
+  // Scroll choreography: text lifts and fades, vault spins away, stickers fly outward.
+  const textY = useTransform(p, [0, 1], [0, -140]);
+  const textO = useTransform(p, [0, 0.7], [1, 0]);
+  const vaultY = useTransform(p, [0, 1], [0, 180]);
+  const vaultR = useTransform(p, [0, 1], [0, -28]);
+  const vaultS = useTransform(p, [0, 1], [1, 0.72]);
+  const fly = (dx: number, dy: number, r: number) => ({
+    x: useTransform(p, [0, 1], [0, dx]),
+    y: useTransform(p, [0, 1], [0, dy]),
+    rotate: useTransform(p, [0, 1], [0, r]),
+  });
+  const s1 = fly(-260, -120, -40);
+  const s2 = fly(240, -160, 35);
+  const s3 = fly(-220, 200, 25);
+  const s4 = fly(260, 160, -30);
+  const s5 = fly(0, -260, 12);
+  const gridY = useTransform(p, [0, 1], [0, 120]);
+
+  return (
+    <section ref={ref} style={{ position: "relative", minHeight: "100svh", overflow: "hidden", display: "flex", alignItems: "center", paddingTop: 110, paddingBottom: 70 }}>
+      {/* Background */}
+      <div aria-hidden style={{ position: "absolute", inset: 0, background: "radial-gradient(90% 70% at 70% 35%, #2F1F7A 0%, #170F3A 40%, var(--zk-bg) 75%)" }} />
+      <Blob color="var(--zk-purple)" size={520} x="55%" y="0%" delay={0} dur={16} />
+      <Blob color="var(--zk-pink)" size={380} x="-8%" y="52%" delay={2} dur={19} />
+      <Blob color="var(--zk-gold)" size={300} x="78%" y="58%" delay={4} dur={14} />
+      <motion.div
+        aria-hidden
+        style={{ position: "absolute", left: "72%", top: "44%", width: 1400, height: 1400, marginLeft: -700, marginTop: -700, background: "var(--zk-sunburst-gold)", opacity: 0.22, borderRadius: "50%" }}
+        animate={reduce ? undefined : { rotate: 360 }}
+        transition={{ duration: 90, repeat: Infinity, ease: "linear" }}
+      />
+      {/* Retro grid floor */}
+      <motion.div aria-hidden style={{ position: "absolute", left: "-20%", right: "-20%", bottom: -40, height: "42%", perspective: 600, y: gridY, pointerEvents: "none" }}>
+        <div className="zks-gridfloor" />
+      </motion.div>
+
+      <div className="zks-container" style={{ position: "relative", zIndex: 2, display: "grid", gap: 40, alignItems: "center" }}>
+        <div className="zks-hero-grid">
+          {/* Copy */}
+          <motion.div style={{ y: textY, opacity: textO }}>
+            <motion.span
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.8, ease: EASE_OUT }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "8px 14px", borderRadius: 999, border: "1px solid rgb(var(--zk-mint-rgb) / .35)", background: "rgb(var(--zk-mint-rgb) / .1)", color: "var(--zk-mint)", font: "var(--zk-type-label)", letterSpacing: ".14em", textTransform: "uppercase" }}
+            >
+              <span style={{ position: "relative", width: 8, height: 8 }}>
+                <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "var(--zk-mint)", animation: "zk-ping var(--zk-dur-pulse) ease-out infinite" }} />
+                <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "var(--zk-mint)" }} />
+              </span>
+              {network === "mainnet" ? "Live on Zcash" : "Live on Zcash testnet"}
+            </motion.span>
+
+            <h1 className="zks-h1" aria-label="Hide it. Crack it. Get Zecked." style={{ marginTop: 22 }}>
+              {LINES.map((l, i) => (
+                <span key={l.text} aria-hidden style={{ display: "block", overflow: "hidden", paddingBottom: "0.06em" }}>
+                  <motion.span
+                    className={l.gold ? "zks-shimmer" : undefined}
+                    style={{ display: "inline-block", transformOrigin: "0% 100%" }}
+                    initial={{ y: "110%", rotate: 6, scaleY: 1.2 }}
+                    animate={{ y: "0%", rotate: 0, scaleY: 1 }}
+                    transition={{ type: "spring", stiffness: 120, damping: 14, mass: 0.9, delay: 0.25 + i * 0.13 }}
+                  >
+                    {l.text}
+                  </motion.span>
+                </span>
+              ))}
+            </h1>
+
+            <motion.p
+              className="zks-lead"
+              style={{ marginTop: 26 }}
+              initial={{ opacity: 0, y: 18, filter: "blur(8px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              transition={{ delay: 0.75, duration: 0.9, ease: EASE_OUT }}
+            >
+              Hide ZEC behind a riddle or a match call. The first one to crack it keeps it, in a private wallet. Nobody sees who won.
+            </motion.p>
+
+            <motion.div
+              style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 34, alignItems: "center" }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.95, duration: 0.8, ease: EASE_OUT }}
+            >
+              <Magnetic>
+                <a href={appUrl} className="zks-btn zks-btn-gold">
+                  Play now <Icon icon="arrowRight" size={22} stroke={2.6} />
+                </a>
+              </Magnetic>
+              <Magnetic strength={0.2}>
+                <a href={demoUrl} className="zks-btn zks-btn-ghost">
+                  Try the 10-second demo
+                </a>
+              </Magnetic>
+            </motion.div>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.2 }}
+              style={{ marginTop: 18, font: "var(--zk-type-small)", color: "var(--zk-text-faint)" }}
+            >
+              Free to play · Test ZEC, not real money yet · Built on Zcash
+            </motion.p>
+          </motion.div>
+
+          {/* Vault + orbiting stickers */}
+          <div style={{ position: "relative", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 420 }}>
+            <motion.div
+              style={{ y: vaultY, rotate: vaultR, scale: vaultS }}
+              initial={{ opacity: 0, scale: 0.6, rotate: -25 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              transition={{ type: "spring", stiffness: 70, damping: 12, delay: 0.3 }}
+            >
+              <Tilt max={14} radius={999}>
+                <div className="zks-vault-wrap">
+                  <Vault mode="loop" size={440} />
+                </div>
+              </Tilt>
+            </motion.div>
+
+            <motion.div style={{ position: "absolute", left: "2%", top: "10%", ...s1 }}>
+              <Float amplitude={12} duration={4.2} rotate={-8}>
+                <Sticker bg="var(--zk-pink)" edge="var(--zk-pink-deep)" rotate={-8}>
+                  <Icon icon="unlock" size={18} stroke={2.6} /> +0.02 ZEC
+                </Sticker>
+              </Float>
+            </motion.div>
+            <motion.div style={{ position: "absolute", right: "0%", top: "22%", ...s2 }}>
+              <Float amplitude={10} duration={5} delay={0.6} rotate={7}>
+                <Sticker bg="var(--zk-sky)" fg="var(--zk-sky-ink)" edge="var(--zk-sky-deep)" rotate={7}>
+                  <Icon icon="ball" size={18} stroke={2.4} /> BAR 2–1?
+                </Sticker>
+              </Float>
+            </motion.div>
+            <motion.div style={{ position: "absolute", left: "6%", bottom: "12%", ...s3 }}>
+              <Float amplitude={14} duration={4.8} delay={1.1} rotate={5}>
+                <Sticker bg="var(--zk-mint)" fg="var(--zk-mint-ink)" edge="var(--zk-mint-deep)" rotate={5}>
+                  <Icon icon="key" size={18} stroke={2.4} /> 38 tries
+                </Sticker>
+              </Float>
+            </motion.div>
+            <motion.div style={{ position: "absolute", right: "4%", bottom: "8%", ...s4 }}>
+              <Float amplitude={11} duration={4.4} delay={0.3} rotate={-6}>
+                <Sticker bg="var(--zk-grad-gold)" fg="var(--zk-gold-ink)" edge="var(--zk-gold-deep)" rotate={-6}>
+                  YOU ZECKED IT!
+                </Sticker>
+              </Float>
+            </motion.div>
+            <motion.div style={{ position: "absolute", left: "38%", top: "-2%", ...s5 }}>
+              <Float amplitude={8} duration={3.8} delay={0.9} rotate={-3}>
+                <Sticker bg="var(--zk-surface-raised)" fg="var(--zk-mint)" edge="#0a0818" rotate={-3} style={{ border: "1px solid rgb(var(--zk-mint-rgb) / .35)" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 9, background: "var(--zk-mint)" }} /> LIVE · VERIFIED
+                </Sticker>
+              </Float>
+            </motion.div>
+          </div>
+        </div>
+      </div>
+
+      {/* Scroll cue */}
+      <motion.div
+        aria-hidden
+        style={{ position: "absolute", bottom: 22, left: "50%", x: "-50%", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--zk-text-faint)", font: "var(--zk-type-label)", letterSpacing: ".2em", zIndex: 3, opacity: textO }}
+      >
+        SCROLL
+        <div style={{ width: 26, height: 42, borderRadius: 14, border: "2px solid var(--zk-border-strong)", display: "flex", justifyContent: "center", paddingTop: 7 }}>
+          <motion.div style={{ width: 4, height: 8, borderRadius: 4, background: "var(--zk-gold)" }} animate={{ y: [0, 12, 0], opacity: [1, 0.2, 1] }} transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }} />
+        </div>
+      </motion.div>
+
+      <style>{`
+        .zks-hero-grid { display: grid; grid-template-columns: 1fr; gap: 28px; align-items: center; }
+        @media (min-width: 980px) { .zks-hero-grid { grid-template-columns: 1.08fr 1fr; gap: 20px; } }
+        @media (max-width: 979px) { .zks-hero-grid > div:first-child { text-align: left; } }
+        .zks-vault-wrap { filter: drop-shadow(0 40px 80px rgba(0,0,0,.55)) drop-shadow(0 0 60px rgb(var(--zk-gold-rgb) / .25)); }
+        @media (max-width: 560px) { .zks-vault-wrap > * { width: 300px !important; height: 300px !important; } }
+        .zks-gridfloor {
+          position: absolute; inset: 0; transform: rotateX(62deg); transform-origin: 50% 100%;
+          background-image: linear-gradient(rgb(var(--zk-purple-rgb) / .35) 1.5px, transparent 1.5px), linear-gradient(90deg, rgb(var(--zk-purple-rgb) / .35) 1.5px, transparent 1.5px);
+          background-size: 64px 64px; animation: zks-grid 3.2s linear infinite;
+          -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%); mask-image: linear-gradient(to top, #000 10%, transparent 85%);
+        }
+        @keyframes zks-grid { from { background-position: 0 0 } to { background-position: 0 64px } }
+        @media (prefers-reduced-motion: reduce) { .zks-gridfloor { animation: none } }
+      `}</style>
+    </section>
+  );
+}
