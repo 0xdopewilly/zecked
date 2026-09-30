@@ -4,6 +4,8 @@ import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON
 import type {
   AppConfig,
   Notice,
+  PublicProfile,
+  Reaction,
   AuthStartResult,
   WalletInfo,
   ClaimResult,
@@ -42,7 +44,13 @@ export type FeedFilter = "all" | "riddles" | "predictions" | "ending" | "biggest
 export const api = {
   config: () => req<AppConfig>("/config"),
   feed: (filter: FeedFilter = "all") => req<{ stashes: PublicStash[]; house?: { nextDropAt: string | null; liveId: string | null } | null }>(`/stashes?filter=${filter}`),
-  stash: (id: string) => req<{ stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload }>(`/stashes/${id}`),
+  stash: (id: string) =>
+    req<{ stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload; myReactions?: Reaction[] }>(`/stashes/${id}`),
+  /** Toggle one emoji reaction on a stash. */
+  react: (id: string, emoji: Reaction) =>
+    req<{ reactions: Partial<Record<Reaction, number>>; mine: Reaction[] }>(`/stashes/${id}/react`, { method: "POST", body: JSON.stringify({ emoji }) }),
+  /** A player's public page by handle ("@name" or "name"). */
+  profile: (handle: string) => req<{ profile: PublicProfile }>(`/players/${encodeURIComponent(handle.replace(/^@+/, ""))}`),
   guess: (id: string, answer: string) =>
     req<GuessResult>(`/stashes/${id}/guess`, { method: "POST", body: JSON.stringify({ answer }) }),
   call: (id: string, body: { home?: number; away?: number; pick?: WinnerPick }) =>
@@ -78,6 +86,8 @@ export const api = {
   authVerify: (email: string, code: string) =>
     req<SignedIn>("/auth/email/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
   logout: () => req<{ ok: true }>("/auth/logout", { method: "POST" }),
+  pushSubscribe: (subscription: PushSubscriptionJSON) => req<{ ok: true; devices: number }>("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) }),
+  pushUnsubscribe: (endpoint: string) => req<{ ok: true }>("/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) }),
   notifications: (after?: string) => req<{ items: Notice[]; now: string }>(`/notifications${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   passkeyRegisterOptions: () => req<PublicKeyCredentialCreationOptionsJSON>("/auth/passkey/register/options", { method: "POST" }),
   passkeyRegisterVerify: (response: RegistrationResponseJSON) =>

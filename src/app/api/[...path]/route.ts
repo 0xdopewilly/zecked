@@ -13,6 +13,7 @@ import {
   creditPendingClaims,
   publicStats,
   fundFromBalance,
+  hiddenBy,
   setRefundAddress,
   setVictoryMessage,
   simulateFund,
@@ -29,6 +30,8 @@ import { ensureSeeded } from "@/lib/server/seed";
 import { upcomingMatches } from "@/lib/server/sports";
 import { kv } from "@/lib/server/kv";
 import { notices } from "@/lib/server/notify";
+import { publicProfile, toggleReaction } from "@/lib/server/social";
+import { removePushSub, savePushSub } from "@/lib/server/push";
 import { houseAdmin, houseStatus, houseTopUpSim, maybeHouseDrop, welcomeGift } from "@/lib/server/house";
 import { HttpError } from "@/lib/server/util";
 import { networkName } from "@/lib/zcash/engine";
@@ -186,6 +189,19 @@ async function handle(req: NextRequest, ctx: Ctx) {
       }
     }
 
+    // ---- push notifications ----
+    if (a === "push" && b === "subscribe" && method === "POST") {
+      const { subscription } = await body<{ subscription: unknown }>(req);
+      return out(await savePushSub(player.id, subscription));
+    }
+    if (a === "push" && b === "unsubscribe" && method === "POST") {
+      const { endpoint } = await body<{ endpoint: string }>(req);
+      return out(await removePushSub(player.id, String(endpoint || "")));
+    }
+
+    // ---- public profiles ----
+    if (a === "players" && b && !c && method === "GET") return out({ profile: await publicProfile(b, player.id, hiddenBy) });
+
     // ---- notices ----
     if (a === "notifications" && method === "GET") {
       return out({ items: await notices(player.id, req.nextUrl.searchParams.get("after")), now: new Date().toISOString() });
@@ -265,6 +281,10 @@ async function handle(req: NextRequest, ctx: Ctx) {
       if (c === "fund-from-balance" && method === "POST") {
         await fundFromBalance(s, player);
         return out({ stash: await toPublic(await loadStash(b), player.id), wallet: await walletInfo(player) });
+      }
+      if (c === "react" && method === "POST") {
+        const { emoji } = await body<{ emoji: string }>(req);
+        return out(await toggleReaction(s, player, emoji));
       }
       if (c === "victory" && method === "POST") {
         const { message } = await body<{ message: string }>(req);

@@ -1,7 +1,8 @@
 "use client";
-// ZECKED sound effects: tiny synthesized sounds (Web Audio, no files), plus light haptics where the
-// device supports them. Everything is a no-op until the app mounts <Sfx /> (the website stays silent),
-// and until the first user gesture (browsers keep audio locked before that).
+// ZECKED sound effects: a sweet "candy" pack, synthesized with Web Audio (no files, instant, tiny).
+// Bubble pops that climb a happy scale when you tap in a row (like a combo), marimba notes, sparkly
+// bells and a jelly "boing", all through a soft room reverb. Light haptics where supported.
+// Silent until the app mounts <Sfx /> (the website never plays sounds) and until the first gesture.
 
 type Sound =
   | "tap" // tabs, chips, small toggles
@@ -15,14 +16,18 @@ type Sound =
   | "coin" // ZEC arrived
   | "notify" // a toast or live event
   | "whoosh" // sheets, big transitions
-  | "confetti" // party popper + crackle
+  | "confetti" // party popper + bubbles
   | "win"; // you ZECKED it
+
+/** Every sound, in the order the /sounds board lists them. */
+export const SOUNDS: Sound[] = ["tap", "pop", "select", "type", "success", "lock", "wrong", "error", "coin", "notify", "whoosh", "confetti", "win"];
 
 const MUTE_KEY = "zk:sfx-muted";
 let enabled = false;
 let muted = false;
 let ctx: AudioContext | null = null;
-let master: GainNode | null = null;
+let dry: GainNode | null = null;
+let wet: GainNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
 const last: Partial<Record<Sound, number>> = {};
 
@@ -49,11 +54,22 @@ export function setMuted(m: boolean) {
   try {
     localStorage.setItem(MUTE_KEY, m ? "1" : "0");
   } catch {}
-  if (!m) sfx("pop");
+  if (!m) sfx("success");
 }
 
-/** Browsers only allow audio after a gesture: <Sfx /> calls this from pointerdown/keydown. Until the
- *  first gesture, sfx() stays silent (no AudioContext is created, so Chrome has nothing to warn about). */
+/** A soft room: decaying stereo noise as the reverb's impulse response. */
+function roomImpulse(c: AudioContext, seconds = 1.3) {
+  const len = Math.floor(c.sampleRate * seconds);
+  const ir = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+  }
+  return ir;
+}
+
+/** Browsers only allow audio after a gesture: <Sfx /> calls this from pointerdown/keydown/touchend/click.
+ *  Until the first gesture, sfx() stays silent (no AudioContext is created). */
 export function unlockAudio() {
   if (!enabled || typeof window === "undefined") return;
   try {
@@ -65,14 +81,27 @@ export function unlockAudio() {
       if (!AC) return;
       ctx = new AC({ latencyHint: "interactive" });
       const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -14;
-      comp.ratio.value = 4;
-      master = ctx.createGain();
-      master.gain.value = 0.55;
+      comp.threshold.value = -16;
+      comp.knee.value = 12;
+      comp.ratio.value = 3;
+      const master = ctx.createGain();
+      master.gain.value = 0.7;
       master.connect(comp).connect(ctx.destination);
+      // Voices feed a dry bus and a reverb send; the mix is mostly dry with a sweet tail.
+      dry = ctx.createGain();
+      dry.gain.value = 0.85;
+      dry.connect(master);
+      const verb = ctx.createConvolver();
+      verb.buffer = roomImpulse(ctx);
+      const tone = ctx.createBiquadFilter();
+      tone.type = "lowpass";
+      tone.frequency.value = 6500;
+      wet = ctx.createGain();
+      wet.gain.value = 0.26;
+      wet.connect(verb).connect(tone).connect(master);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-      const d = noiseBuf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const n = noiseBuf.getChannelData(0);
+      for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
     }
     if (ctx.state === "suspended") void ctx.resume();
   } catch {
@@ -86,102 +115,177 @@ function vibrate(pattern: number | number[]) {
   } catch {}
 }
 
-/* ---------- synth building blocks ---------- */
+/* ---------- voices ---------- */
 
-function tone(
-  t: number,
-  { f0, f1 = f0, dur, type = "sine", vol = 0.5, attack = 0.004 }: { f0: number; f1?: number; dur: number; type?: OscillatorType; vol?: number; attack?: number },
-) {
-  const c = ctx!;
-  const o = c.createOscillator();
-  const g = c.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(f0, t);
-  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+/** Route a voice to the dry bus and the reverb (send 0..1+). */
+function out(node: AudioNode, send = 1) {
+  node.connect(dry!);
+  if (send > 0) {
+    const s = ctx!.createGain();
+    s.gain.value = send;
+    node.connect(s).connect(wet!);
+  }
+}
+
+function env(g: GainNode, t: number, peak: number, attack: number, decay: number) {
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(vol, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(master!);
+  g.gain.exponentialRampToValueAtTime(peak, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+}
+
+function osc(type: OscillatorType, f: number, t: number, stop: number) {
+  const o = ctx!.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(f, t);
   o.start(t);
-  o.stop(t + dur + 0.02);
+  o.stop(stop + 0.05);
+  return o;
 }
 
-function noise(t: number, { dur, vol = 0.3, freq = 2000, q = 1, type = "bandpass", f1 }: { dur: number; vol?: number; freq?: number; q?: number; type?: BiquadFilterType; f1?: number }) {
-  const c = ctx!;
-  const src = c.createBufferSource();
+/** "Bloop": a sine that swoops up fast, the classic candy bubble pop. */
+function bubble(t: number, f: number, vol = 0.3, len = 0.11, send = 0.8) {
+  const o = osc("sine", f, t, t + len);
+  o.frequency.exponentialRampToValueAtTime(f * 2.3, t + len * 0.42);
+  const g = ctx!.createGain();
+  env(g, t, vol, 0.004, len);
+  o.connect(g);
+  out(g, send);
+}
+
+/** Marimba-ish mallet: warm fundamental, a bright strike partial, and a soft octave. */
+function mallet(t: number, f: number, vol = 0.25, decay = 0.38, send = 1) {
+  const g = ctx!.createGain();
+  env(g, t, vol, 0.003, decay);
+  osc("sine", f, t, t + decay).connect(g);
+  const g2 = ctx!.createGain();
+  env(g2, t, vol * 0.35, 0.002, decay * 0.22);
+  osc("sine", f * 3.98, t, t + decay * 0.3).connect(g2);
+  const g3 = ctx!.createGain();
+  env(g3, t, vol * 0.12, 0.001, decay * 0.5);
+  osc("triangle", f * 2, t, t + decay * 0.6).connect(g3);
+  out(g, send);
+  out(g2, send);
+  out(g3, send);
+}
+
+/** Glassy little bell, for sparkles. */
+function bell(t: number, f: number, vol = 0.07, decay = 0.5) {
+  const g = ctx!.createGain();
+  env(g, t, vol, 0.002, decay);
+  osc("sine", f, t, t + decay).connect(g);
+  const g2 = ctx!.createGain();
+  env(g2, t, vol * 0.4, 0.002, decay * 0.4);
+  osc("sine", f * 2.76, t, t + decay * 0.5).connect(g2);
+  out(g, 1.2);
+  out(g2, 1.2);
+}
+
+function sparkle(t: number, count = 4, spread = 0.07) {
+  const notes = [2093, 2349.3, 2637, 3136, 3520, 4186];
+  for (let i = 0; i < count; i++) bell(t + i * spread * (0.7 + Math.random() * 0.6), notes[Math.floor(Math.random() * notes.length)], 0.05 + Math.random() * 0.03);
+}
+
+function hiss(t: number, len: number, from: number, to: number, vol = 0.12) {
+  const src = ctx!.createBufferSource();
   src.buffer = noiseBuf;
-  src.playbackRate.value = 0.8 + Math.random() * 0.4;
-  const fl = c.createBiquadFilter();
-  fl.type = type;
-  fl.frequency.setValueAtTime(freq, t);
-  if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + dur);
-  fl.Q.value = q;
-  const g = c.createGain();
-  g.gain.setValueAtTime(vol, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(fl).connect(g).connect(master!);
-  src.start(t, Math.random() * 0.5);
-  src.stop(t + dur + 0.02);
+  const fl = ctx!.createBiquadFilter();
+  fl.type = "bandpass";
+  fl.Q.value = 0.9;
+  fl.frequency.setValueAtTime(from, t);
+  fl.frequency.exponentialRampToValueAtTime(to, t + len);
+  const g = ctx!.createGain();
+  env(g, t, vol, len * 0.3, len * 0.7);
+  src.connect(fl).connect(g);
+  out(g, 0.6);
+  src.start(t, Math.random() * 0.4);
+  src.stop(t + len + 0.05);
 }
 
-const jitter = (x: number, amt = 0.04) => x * (1 + (Math.random() * 2 - 1) * amt);
+/** Cartoon jelly "boing": a wobbling pitch drop. */
+function boing(t: number) {
+  const o = osc("sine", 420, t, t + 0.42);
+  o.frequency.exponentialRampToValueAtTime(170, t + 0.36);
+  const lfo = osc("sine", 16, t, t + 0.42);
+  const depth = ctx!.createGain();
+  depth.gain.value = 28;
+  lfo.connect(depth).connect(o.frequency);
+  const g = ctx!.createGain();
+  env(g, t, 0.36, 0.006, 0.4);
+  o.connect(g);
+  out(g, 0.5);
+  mallet(t + 0.02, 130.8, 0.26, 0.16, 0.2);
+}
+
+/* ---------- scale & combo ---------- */
+
+// C major pentatonic, bright register: taps in a row climb it like a combo.
+const PENTA = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.51, 1567.98, 1760];
+let combo = 0;
+let lastTapAt = 0;
+function comboNote() {
+  const now = performance.now();
+  combo = now - lastTapAt < 900 ? Math.min(combo + 1, PENTA.length - 1) : 0;
+  lastTapAt = now;
+  return PENTA[combo];
+}
+const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 
 const RECIPES: Record<Sound, (t: number) => void> = {
-  tap: (t) => {
-    tone(t, { f0: jitter(1250), f1: 700, dur: 0.045, vol: 0.18 });
-  },
+  tap: (t) => bubble(t, comboNote(), 0.42, 0.085, 0.5),
   pop: (t) => {
-    tone(t, { f0: jitter(820), f1: 260, dur: 0.09, vol: 0.42 });
-    noise(t, { dur: 0.018, vol: 0.12, freq: 3200, q: 0.8 });
+    const f = comboNote();
+    bubble(t, f * 0.75, 0.55, 0.12);
+    mallet(t + 0.01, f * 1.5, 0.17, 0.22, 0.6);
   },
   select: (t) => {
-    tone(t, { f0: jitter(660), dur: 0.06, type: "triangle", vol: 0.28 });
-    tone(t + 0.055, { f0: jitter(990), dur: 0.08, type: "triangle", vol: 0.26 });
+    mallet(t, 1318.51, 0.22, 0.25);
+    mallet(t + 0.065, 1760, 0.22, 0.3);
   },
-  type: (t) => {
-    tone(t, { f0: jitter(1800, 0.08), f1: 1200, dur: 0.025, type: "triangle", vol: 0.12 });
-  },
+  type: (t) => bubble(t, pick(PENTA.slice(4)) * 1.5, 0.22, 0.05, 0.3),
   success: (t) => {
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(t + i * 0.07, { f0: f, dur: 0.22, type: "triangle", vol: 0.3 }));
+    [1046.5, 1318.51, 1567.98, 2093].forEach((f, i) => mallet(t + i * 0.075, f, 0.2, 0.45));
+    sparkle(t + 0.28, 4);
   },
   lock: (t) => {
-    tone(t, { f0: 180, f1: 70, dur: 0.16, vol: 0.6 });
-    noise(t, { dur: 0.05, vol: 0.28, freq: 1400, q: 1.2 });
-    tone(t + 0.09, { f0: 1320, dur: 0.12, type: "triangle", vol: 0.16 });
+    mallet(t, 196, 0.34, 0.2, 0.3); // wooden clack
+    bubble(t, 330, 0.18, 0.09, 0.3);
+    mallet(t + 0.09, 1567.98, 0.16, 0.5);
+    sparkle(t + 0.16, 2);
   },
-  wrong: (t) => {
-    tone(t, { f0: 240, f1: 150, dur: 0.14, type: "square", vol: 0.14 });
-    tone(t + 0.13, { f0: 190, f1: 110, dur: 0.2, type: "square", vol: 0.13 });
-  },
+  wrong: (t) => boing(t),
   error: (t) => {
-    tone(t, { f0: 160, dur: 0.22, type: "sawtooth", vol: 0.09 });
-    tone(t, { f0: 164, dur: 0.22, type: "sawtooth", vol: 0.09 });
+    mallet(t, 659.25, 0.18, 0.28);
+    mallet(t + 0.12, 523.25, 0.18, 0.4);
   },
   coin: (t) => {
-    tone(t, { f0: 987.77, dur: 0.08, type: "square", vol: 0.12 });
-    tone(t + 0.075, { f0: 1318.5, dur: 0.32, type: "square", vol: 0.12 });
-    tone(t + 0.075, { f0: 2637, dur: 0.2, type: "sine", vol: 0.08 });
+    mallet(t, 1975.5, 0.17, 0.18);
+    mallet(t + 0.08, 2637, 0.2, 0.6);
+    sparkle(t + 0.12, 3, 0.05);
   },
   notify: (t) => {
-    tone(t, { f0: 880, dur: 0.1, type: "sine", vol: 0.22 });
-    tone(t + 0.09, { f0: 1174.7, dur: 0.16, type: "sine", vol: 0.2 });
+    bell(t, 1760, 0.12, 0.7);
+    bell(t + 0.11, 2637, 0.1, 0.9);
   },
   whoosh: (t) => {
-    noise(t, { dur: 0.28, vol: 0.16, freq: 400, f1: 3200, q: 0.9 });
+    hiss(t, 0.32, 500, 4200, 0.1);
+    sparkle(t + 0.2, 2);
   },
   confetti: (t) => {
-    // the pop of the popper, then paper crackle falling
-    noise(t, { dur: 0.12, vol: 0.5, freq: 900, f1: 5000, q: 0.7 });
-    tone(t, { f0: 420, f1: 120, dur: 0.12, vol: 0.4 });
-    for (let i = 0; i < 26; i++) {
-      const at = t + 0.06 + Math.random() * 0.9;
-      noise(at, { dur: 0.02 + Math.random() * 0.03, vol: 0.05 + Math.random() * 0.1, freq: 2500 + Math.random() * 5000, q: 2 });
-    }
+    // the popper, then a fizz of bubbles and glitter
+    bubble(t, 220, 0.36, 0.14, 0.6);
+    hiss(t, 0.16, 1800, 7000, 0.14);
+    for (let i = 0; i < 12; i++) bubble(t + 0.05 + Math.random() * 0.55, pick(PENTA) * (Math.random() < 0.5 ? 1 : 2), 0.06 + Math.random() * 0.07, 0.07, 0.7);
+    sparkle(t + 0.2, 6, 0.08);
   },
   win: (t) => {
-    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => tone(t + i * 0.085, { f0: f, dur: 0.3, type: "triangle", vol: 0.28 }));
-    [2093, 2637, 3136].forEach((f, i) => tone(t + 0.45 + i * 0.06, { f0: f, dur: 0.5, type: "sine", vol: 0.07 }));
-    RECIPES.confetti(t + 0.4);
+    // a quick climb up the scale, a big sparkly chord, glitter
+    const run = [523.25, 659.25, 783.99, 880, 1046.5, 1318.51, 1567.98, 1760, 2093];
+    run.forEach((f, i) => mallet(t + i * 0.05, f, 0.15, 0.3));
+    const top = t + run.length * 0.05 + 0.04;
+    [1046.5, 1318.51, 1567.98, 2093].forEach((f) => mallet(top, f, 0.16, 1.1));
+    bubble(top, 392, 0.2, 0.16);
+    sparkle(top + 0.05, 9, 0.07);
+    RECIPES.confetti(top + 0.1);
   },
 };
 
@@ -198,7 +302,7 @@ const HAPTIC: Partial<Record<Sound, number | number[]>> = {
 };
 
 /** Minimum gap per sound so rapid taps don't stack into noise. */
-const GAP: Partial<Record<Sound, number>> = { tap: 40, pop: 50, type: 25, notify: 300, confetti: 600, win: 1200, coin: 250 };
+const GAP: Partial<Record<Sound, number>> = { tap: 35, pop: 45, type: 25, notify: 300, confetti: 600, win: 1200, coin: 250 };
 
 export function sfx(name: Sound) {
   if (!enabled || muted || typeof window === "undefined") return;
@@ -206,7 +310,7 @@ export function sfx(name: Sound) {
   if (now - (last[name] ?? -1e9) < (GAP[name] ?? 60)) return;
   last[name] = now;
   const c = ctx;
-  if (!c || !master) return; // no gesture yet
+  if (!c || !dry || !wet) return; // no gesture yet
   const h = HAPTIC[name];
   if (h) vibrate(h);
   const play = () => {

@@ -1,7 +1,7 @@
 "use client";
 // Screen 11 · Leaderboard. Crackers / Hiders / Oracles × Today / Week / All-time, podium with a crown
 // on #1, rows from #4 down, and a pinned "You · #N" bar. An empty board (or an open podium spot)
-// invites you to take it. Rows aren't tappable: there are no public profiles.
+// invites you to take it. Every player (podium, rows, your own bar) opens their public profile.
 import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "@/lib/api";
@@ -73,6 +73,14 @@ function colorFor(handle: string) {
 }
 const initialOf = (h: string) => (h.replace(/^@+/, "")[0] || "?").toUpperCase();
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
+const profileHref = (h: string) => `/u/${encodeURIComponent(h.replace(/^@+/, ""))}`;
+
+/** A small "›" (the back chevron turned around): this row opens something. */
+const Chevron = ({ color = "var(--zk-text-faint)", style }: { color?: string; style?: CSSProperties }) => (
+  <span aria-hidden="true" style={{ display: "flex", flex: "none", color, transform: "rotate(180deg)", ...style }}>
+    <Icon icon="back" size={15} stroke={2.6} />
+  </span>
+);
 
 function scoreLabel(board: Board, n: number) {
   const [one, many] = UNIT[board];
@@ -240,13 +248,24 @@ function PodiumSlot({ place, row, board, loading }: { place: Place; row?: Leader
       </div>
     </>
   );
-  return open ? (
-    <Link href={hint.href} aria-label={`Open spot number ${place}. ${hint.label} to take it`} style={slotStyle}>
-      {inner}
-    </Link>
-  ) : (
-    <div style={slotStyle}>{inner}</div>
-  );
+  if (open)
+    return (
+      <Link href={hint.href} aria-label={`Open spot number ${place}. ${hint.label} to take it`} style={slotStyle}>
+        {inner}
+      </Link>
+    );
+  if (row)
+    return (
+      <Link
+        href={profileHref(row.handle)}
+        transitionTypes={["nav-forward"]}
+        aria-label={`Number ${place}: ${atHandle(row.handle)}${row.isYou ? " (you)" : ""}, ${scoreLabel(board, row.score)}. Open profile`}
+        style={slotStyle}
+      >
+        {inner}
+      </Link>
+    );
+  return <div style={slotStyle}>{inner}</div>;
 }
 
 function Podium({ rows, board, loading }: { rows: LeaderRow[]; board: Board; loading: boolean }) {
@@ -274,44 +293,63 @@ function Podium({ rows, board, loading }: { rows: LeaderRow[]; board: Board; loa
 /* ---------- rows ---------- */
 
 function Row({ row, board }: { row: LeaderRow; board: Board }) {
+  const [down, setDown] = useState(false);
+  const up = () => setDown(false);
   return (
-    <li
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--zk-space-12)",
-        padding: "var(--zk-space-8) var(--zk-space-12)",
-        borderRadius: "var(--zk-radius-lg)",
-        background: "var(--zk-surface)",
-        border: row.isYou ? "1.5px solid rgb(var(--zk-purple-rgb) / .7)" : "1.5px solid transparent",
-      }}
-    >
-      <span style={{ width: 24, flex: "none", font: "var(--zk-type-mono-sm)", color: "var(--zk-text-muted)" }}>{row.rank}</span>
-      <span
-        aria-hidden="true"
+    <li>
+      <Link
+        href={profileHref(row.handle)}
+        transitionTypes={["nav-forward"]}
+        onPointerDown={() => setDown(true)}
+        onPointerUp={up}
+        onPointerLeave={up}
+        onPointerCancel={up}
         style={{
-          width: 34,
-          height: 34,
-          flex: "none",
-          borderRadius: "50%",
-          background: colorFor(row.handle),
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          font: "var(--zk-type-btn-sm)",
-          color: "var(--zk-bg)",
+          // A little tighter on 320px phones, so the handle keeps its room next to the chevron.
+          gap: "clamp(var(--zk-space-8), 3vw, var(--zk-space-12))",
+          minHeight: 50,
+          boxSizing: "border-box",
+          padding: "var(--zk-space-8) var(--zk-space-8) var(--zk-space-8) var(--zk-space-12)",
+          borderRadius: "var(--zk-radius-lg)",
+          background: down ? "var(--zk-surface-raised)" : "var(--zk-surface)",
+          border: row.isYou ? "1.5px solid rgb(var(--zk-purple-rgb) / .7)" : "1.5px solid transparent",
+          color: "var(--zk-text)",
+          textDecoration: "none",
+          transform: down ? "scale(.985)" : "none",
+          transition: "transform var(--zk-dur-fast) var(--zk-ease-out), background var(--zk-dur-fast) var(--zk-ease-out)",
+          WebkitTapHighlightColor: "transparent",
         }}
       >
-        {initialOf(row.handle)}
-      </span>
-      <span style={{ flex: 1, minWidth: 0, font: "var(--zk-type-body-strong)", ...ellipsis }}>
-        {atHandle(row.handle)}
-        {row.isYou && <span className="zk-sr-only"> (you)</span>}
-      </span>
-      <Emblem tier={row.tier} size={22} />
-      <span style={{ font: "var(--zk-type-mono-sm)", minWidth: 64, textAlign: "right", whiteSpace: "nowrap" }}>
-        {scoreLabel(board, row.score)}
-      </span>
+        <span style={{ width: 24, flex: "none", font: "var(--zk-type-mono-sm)", color: "var(--zk-text-muted)" }}>{row.rank}</span>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 34,
+            height: 34,
+            flex: "none",
+            borderRadius: "50%",
+            background: colorFor(row.handle),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            font: "var(--zk-type-btn-sm)",
+            color: "var(--zk-bg)",
+          }}
+        >
+          {initialOf(row.handle)}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, font: "var(--zk-type-body-strong)", ...ellipsis }}>
+          {atHandle(row.handle)}
+          {row.isYou && <span className="zk-sr-only"> (you)</span>}
+        </span>
+        <Emblem tier={row.tier} size={22} />
+        <span style={{ font: "var(--zk-type-mono-sm)", minWidth: 64, textAlign: "right", whiteSpace: "nowrap" }}>
+          {scoreLabel(board, row.score)}
+        </span>
+        <Chevron style={{ marginLeft: -4 }} />
+      </Link>
     </li>
   );
 }
@@ -432,32 +470,53 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
         zIndex: 12,
       }}
     >
-      {ranked ? <span style={{ font: "var(--zk-type-mono-sm)", flex: "none" }}>#{you.rank}</span> : null}
-      <span
-        aria-hidden="true"
+      {/* Your rank, avatar and name open your public profile (the button on the right stays its own tap). */}
+      <Link
+        href={profileHref(you.handle)}
+        transitionTypes={["nav-forward"]}
+        aria-label={`You, ${atHandle(you.handle)}${ranked ? `, number ${you.rank}` : ", not ranked yet"}. Open your profile`}
         style={{
-          width: 34,
-          height: 34,
-          flex: "none",
-          borderRadius: "50%",
-          background: "var(--zk-text)",
-          color: "var(--zk-purple-deep)",
+          flex: 1,
+          minWidth: 0,
+          minHeight: 44,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          font: "var(--zk-type-btn-sm)",
+          gap: "var(--zk-space-12)",
+          color: "var(--zk-text)",
+          textDecoration: "none",
+          WebkitTapHighlightColor: "transparent",
         }}
       >
-        {initialOf(you.handle)}
-      </span>
-      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        <span style={{ font: "var(--zk-type-h4)", ...ellipsis }}>You · {atHandle(you.handle)}</span>
-        {!ranked ? (
-          <span style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"], color: "var(--zk-purple-pale)" }}>
-            Not ranked yet
+        {ranked ? <span style={{ font: "var(--zk-type-mono-sm)", flex: "none" }}>#{you.rank}</span> : null}
+        <span
+          aria-hidden="true"
+          style={{
+            width: 34,
+            height: 34,
+            flex: "none",
+            borderRadius: "50%",
+            background: "var(--zk-text)",
+            color: "var(--zk-purple-deep)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            font: "var(--zk-type-btn-sm)",
+          }}
+        >
+          {initialOf(you.handle)}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-2)", minWidth: 0 }}>
+            <span style={{ font: "var(--zk-type-h4)", ...ellipsis, minWidth: 0 }}>You · {atHandle(you.handle)}</span>
+            <Chevron color="var(--zk-purple-pale)" />
           </span>
-        ) : null}
-      </span>
+          {!ranked ? (
+            <span style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"], color: "var(--zk-purple-pale)" }}>
+              Not ranked yet
+            </span>
+          ) : null}
+        </span>
+      </Link>
       {ranked && delta > 0 ? (
         <span
           style={{

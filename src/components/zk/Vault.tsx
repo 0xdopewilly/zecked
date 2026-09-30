@@ -1,6 +1,6 @@
 import { useId, type CSSProperties } from "react";
 
-export type VaultMode = "closed" | "loop" | "open" | "spin";
+export type VaultMode = "closed" | "loop" | "open" | "spin" | "splash";
 
 export interface VaultProps {
   mode?: VaultMode;
@@ -34,14 +34,18 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
   const glow = r(s * 0.35), rim = r(s * 0.04), ds = r(s * 0.1), dsb = r(s * 0.12);
 
   const doorTf = m === "open" ? "perspective(1000px) rotateY(-118deg)" : "none";
-  const doorAnim = m === "loop" ? "zk-door var(--zk-dur-vault-cycle) var(--zk-ease-in-out) infinite" : "none";
+  // "splash": one fast cycle for the launch screen (dial spins, door swings open, holds, swings shut).
+  const doorAnim =
+    m === "loop" ? "zk-door var(--zk-dur-vault-cycle) var(--zk-ease-in-out) infinite" : m === "splash" ? "zk-door-splash 1.9s var(--zk-ease-in-out) both" : "none";
   const dialAnim =
     m === "loop"
       ? "zk-dial var(--zk-dur-vault-cycle) var(--zk-ease-in-out) infinite"
       : m === "spin"
         ? "zk-dial 3s var(--zk-ease-in-out) infinite"
-        : "none";
-  const coreAnim = m === "loop" ? "zk-glow var(--zk-dur-vault-cycle) ease-in-out infinite" : "none";
+        : m === "splash"
+          ? "zk-dial-splash 1.9s var(--zk-ease-in-out) both"
+          : "none";
+  const coreAnim = m === "loop" ? "zk-glow var(--zk-dur-vault-cycle) ease-in-out infinite" : m === "splash" ? "zk-glow-splash 1.9s ease-in-out both" : "none";
 
   return (
     <div
@@ -60,7 +64,7 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
             "radial-gradient(circle,var(--zk-vault-core) 0%,var(--zk-gold) 38%,var(--zk-vault-core-lo) 68%,var(--zk-surface-raised) 71%)",
           boxShadow: `0 0 ${glow}px rgb(var(--zk-gold-rgb) / .6),inset 0 0 0 ${rim}px var(--zk-surface-raised)`,
           animation: coreAnim,
-          willChange: m === "loop" ? "opacity" : undefined,
+          willChange: m === "loop" || m === "splash" ? "opacity" : undefined,
         }}
       />
       {/* Coin stack inside */}
@@ -82,7 +86,7 @@ export function Vault({ mode = "loop", size = 260, style, className }: VaultProp
           position: "absolute",
           inset: 0,
           transformOrigin: "0% 50%",
-          willChange: m === "loop" ? "transform" : undefined,
+          willChange: m === "loop" || m === "splash" ? "transform" : undefined,
           transform: doorTf,
           animation: doorAnim,
         }}

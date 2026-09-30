@@ -19,7 +19,9 @@ const GIFTS_PER_IP_PER_DAY = 3;
 const DROP_EVERY_MS = Number(process.env.ZECKED_DROP_HOURS || 3) * 3600_000;
 const DROP_USD = [1, 2, 2, 3];
 
-/** Classic riddles with forgiving answers ("|" separates accepted alternatives). */
+/** Classic riddles with forgiving answers ("|" separates accepted alternatives).
+ *  Never reuse the practice riddles' answers here (vault, tree/bark, mushroom, sponge, glove, library):
+ *  /practice reveals its answers, so a house stash with one of them would be free money. */
 const BANK: { text: string; answer: string; hint?: string }[] = [
   { text: "I have cities, but no houses. Forests, but no trees. Water, but no fish. What am I?", answer: "a map|map", hint: "You'd fold me to put me away." },
   { text: "The more you take, the more you leave behind. What am I?", answer: "footsteps|footprints|steps", hint: "Look down while you walk." },

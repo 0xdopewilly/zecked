@@ -1,5 +1,5 @@
 // ZECKED game rules: stash lifecycle, riddle guesses, sealed prediction calls, winners, claims.
-import type {
+import type { Reaction,
   AppConfig,
   BadgeId,
   ClaimResult,
@@ -19,6 +19,7 @@ import { NETWORK_FEE_ZAT, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
 import { emailSignInAvailable } from "./auth";
 import { notify } from "./notify";
+import { myReactions, reactionCounts } from "./social";
 import { googleEnabled } from "./google";
 import { XP, bumpBoard, ensurePlayer, getPlayer, grant, isAccount, savePlayer, tierOf, toPublicPlayer, touchPlay, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
@@ -686,6 +687,8 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     };
   }
   if (isMine && s.status === "awaiting_funding") out.funding = s.funding;
+  const rx = await reactionCounts(s.id);
+  if (rx && Object.keys(rx).length) out.reactions = rx;
   return out;
 }
 
@@ -696,7 +699,9 @@ export async function stashDetail(id: string, viewer: PlayerRecord) {
   s = (await getStash(id))!;
   if (s.status === "live" || s.status === "locked") await recordView(s, viewer.id);
   const stash = await toPublic(s, viewer.id);
-  const extra: { myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload } = {};
+  const extra: { myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload; myReactions?: Reaction[] } = {};
+  const mineRx = await myReactions(s.id, viewer.id);
+  if (mineRx.length) extra.myReactions = mineRx;
   if (s.type === "riddle") {
     const t = await kv().get<{ used: number; windowStart: number }>(K.myTries(s.id, viewer.id));
     const fresh = !t || Date.now() - t.windowStart > TRY_WINDOW_MS;
@@ -790,6 +795,17 @@ export async function myStashes(pid: string): Promise<PublicStash[]> {
   for (const s of recs) await tickStash(s);
   const rate = await zecUsd();
   return Promise.all(recs.filter((s) => s.status !== "void" || s.refund).map(async (s) => toPublic((await getStash(s.id))!, pid, rate)));
+}
+
+/** A player's publicly visible stashes (what they hid): live ones first, then finished; never unfunded. */
+export async function hiddenBy(pid: string, viewerId: string): Promise<PublicStash[]> {
+  const ids = (await kv().lrange<string>(K.byPlayer(pid), 0, -1)).reverse().slice(0, 40);
+  const recs = (await Promise.all(ids.map(getStash))).filter(Boolean) as StashRecord[];
+  const rate = await zecUsd();
+  const shown = recs.filter((s) => s.status === "live" || s.status === "locked" || s.status === "zecked" || s.status === "refunded");
+  const rank = (s: StashRecord) => (s.status === "live" || s.status === "locked" ? 0 : 1);
+  shown.sort((a, b) => rank(a) - rank(b) || b.createdAt.localeCompare(a.createdAt));
+  return Promise.all(shown.slice(0, 20).map((s) => toPublic(s, viewerId, rate)));
 }
 
 export async function loadStash(id: string) {

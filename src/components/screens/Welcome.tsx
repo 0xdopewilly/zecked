@@ -1,5 +1,6 @@
 "use client";
-// Screen 01 · Welcome. Vault door loop, floating stickers, wordmark, tagline and the "Start zecking" CTA.
+// Screen 01 · Welcome. Vault door loop, floating stickers, wordmark, tagline, the "Start zecking" CTA and
+// a free practice riddle for first-timers.
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { Button, Icon, Logo, TeamBadge, Vault } from "@/components/zk";
@@ -158,8 +159,10 @@ export default function Welcome() {
             gap: "var(--zk-space-14)",
           }}
         >
-          <div style={{ width: "100%" }}>
+          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>
             <Button label="Start zecking" variant="primary" size="lg" iconRight="arrowRight" full href="/feed" />
+            {/* First time? Crack a free practice riddle: no ZEC, no sign-up. */}
+            <Button label="Try a practice riddle" variant="ghost" size="md" icon="sparkle" full href="/practice" />
           </div>
           <span style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
             Free to play · Sign up to keep what you win

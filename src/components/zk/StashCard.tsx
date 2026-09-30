@@ -1,7 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent,
+  type ReactNode,
+  type SyntheticEvent,
+} from "react";
 import type { Match, PublicStash, StashStatus, Team } from "@/lib/types";
 import { formatUsd, formatZec } from "@/lib/api";
 import { prefetchStash } from "@/lib/stashCache";
@@ -9,6 +20,7 @@ import { Chip } from "@/components/zk/Chip";
 import { Countdown } from "@/components/zk/Countdown";
 import { Icon } from "@/components/zk/Icon";
 import { LiveBadge } from "@/components/zk/LiveBadge";
+import { ReactionSummary } from "@/components/zk/Reactions";
 import { TeamBadge } from "@/components/zk/TeamBadge";
 
 export interface StashCardProps {
@@ -18,6 +30,8 @@ export interface StashCardProps {
   onClick?: () => void;
   /** Mark the viewer's own stashes with a "YOURS" sticker (the feed; pointless on your own profile). */
   markMine?: boolean;
+  /** "by @handle" opens the hider's profile (default). Off on that profile itself. */
+  linkHider?: boolean;
 }
 
 const ENDED: readonly StashStatus[] = ["zecked", "expired", "refunded", "void"];
@@ -26,6 +40,7 @@ const ENDED: readonly StashStatus[] = ["zecked", "expired", "refunded", "void"];
 // beside it. A container query, so it follows the card's width wherever the card is used.
 const CARD_CSS =
   ".zk-sc{container-type:inline-size}.zk-sc-short{display:none}" +
+  ".zk-sc-who:hover .zk-sc-who-name{text-decoration:underline;text-underline-offset:2px}" +
   "@container (max-width:279px){.zk-sc-short{display:contents}.zk-sc-long{display:none}}";
 const URGENT_MS = 30 * 60 * 1000;
 const TEASER_MAX = 70;
@@ -171,7 +186,8 @@ const CENTER_LABEL_STYLE: CSSProperties = {
   color: "var(--zk-text-muted)",
 };
 
-export function StashCard({ stash, href, onClick, markMine = false }: StashCardProps) {
+export function StashCard({ stash, href, onClick, markMine = false, linkHider = true }: StashCardProps) {
+  const router = useRouter();
   const [hover, setHover] = useState(false);
   const [press, setPress] = useState(false);
   const now = useNow();
@@ -200,9 +216,49 @@ export function StashCard({ stash, href, onClick, markMine = false }: StashCardP
   const handle = stash.hider.handle.startsWith("@") ? stash.hider.handle : `@${stash.hider.handle}`;
   const pred = stash.prediction;
   const match = pred?.match;
-  const sub = riddle
-    ? `by ${mine ? "you" : handle}`
-    : `${pred?.kind === "winner" ? "Winner" : "Exact score"} · ${match?.leagueName ?? ""}`;
+  // The hider's handle opens their profile. The card itself is a link, so the handle is a span that
+  // navigates on its own (a link inside a link isn't valid HTML) and keeps the card from reacting.
+  const hiderHref = `/u/${encodeURIComponent(handle.replace(/^@+/, ""))}`;
+  // Also cancels the card's stash prefetch (opening a stash counts you as "cracking now"), and keeps the
+  // card link from taking focus (focusing it prefetches too).
+  const keepToSelf = (e: SyntheticEvent) => {
+    e.stopPropagation();
+    if (e.type === "pointerdown" || e.type === "mousedown") e.preventDefault();
+    cool();
+  };
+  const openHider = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    cool();
+    router.push(hiderHref, { transitionTypes: ["nav-forward"] });
+  };
+  const sub: ReactNode = riddle ? (
+    mine || !linkHider ? (
+      `by ${mine ? "you" : handle}`
+    ) : (
+      <>
+        <span style={{ flex: "none" }}>by&nbsp;</span>
+        <span
+          className="zk-sc-who"
+          data-sfx="tap"
+          onClick={openHider}
+          onPointerDown={keepToSelf}
+          onPointerUp={keepToSelf}
+          onMouseDown={keepToSelf}
+          style={{ position: "relative", display: "inline-flex", minWidth: 0, color: "var(--zk-text)", fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"], cursor: "pointer" }}
+        >
+          <span className="zk-sc-who-name" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {handle}
+          </span>
+          {/* A 44px-tall tap area around the small handle. */}
+          <span aria-hidden="true" style={{ position: "absolute", inset: "-14px -6px" }} />
+        </span>
+      </>
+    )
+  ) : (
+    `${pred?.kind === "winner" ? "Winner" : "Exact score"} · ${match?.leagueName ?? ""}`
+  );
+  const hasReactions = !!stash.reactions && Object.values(stash.reactions).some((n) => (n ?? 0) > 0);
   const tileBg = riddle ? "var(--zk-grad-tile-purple)" : "var(--zk-grad-tile-sky)";
   const tileEdge = riddle ? "var(--zk-purple-shade)" : "var(--zk-sky-shade)";
   const tileIcon = riddle ? "lock" : "ball";
@@ -416,8 +472,10 @@ export function StashCard({ stash, href, onClick, markMine = false }: StashCardP
                 color: "var(--zk-text-muted)",
                 marginTop: "var(--zk-space-4)",
                 whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                ...(typeof sub === "string"
+                  ? { overflow: "hidden", textOverflow: "ellipsis" }
+                  : // The handle truncates itself, so its tap area isn't clipped here.
+                    { display: "flex", minWidth: 0 }),
               }}
             >
               {sub}
@@ -476,21 +534,27 @@ export function StashCard({ stash, href, onClick, markMine = false }: StashCardP
 
         {/* Prize + meta chip */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "var(--zk-space-8)" }}>
-          <div>
-            <div style={{ font: "var(--zk-type-mono-lg)", color: "var(--zk-gold)" }}>{zec} ZEC</div>
+          <div style={{ flex: "none" }}>
+            <div style={{ font: "var(--zk-type-mono-lg)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>{zec} ZEC</div>
             <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>
               ~{usd}
             </div>
           </div>
-          {!needsFunding && (
-            <Bump value={metaN}>
-              <Chip
-                variant="info"
-                icon={metaIcon}
-                label={<Num value={metaN} unit={metaUnit} />}
-              />
-            </Bump>
-          )}
+          <div style={{ flex: "1 1 auto", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "var(--zk-space-10)", minWidth: 0 }}>
+            {/* The top reactions, as many as fit beside the prize (none if even one doesn't): never pushes it. */}
+            {hasReactions && (
+              <ReactionSummary counts={stash.reactions} fit style={{ flex: "0 1 auto" }} />
+            )}
+            {!needsFunding && (
+              <Bump value={metaN}>
+                <Chip
+                  variant="info"
+                  icon={metaIcon}
+                  label={<Num value={metaN} unit={metaUnit} />}
+                />
+              </Bump>
+            )}
+          </div>
         </div>
 
         {/* Your unfunded stash: one clear next step */}

@@ -331,6 +331,10 @@
 @keyframes zk-ring { 0% { transform: scale(.8); opacity: .8 } 100% { transform: scale(1.6); opacity: 0 } }
 @keyframes zk-bob { 0%, 100% { transform: translateY(0) rotate(var(--zk-tilt, 0deg)) } 50% { transform: translateY(-8px) rotate(var(--zk-tilt, 0deg)) } }
 @keyframes zk-glow { 0%, 100% { opacity: .5 } 50% { opacity: 1 } }
+/* Launch splash: one quick vault cycle (see Vault mode="splash") */
+@keyframes zk-dial-splash { 0% { transform: rotate(0) } 28% { transform: rotate(420deg) } 100% { transform: rotate(420deg) } }
+@keyframes zk-door-splash { 0%, 26% { transform: perspective(1000px) rotateY(0deg) } 48%, 70% { transform: perspective(1000px) rotateY(-112deg) } 94%, 100% { transform: perspective(1000px) rotateY(0deg) } }
+@keyframes zk-glow-splash { 0%, 24% { opacity: .45 } 48%, 70% { opacity: 1 } 100% { opacity: .55 } }
 
 /* ---------- Resets ---------- */
 body { margin: 0; background: var(--zk-canvas); color: var(--zk-text); font-family: var(--zk-font-body); -webkit-font-smoothing: antialiased; }

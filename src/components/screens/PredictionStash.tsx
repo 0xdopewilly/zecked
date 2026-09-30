@@ -1,13 +1,16 @@
 "use client";
 // Screens 05 (prediction stash) + 06 (live match), plus the locked, full-time, refunded,
 // called-off and awaiting-funding states. Polls the stash so every state stays in sync, and turns
-// what changed between polls into moments: kickoff, goals, full time.
+// what changed between polls into moments: kickoff, goals, full time. Once funded, every state has the
+// emoji reactions bar (the poll brings other people's in live); the hider's name opens their profile.
+import Link from "next/link";
 import { sfx } from "@/lib/sfx";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button, Chip, Countdown, Emblem, Icon, LiveBadge, TeamBadge, TIER_LABEL, Toast } from "@/components/zk";
+import { Reactions } from "@/components/zk/Reactions";
 import { api, formatUsd, formatZec } from "@/lib/api";
 import { useAppBack } from "@/lib/nav";
-import type { Match, MyCall, PublicStash, RunnerCall, Team, WinPayload, WinnerPick } from "@/lib/types";
+import type { Match, MyCall, PublicStash, Reaction, RunnerCall, Team, WinPayload, WinnerPick } from "@/lib/types";
 import {
   callMatches,
   callMatchesScore,
@@ -27,7 +30,7 @@ import {
   tensionLabel,
 } from "@/lib/predict";
 
-type StashData = { stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; win?: WinPayload };
+type StashData = { stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; win?: WinPayload; myReactions?: Reaction[] };
 
 export interface PredictionStashProps {
   initial: StashData;
@@ -245,24 +248,41 @@ function Nav({ center, onBack, onShare }: { center: ReactNode; onBack: () => voi
   );
 }
 
-/** "Hidden by @handle · Rookie · 3 stashes hidden", as on the riddle screen. */
+/** "Hidden by @handle · Rookie · 3 stashes hidden", as on the riddle screen. Opens the hider's profile. */
 function HiderRow({ stash }: { stash: PublicStash }) {
   const h = stash.hider;
   const handle = h.handle.startsWith("@") ? h.handle : `@${h.handle}`;
+  const tier = `${TIER_LABEL[h.tier] ?? "Rookie"}${h.stashesHidden > 0 ? ` · ${plural(h.stashesHidden, "stash", "stashes")} hidden` : ""}`;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)", padding: "0 var(--zk-space-4)" }}>
+    <Link
+      href={`/u/${encodeURIComponent(handle.slice(1))}`}
+      transitionTypes={["nav-forward"]}
+      aria-label={`Hidden by ${stash.isMine ? "you" : handle}. ${tier}. Open ${stash.isMine ? "your" : "their"} profile`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-10)",
+        minHeight: "var(--zk-tap-min)",
+        padding: "0 var(--zk-space-4)",
+        color: "var(--zk-text)",
+        textDecoration: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
       <Emblem tier={h.tier} size={30} style={{ flex: "none" }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ font: "var(--zk-type-body-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          <span style={{ color: "var(--zk-text-muted)", fontWeight: "var(--zk-fw-semibold)" }}>Hidden by </span>
-          {stash.isMine ? "you" : handle}
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-2)", minWidth: 0 }}>
+          <span style={{ font: "var(--zk-type-body-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+            <span style={{ color: "var(--zk-text-muted)", fontWeight: "var(--zk-fw-semibold)" }}>Hidden by </span>
+            {stash.isMine ? "you" : handle}
+          </span>
+          <span aria-hidden="true" style={{ display: "flex", flex: "none", color: "var(--zk-text-muted)", transform: "rotate(180deg)" }}>
+            <Icon icon="back" size={14} stroke={2.6} />
+          </span>
         </div>
-        <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)" }}>
-          {TIER_LABEL[h.tier] ?? "Rookie"}
-          {h.stashesHidden > 0 ? ` · ${plural(h.stashesHidden, "stash", "stashes")} hidden` : ""}
-        </div>
+        <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)" }}>{tier}</div>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -1195,6 +1215,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
         myCall: r.myCall ?? prev.myCall,
         runners: r.runners ?? prev.runners,
         win: r.win ?? prev.win,
+        myReactions: r.myReactions ?? [],
       }));
     } catch {
       // keep the last good state; the next poll retries
@@ -1469,6 +1490,10 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
     </div>
   );
   const ownNote = <Line icon="info">It’s your stash, so you can’t call it. Enjoy the match 🍿</Line>;
+  // Anyone can react once it's funded (guests too). Called-off matches can't take them.
+  const reactions = (
+    <Reactions stashId={id} counts={stash.reactions} mine={data.myReactions} onError={(text) => showToast({ text, variant: "error" })} />
+  );
 
   if (!pred || !match) {
     return screen(
@@ -1535,6 +1560,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
           <p style={S.muted}>{mine ? `Your ${zec} ZEC is back in your ZECKED wallet. Uncrackable 🛡️` : "The ZEC went back to the hider."}</p>
         </StateCard>
         {mine ? <OwnStashCards calls={pred.calls} stash={stash} /> : myCall ? <CallPrizeCards call={callText} empty={noCallText} stash={stash} /> : null}
+        {reactions}
         {mine ? hiderEnd(true) : findAnother()}
       </>,
     );
@@ -1565,6 +1591,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
             {correctLine}
           </StateCard>
           <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
+          {reactions}
           <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "var(--zk-space-12)" }}>
             <Button label="You called it! Claim your ZEC" variant="primary" size="lg" icon="coin" onClick={() => onWinRef.current(win)} />
             {findAnother("ghost", false)}
@@ -1596,6 +1623,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
             </StateCard>
           )}
           <OwnStashCards calls={pred.calls} stash={stash} />
+          {reactions}
           {resolved ? hiderEnd(false) : null}
         </>,
       );
@@ -1623,6 +1651,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
           )}
         </StateCard>
         <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
+        {reactions}
         {findAnother()}
       </>,
     );
@@ -1655,6 +1684,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
         ) : (
           <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
         )}
+        {reactions}
         {myCall ? <TensionMeter value={value} label={tensionLabel(myCall, match)} /> : null}
         {runners ? <Runners runners={runners} total={pred.calls} /> : null}
       </>,
@@ -1697,6 +1727,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
           <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
         )}
         {runners ? <Runners runners={runners} total={pred.calls} /> : <SealedNote calls={pred.calls} tail="Revealed at kickoff." />}
+        {reactions}
       </>,
     );
   }
@@ -1777,6 +1808,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
       )}
       <RuleChips />
       {mine ? null : <SealedNote calls={pred.calls} tail="Revealed at kickoff." />}
+      {reactions}
     </>,
   );
 }

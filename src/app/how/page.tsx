@@ -287,6 +287,7 @@ export default function HowItWorksPage() {
         >
           <Button label="Start zecking" variant="primary" size="lg" iconRight="arrowRight" href="/feed" />
           <Button label="Hide a stash" variant="ghost" size="md" icon="plus" href="/hide" />
+          <Button label="Try a free practice riddle" variant="ghost" size="md" icon="key" href="/practice" />
           <span
             style={{
               marginTop: "var(--zk-space-4)",

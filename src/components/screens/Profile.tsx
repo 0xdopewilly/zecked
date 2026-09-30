@@ -13,6 +13,7 @@ import { ZAT } from "@/lib/types";
 import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar, Toast } from "@/components/zk";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { isMuted, setMuted } from "@/lib/sfx";
+import { PUSH_COPY, usePush } from "@/components/zk/PushSetup";
 
 const ALL_BADGES: BadgeId[] = [
   "first-crack",
@@ -600,6 +601,27 @@ function AccountCard({ player }: { player: Player }) {
 const settingRow: CSSProperties = { display: "flex", alignItems: "center", gap: "var(--zk-space-12)", minHeight: 60, padding: "var(--zk-space-8) 0" };
 
 /** iOS-style switch: a 52×32 track inside a 44px-tall tap area. */
+/** Push pings on this device: a switch when possible, otherwise a one-line "how to" (e.g. iPhone: add to Home Screen). */
+function NotificationsRow() {
+  const { state, busy, turnOn, turnOff } = usePush();
+  if (!state) return null;
+  const canToggle = state === "on" || state === "off";
+  return (
+    <div style={{ borderTop: "1px solid var(--zk-border)" }}>
+      <div style={settingRow}>
+        <div style={tile("rgb(var(--zk-pink-rgb) / .12)", "var(--zk-pink)", 40)}>
+          <Icon icon="bolt" size={19} stroke={2.4} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: "var(--zk-type-h4)" }}>Notifications</div>
+          <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)", textWrap: "pretty" }}>{PUSH_COPY[state]}</div>
+        </div>
+        {canToggle && <Switch label="Notifications" on={state === "on"} onChange={(v) => !busy && void (v ? turnOn() : turnOff())} />}
+      </div>
+    </div>
+  );
+}
+
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
@@ -700,7 +722,12 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "var(--zk-type-h4)" }}>Sounds</div>
-            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>Pops, confetti and wins</div>
+            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>
+              Pops, confetti and wins ·{" "}
+              <Link href="/sounds" style={{ color: "var(--zk-gold)", textDecoration: "underline", textUnderlineOffset: 3, display: "inline-flex", alignItems: "center", minHeight: 32 }}>
+                Hear them all
+              </Link>
+            </div>
           </div>
           <Switch
             label="Sounds"
@@ -711,6 +738,7 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
             }}
           />
         </div>
+        <NotificationsRow />
         {signedIn && (
           <div style={{ borderTop: "1px solid var(--zk-border)" }}>
             <div style={settingRow}>
@@ -1177,6 +1205,14 @@ export default function Profile() {
         {player ? (
           <>
             <IdentityRow player={player} onSaved={setPlayer} />
+            {player.account?.signedIn && (
+              <Link
+                href={`/u/${player.handle.replace(/^@+/, "")}`}
+                style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: "var(--zk-space-6)", minHeight: 44, font: "var(--zk-type-small)", color: "var(--zk-gold)", marginTop: "calc(-1 * var(--zk-space-8))" }}
+              >
+                See your public page <Icon icon="arrowRight" size={14} stroke={2.6} />
+              </Link>
+            )}
             <AccountCard player={player} />
             <TierCard player={player} />
             <Stats player={player} />

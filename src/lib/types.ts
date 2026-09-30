@@ -89,6 +89,7 @@ export interface PublicStash {
     crackingNow: number; // other people on it in the last few minutes (not you, not the hider)
     answer?: string; // revealed only once the stash has ended
   };
+  reactions?: Partial<Record<Reaction, number>>; // emoji → count (only emojis someone used)
   prediction?: {
     match: Match;
     kind: PredictionKind;
@@ -245,6 +246,27 @@ export interface AppConfig {
   minStashUsd: number;
   /** Sign-in methods available on this deployment. */
   auth: { google: boolean; passkey: boolean; email: boolean };
+}
+
+/** Emoji reactions players can drop on a stash (one of each per player). */
+export const REACTIONS = ["🔥", "😂", "🤯", "🧠", "😤", "👀"] as const;
+export type Reaction = (typeof REACTIONS)[number];
+
+/** A player's public page (/u/[handle]). Aggregates only: never which stashes they won, never ids or money. */
+export interface PublicProfile {
+  handle: string;
+  tier: TierId;
+  nextTier?: TierId;
+  xp: number;
+  xpForNext?: number;
+  xpTierStart: number;
+  stats: { cracked: number; hidden: number; uncrackable: number; oracle: number; streak: number };
+  badges: BadgeId[];
+  createdAt: string;
+  isYou: boolean;
+  isHouse: boolean;
+  /** Stashes they hid (live first, then finished), newest first. */
+  stashes: PublicStash[];
 }
 
 /** A personal notice, shown as a toast wherever the player is in the app. */

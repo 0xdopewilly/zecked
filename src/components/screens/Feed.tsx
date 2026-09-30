@@ -6,8 +6,10 @@
 //  - Coming back is instant: the last feed, player, ticker, filter and scroll position live in memory
 //    for the whole visit (the filter also survives a reload), then refresh in the background.
 //  - The header slides away while you scroll down (the chips stay) and comes back on scroll up.
+//  - New here (no practice riddle solved yet)? A dismissible "Try a free practice riddle" card sits at
+//    the top of the list, or inside the empty state.
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { api, formatZec, type FeedFilter } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import type { Player, PublicStash, TickerItem } from "@/lib/types";
@@ -26,6 +28,9 @@ const TICKER_MS = 15_000;
 const ME_MS = 30_000;
 const FILTER_KEY = "zk:feed-filter";
 const LIST_GAP = 14; // px, = --zk-space-14 between cards
+const PRACTICE_DONE = "zk:practice-done"; // set by the practice screen when you solve one
+const PRACTICE_DISMISSED = "zk:practice-dismissed";
+const PRACTICE_EVENT = "zk:practice";
 
 type TickerState = { items: TickerItem[]; now: number; loaded: boolean };
 /** The house's free drops, sent along with the feed: when the next one lands (null = none scheduled). */
@@ -54,6 +59,34 @@ if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     poppedAt = Date.now();
   });
+}
+
+/* ---------- practice riddle card ---------- */
+
+// Read from localStorage as an external store: the server (and hydration) always says "no card", the
+// client re-renders with the real answer straight after, and a later client visit knows it on the first
+// render (so a restored scroll position lands in the right place).
+function practiceWanted(): boolean {
+  try {
+    return !localStorage.getItem(PRACTICE_DONE) && !localStorage.getItem(PRACTICE_DISMISSED);
+  } catch {
+    return false;
+  }
+}
+function subscribePractice(onChange: () => void) {
+  window.addEventListener(PRACTICE_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(PRACTICE_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+const noPractice = () => false;
+function dismissPractice() {
+  try {
+    localStorage.setItem(PRACTICE_DISMISSED, new Date().toISOString());
+  } catch {}
+  window.dispatchEvent(new Event(PRACTICE_EVENT));
 }
 
 function reducedMotion(): boolean {
@@ -497,10 +530,132 @@ function NextDrop({ at, onDone }: { at: string; onDone: () => void }) {
 }
 
 /**
- * The whole feed is empty (the first thing players see on a fresh network): a teaser, not a dead end.
- * `nextDrop` is the spot for a "Next drop in…" line once the server schedules house drops.
+ * "New here? Try a free practice riddle →": the whole card opens /practice, ✕ puts it away for good.
+ * In the list it folds away (with the gap below it) so nothing jumps; `fold={false}` just swaps it out.
  */
-function EmptyFeed({ nextDrop }: { nextDrop?: ReactNode }) {
+function PracticeCard({ fold = true, style }: { fold?: boolean; style?: CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const leaving = useRef(false);
+  const dismiss = () => {
+    if (leaving.current) return;
+    leaving.current = true;
+    const el = ref.current;
+    if (!fold || !el?.animate || reducedMotion()) {
+      dismissPractice();
+      return;
+    }
+    el.style.overflow = "hidden";
+    const anim = el.animate(
+      [
+        { height: `${el.offsetHeight}px`, opacity: 1, marginBottom: "0px" },
+        { height: "0px", opacity: 0, marginBottom: `-${LIST_GAP}px` },
+      ],
+      { duration: 260, easing: "cubic-bezier(.22,1,.36,1)", fill: "forwards" }
+    );
+    anim.onfinish = dismissPractice;
+    anim.oncancel = dismissPractice;
+  };
+  return (
+    <div ref={ref} style={{ flex: "none", position: "relative", ...style }}>
+      <Link
+        href="/practice"
+        transitionTypes={["nav-forward"]}
+        data-sfx="pop"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--zk-space-12)",
+          padding: "var(--zk-space-12) var(--zk-space-14) var(--zk-space-14)",
+          borderRadius: "var(--zk-radius-2xl)",
+          background:
+            "radial-gradient(90% 120% at 0% 0%, rgb(var(--zk-purple-rgb) / .38), transparent 70%), radial-gradient(70% 100% at 100% 100%, rgb(var(--zk-pink-rgb) / .16), transparent 70%), var(--zk-surface)",
+          border: "1.5px solid rgb(var(--zk-purple-rgb) / .5)",
+          color: "var(--zk-text)",
+          textAlign: "left",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 44,
+            height: 44,
+            flex: "none",
+            borderRadius: "var(--zk-radius-lg)",
+            background: "var(--zk-grad-tile-gold)",
+            boxShadow: "var(--zk-inset-gloss), 0 3px 0 var(--zk-gold-deep)",
+            color: "var(--zk-gold-ink)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Icon icon="key" size={22} stroke={2.4} />
+        </span>
+        <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--zk-space-2)" }}>
+          {/* The label row is as tall as the ✕, so the lines below can run the full width under it. */}
+          <span
+            style={{
+              minHeight: 24,
+              paddingRight: 30,
+              display: "flex",
+              alignItems: "center",
+              font: "var(--zk-type-label)",
+              letterSpacing: "var(--zk-track-label)",
+              color: "var(--zk-pink)",
+            }}
+          >
+            NEW HERE?
+          </span>
+          <span style={{ font: "var(--zk-type-h4)", fontSize: "clamp(14px, 4.3vw, var(--zk-fs-16))", textWrap: "balance" } as CSSProperties}>
+            Try a free practice{" "}
+            <span style={{ whiteSpace: "nowrap" }}>
+              riddle
+              <span style={{ display: "inline-block", verticalAlign: "-2px", marginLeft: "var(--zk-space-6)" }}>
+                <Icon icon="arrowRight" size={16} stroke={2.8} color="var(--zk-gold)" />
+              </span>
+            </span>
+          </span>
+          <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textWrap: "balance" } as CSSProperties}>
+            No ZEC, no sign-up, just for fun.
+          </span>
+        </span>
+      </Link>
+      <button
+        type="button"
+        aria-label="No thanks, hide this"
+        data-sfx="tap"
+        onClick={dismiss}
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          width: "var(--zk-tap-min)",
+          height: "var(--zk-tap-min)",
+          border: 0,
+          padding: 0,
+          background: "transparent",
+          color: "var(--zk-text-muted)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{ width: 26, height: 26, borderRadius: "50%", background: "rgb(var(--zk-bg-rgb) / .5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon icon="close" size={13} stroke={2.8} />
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The whole feed is empty (the first thing players see on a fresh network): a teaser, not a dead end.
+ * `nextDrop` is the spot for a "Next drop in…" line once the server schedules house drops; `practice`
+ * shows the practice-riddle card to first-timers (in place of the steps).
+ */
+function EmptyFeed({ nextDrop, practice }: { nextDrop?: ReactNode; practice?: boolean }) {
   return (
     <section
       aria-labelledby="zk-empty-title"
@@ -529,58 +684,63 @@ function EmptyFeed({ nextDrop }: { nextDrop?: ReactNode }) {
         It’s test ZEC (no real value), so go wild.
       </p>
 
-      <ol
-        aria-label="How it works"
-        style={{
-          listStyle: "none",
-          margin: "var(--zk-space-16) 0 0",
-          padding: 0,
-          width: "100%",
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: "var(--zk-space-8)",
-        }}
-      >
-        {STEPS.map((s, i) => (
-          <li
-            key={s.title}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "var(--zk-space-4)",
-              padding: "var(--zk-space-10) var(--zk-space-6)",
-              borderRadius: "var(--zk-radius-lg)",
-              background: "rgb(var(--zk-bg-rgb) / .45)",
-              border: "1px solid var(--zk-border)",
-              minWidth: 0,
-            }}
-          >
-            <div
-              aria-hidden="true"
+      {/* First-timers get the practice riddle here instead: it teaches the game by playing it. */}
+      {practice ? (
+        <PracticeCard fold={false} style={{ width: "100%", marginTop: "var(--zk-space-16)" }} />
+      ) : (
+        <ol
+          aria-label="How it works"
+          style={{
+            listStyle: "none",
+            margin: "var(--zk-space-16) 0 0",
+            padding: 0,
+            width: "100%",
+            display: "grid",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gap: "var(--zk-space-8)",
+          }}
+        >
+          {STEPS.map((s, i) => (
+            <li
+              key={s.title}
               style={{
-                width: 36,
-                height: 36,
-                marginBottom: "var(--zk-space-2)",
-                borderRadius: "var(--zk-radius-md)",
-                background: s.grad,
-                boxShadow: `var(--zk-inset-gloss), 0 3px 0 ${s.edge}`,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
-                justifyContent: "center",
-                color: i === 2 ? "var(--zk-gold-ink)" : "var(--zk-text)",
+                gap: "var(--zk-space-4)",
+                padding: "var(--zk-space-10) var(--zk-space-6)",
+                borderRadius: "var(--zk-radius-lg)",
+                background: "rgb(var(--zk-bg-rgb) / .45)",
+                border: "1px solid var(--zk-border)",
+                minWidth: 0,
               }}
             >
-              <Icon icon={s.icon} size={18} stroke={2.4} />
-            </div>
-            <div style={{ font: "var(--zk-type-h4)" }}>
-              <span className="zk-sr-only">{i + 1}. </span>
-              {s.title}
-            </div>
-            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textWrap: "balance" } as CSSProperties}>{s.text}</div>
-          </li>
-        ))}
-      </ol>
+              <div
+                aria-hidden="true"
+                style={{
+                  width: 36,
+                  height: 36,
+                  marginBottom: "var(--zk-space-2)",
+                  borderRadius: "var(--zk-radius-md)",
+                  background: s.grad,
+                  boxShadow: `var(--zk-inset-gloss), 0 3px 0 ${s.edge}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: i === 2 ? "var(--zk-gold-ink)" : "var(--zk-text)",
+                }}
+              >
+                <Icon icon={s.icon} size={18} stroke={2.4} />
+              </div>
+              <div style={{ font: "var(--zk-type-h4)" }}>
+                <span className="zk-sr-only">{i + 1}. </span>
+                {s.title}
+              </div>
+              <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textWrap: "balance" } as CSSProperties}>{s.text}</div>
+            </li>
+          ))}
+        </ol>
+      )}
 
       {nextDrop ? <div style={{ marginTop: "var(--zk-space-14)" }}>{nextDrop}</div> : null}
 
@@ -707,6 +867,7 @@ export default function Feed() {
   const [lift, setLift] = useState(0);
   const [headerH, setHeaderH] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const practice = useSyncExternalStore(subscribePractice, practiceWanted, noPractice);
 
   const mainRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -1084,11 +1245,15 @@ export default function Feed() {
   // The whole feed is empty (not just this filter): the teaser, with its own single primary button.
   const feedEmpty = !!list && list.length === 0 && (filter === "all" || lists.all?.length === 0);
 
+  // Shown with the list (never over the loading skeletons), so it never pushes the cards down later.
+  const practiceCard = practice ? <PracticeCard /> : null;
+
   let body: ReactNode;
   if (shown && shown.length > 0) {
     body = (
       <>
         {error && <StaleBanner kind={error} onRetry={retry} />}
+        {practiceCard}
         {shown.map((s) => (
           <FeedItem key={s.id} stash={s} animate={freshSet.has(s.id)} />
         ))}
@@ -1096,11 +1261,21 @@ export default function Feed() {
     );
   } else if (feedEmpty) {
     const dropAt = house?.nextDropAt && Date.parse(house.nextDropAt) > Date.now() ? house.nextDropAt : null;
-    body = <EmptyFeed nextDrop={dropAt ? <NextDrop at={dropAt} onDone={() => void loadFeed(filter, "poll")} /> : undefined} />;
+    body = <EmptyFeed practice={practice} nextDrop={dropAt ? <NextDrop at={dropAt} onDone={() => void loadFeed(filter, "poll")} /> : undefined} />;
   } else if (list) {
-    body = <FilterEmpty filter={filter as Exclude<FeedFilter, "all">} onAll={() => pick("all")} />;
+    body = (
+      <>
+        {practiceCard}
+        <FilterEmpty filter={filter as Exclude<FeedFilter, "all">} onAll={() => pick("all")} />
+      </>
+    );
   } else if (error) {
-    body = <ErrorState kind={error} onRetry={retry} />;
+    body = (
+      <>
+        {practiceCard}
+        <ErrorState kind={error} onRetry={retry} />
+      </>
+    );
   } else {
     body = (
       <div aria-busy="true" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)" }}>

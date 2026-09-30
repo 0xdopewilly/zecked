@@ -2,17 +2,22 @@
 // Screens 03 (riddle stash) and 04 (wrong answer), plus the extra states the design review asked for:
 // too late (zecked by someone else), you zecked it, uncrackable (expired / refunded), not funded yet,
 // out of tries, and the hider's own view of a live stash. Every ended state reveals the answer.
+// Once funded, every state has the emoji reactions bar; the hider's name opens their profile.
+import Link from "next/link";
 import { sfx } from "@/lib/sfx";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api, formatUsd, formatZec } from "@/lib/api";
 import { useAppBack } from "@/lib/nav";
-import type { PublicStash, WinPayload } from "@/lib/types";
+import type { PublicStash, Reaction, WinPayload } from "@/lib/types";
 import { Button, Countdown, Emblem, Icon, Input, LiveBadge, Toast } from "@/components/zk";
+import { Reactions } from "@/components/zk/Reactions";
 import { TIER_LABEL } from "@/components/zk/Emblem";
 import { TopToast, VICTORY_EVENT, VictoryNote, WIN_CLOSED_EVENT, friendlyError, noteWinKind, shareLink, winShareText } from "@/components/screens/WinMoment";
 
 const MAX_TRIES = 3;
 const POLL_MS = 20_000;
+/** Ended stashes still get reactions: a slower poll keeps other people's showing up. */
+const ENDED_POLL_MS = 30_000;
 /** setTimeout fires immediately for delays above 2^31 − 1 ms. */
 const MAX_TIMEOUT = 2_147_483_000;
 
@@ -21,6 +26,8 @@ export interface RiddleStashData {
   myTries?: { left: number; resetsAt?: string };
   /** Present when the viewer won this stash earlier and hasn't claimed yet. */
   win?: WinPayload;
+  /** The viewer's own emoji reactions on this stash. */
+  myReactions?: Reaction[];
 }
 
 export interface RiddleStashProps {
@@ -136,6 +143,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
   const [triesLeft, setTriesLeft] = useState(data.myTries?.left ?? MAX_TRIES);
   const [resetsAt, setResetsAt] = useState<string | undefined>(data.myTries?.resetsAt);
   const [myWin, setMyWin] = useState<WinPayload | undefined>(data.win);
+  const [myRx, setMyRx] = useState<Reaction[]>(data.myReactions ?? []);
   const [answer, setAnswer] = useState("");
   const [wrong, setWrong] = useState<WrongGuess | null>(null);
   const [shake, setShake] = useState(0);
@@ -162,6 +170,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     setTriesLeft(data.myTries?.left ?? MAX_TRIES);
     setResetsAt(data.myTries?.resetsAt);
     setMyWin(data.win);
+    setMyRx(data.myReactions ?? []);
   }, [data]);
 
   const showToast = useCallback((text: string, variant: "success" | "error" | "default" = "success", icon?: string) => {
@@ -176,6 +185,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       const d = await api.stash(id);
       setStash(d.stash);
       if (d.win) setMyWin(d.win);
+      setMyRx(d.myReactions ?? []);
       if (d.myTries && !busyRef.current) {
         setTriesLeft(d.myTries.left);
         setResetsAt(d.myTries.resetsAt);
@@ -185,15 +195,15 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     }
   }, [id]);
 
-  // Keep "N cracking now", tries and status fresh while the stash is open.
-  const pollable = stash.status === "live" || stash.status === "awaiting_funding";
+  // Keep "N cracking now", tries, status and reactions fresh while the stash is open (slower once it's over).
+  const pollMs = stash.status === "live" || stash.status === "awaiting_funding" ? POLL_MS : stash.status === "void" ? 0 : ENDED_POLL_MS;
   useEffect(() => {
-    if (!pollable) return;
+    if (!pollMs) return;
     const t = setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, POLL_MS);
+    }, pollMs);
     return () => clearInterval(t);
-  }, [pollable, refresh]);
+  }, [pollMs, refresh]);
 
   // Fetch the hint text the moment it unlocks.
   const hintAt = r?.hasHint && !r.hint ? r.hintUnlocksAt : undefined;
@@ -404,25 +414,50 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     </nav>
   );
 
+  const hiderHandle = stash.hider.handle.startsWith("@") ? stash.hider.handle : `@${stash.hider.handle}`;
   const hiderRow = (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-12)" }}>
-      <Emblem tier={stash.hider.tier} size={42} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            font: "var(--zk-type-body-strong)",
-            fontSize: "var(--zk-fs-15)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {stash.hider.handle}
+      {/* The hider's emblem and name open their profile. */}
+      <Link
+        href={`/u/${encodeURIComponent(hiderHandle.slice(1))}`}
+        transitionTypes={["nav-forward"]}
+        aria-label={`${stash.isMine ? "Your profile" : `${hiderHandle}’s profile`}. ${TIER_LABEL[stash.hider.tier] ?? "Rookie"}, ${plural(stash.hider.stashesHidden, "stash", "stashes")} hidden`}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          minHeight: "var(--zk-tap-min)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--zk-space-12)",
+          color: "var(--zk-text)",
+          textDecoration: "none",
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        <Emblem tier={stash.hider.tier} size={42} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-2)", minWidth: 0 }}>
+            <span
+              style={{
+                font: "var(--zk-type-body-strong)",
+                fontSize: "var(--zk-fs-15)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+              }}
+            >
+              {hiderHandle}
+            </span>
+            <span aria-hidden="true" style={{ display: "flex", flex: "none", color: "var(--zk-text-muted)", transform: "rotate(180deg)" }}>
+              <Icon icon="back" size={14} stroke={2.6} />
+            </span>
+          </div>
+          <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)" }}>
+            {TIER_LABEL[stash.hider.tier] ?? "Rookie"} · {plural(stash.hider.stashesHidden, "stash", "stashes")} hidden
+          </div>
         </div>
-        <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)" }}>
-          {TIER_LABEL[stash.hider.tier] ?? "Rookie"} · {plural(stash.hider.stashesHidden, "stash", "stashes")} hidden
-        </div>
-      </div>
+      </Link>
       <div style={{ textAlign: "right", flex: "none" }}>
         {/* A touch smaller on 320px phones, so the hider's name and tier keep room. */}
         <div style={{ font: "var(--zk-type-mono-lg)", fontSize: "min(var(--zk-fs-22), 5.6vw)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>{zec} ZEC</div>
@@ -769,6 +804,12 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
 
   const shareGhost = <Button label="Share this stash" icon="share" variant="ghost" size="md" onClick={() => void share()} />;
 
+  // Anyone can react once it's funded (guests too), live or over. A called-off stash can't take them.
+  const reactions =
+    stash.status !== "awaiting_funding" && stash.status !== "void" ? (
+      <Reactions stashId={id} counts={stash.reactions} mine={myRx} onError={(t) => showToast(t, "error")} />
+    ) : null;
+
   const privacyNote = wrong ? (
     <Toast variant="default" icon="eyeOff" sound={false} text={`Wrong guesses are private. Only you know you said “${wrong.shown}”.`} />
   ) : null;
@@ -919,6 +960,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         {liveCard(true)}
         {lockedPanel}
         {hintRow}
+        {reactions}
         {privacyNote}
         {bottom(shareGhost)}
       </>
@@ -957,6 +999,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         {answerBox}
         {triesRow(false)}
         {hintRow}
+        {reactions}
         {bottom(
           <>
             {privacyNote}
@@ -973,6 +1016,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         {answerBox}
         {triesRow(true)}
         {hintRow}
+        {reactions}
         {shareGhost}
       </>
     );
@@ -1047,6 +1091,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
           </dl>
         </section>
         {hintRow}
+        {reactions}
         <Button label="Share this stash" icon="share" variant="primary" size="lg" onClick={() => void share()} />
       </>
     );
@@ -1068,6 +1113,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         )}
         {answerReveal}
         {victoryQuote}
+        {reactions}
         {bottom(stash.isMine ? endedButton("Hide another stash", "/hide") : endedButton("Find another stash", "/feed"))}
       </>
     );
@@ -1079,6 +1125,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         {statusBlock("You zecked this!", [ago ? `Zecked ${ago}` : "", crackStats].filter(Boolean).join(" · ") || undefined, "var(--zk-gold)")}
         {answerReveal}
         <VictoryNote id={id} initial={stash.result?.victoryMessage ?? ""} />
+        {reactions}
         {bottom(
           <>
             <Button label="Share my win" icon="share" variant="secondary" size="md" onClick={() => void share()} />
@@ -1100,6 +1147,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         )}
         {answerReveal}
         {r?.hint && hintRow}
+        {reactions}
         {bottom(stash.isMine ? endedButton("Hide another stash", "/hide") : endedButton("Find another stash", "/feed"))}
       </>
     );

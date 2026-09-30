@@ -38,6 +38,7 @@ import { Button, Chip, Confetti, Icon, Input, LiveBadge, Logo, TeamBadge, Toast 
 import type { ToastVariant } from "@/components/zk";
 import { api, formatUsd, formatZec } from "@/lib/api";
 import { useAppBack } from "@/lib/nav";
+import { PushPrompt } from "@/components/zk/PushSetup";
 import { sfx } from "@/lib/sfx";
 import { ZAT } from "@/lib/types";
 import type { AppConfig, Match, PredictionKind, PublicStash, StashType } from "@/lib/types";
@@ -2913,6 +2914,7 @@ function LiveStep({
               Copy
             </span>
           </button>
+          <PushPrompt />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--zk-space-10)" }}>
             <Button label="View my stash" variant="ghost" size="md" style={half} href={`/s/${stash.id}`} />
             <Button label="Done" variant="ghost" size="md" style={half} onClick={onDone} />

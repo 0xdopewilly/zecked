@@ -110,3 +110,34 @@ a { text-decoration: none; }
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation-duration: 0s !important; animation-delay: 0s !important; }
 }
 
+
+/* ---------- Launch splash (src/components/zk/LaunchSplash.tsx) ---------- */
+.zk-splash {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  background: radial-gradient(90% 60% at 50% 42%, #2F1F7A 0%, #170F3A 45%, var(--zk-bg) 80%);
+  transition: opacity 420ms var(--zk-ease-out), transform 420ms var(--zk-ease-out);
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+}
+/* Already seen this visit (set before paint by the head script): never flash it. */
+html[data-splashed] .zk-splash { display: none; }
+.zk-splash.is-out { opacity: 0; transform: scale(1.08); pointer-events: none; }
+.zk-splash-sun {
+  position: absolute; left: 50%; top: 42%; width: 900px; height: 900px; margin: -450px 0 0 -450px; border-radius: 50%;
+  background: var(--zk-sunburst-gold); opacity: .16; animation: zk-spin 40s linear infinite; will-change: transform;
+}
+.zk-splash-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 18px; margin-top: -4vh; }
+.zk-splash-vault { position: relative; animation: zk-splash-pop 520ms var(--zk-ease-spring) both; }
+/* The glow is a soft gradient, not the vault's big box-shadow (which some renderers clip into a visible square). */
+.zk-splash-vault::before {
+  content: ""; position: absolute; inset: -38%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgb(var(--zk-gold-rgb) / .34) 0%, rgb(var(--zk-gold-rgb) / .12) 38%, transparent 64%);
+}
+.zk-splash-vault [style*="--zk-vault-core"] { box-shadow: inset 0 0 0 8px var(--zk-surface-raised) !important; }
+.zk-splash-word { animation: zk-splash-pop 560ms var(--zk-ease-spring) 820ms both; }
+.zk-splash-tag {
+  margin: 0; font: var(--zk-type-label); letter-spacing: .16em; text-transform: uppercase; color: var(--zk-gold);
+  animation: zk-splash-rise 420ms var(--zk-ease-out) 1080ms both;
+}
+@keyframes zk-splash-pop { from { opacity: 0; transform: scale(.55) translateY(12px) } to { opacity: 1; transform: none } }
+@keyframes zk-splash-rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) { .zk-splash-sun { animation: none; } }
