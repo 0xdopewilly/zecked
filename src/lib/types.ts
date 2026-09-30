@@ -150,6 +150,7 @@ export interface WinPayload {
 export interface Player {
   id: string;
   handle: string;
+  avatarUrl?: string | null; // profile photo (accounts only); null → the generated buddy face
   createdAt: string;
   xp: number;
   tier: TierId;
@@ -219,6 +220,8 @@ export interface ClaimResult {
 export interface LeaderRow {
   rank: number;
   handle: string;
+  avatarUrl?: string | null;
+  isHouse?: boolean; // the ZECKED house account (@zecked): shown with the Z mark
   tier: TierId;
   score: number;
   isYou: boolean;
@@ -255,6 +258,7 @@ export type Reaction = (typeof REACTIONS)[number];
 /** A player's public page (/u/[handle]). Aggregates only: never which stashes they won, never ids or money. */
 export interface PublicProfile {
   handle: string;
+  avatarUrl?: string | null;
   tier: TierId;
   nextTier?: TierId;
   xp: number;

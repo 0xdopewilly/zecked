@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Logo } from "@/components/zk";
 import { useScrollTo } from "./SmoothScroll";
 import { Magnetic } from "./fx";
+import { GetAppButton, PhoneGlyph } from "./GetApp";
 
 const LINKS = [
   { id: "how", label: "How it works" },
@@ -58,11 +59,16 @@ export function Nav({ appUrl }: { appUrl: string }) {
             </button>
           ))}
         </div>
-        <Magnetic strength={0.25}>
-          <a href={appUrl} className="zks-btn zks-btn-gold" style={{ height: 46, padding: "0 20px", borderRadius: 16, font: "var(--zk-type-btn-sm)" }}>
-            Play now
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <a href={appUrl} className="zks-nav-link zks-nav-play">
+            Play<span className="zks-nav-play-more">&nbsp;in browser</span>
           </a>
-        </Magnetic>
+          <Magnetic strength={0.25}>
+            <GetAppButton appUrl={appUrl} className="zks-btn zks-btn-gold zks-nav-getapp" style={{ height: 46, padding: "0 18px", gap: 8, borderRadius: 16, font: "var(--zk-type-btn-sm)" }}>
+              <PhoneGlyph size={18} /> Get the app
+            </GetAppButton>
+          </Magnetic>
+        </div>
       </nav>
     </motion.header>
   );

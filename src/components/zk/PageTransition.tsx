@@ -4,6 +4,8 @@
 //   "tab" (tab bar): a quick crossfade with a small rise
 //   anything else (back, redirects, links): a soft crossfade
 // The tab bar and the test-mode ribbon stay put. Styles live in globals.css (zk-vt-*).
+// The wrapper div is what gets animated: it stays put while a screen swaps its own content (a loading
+// skeleton for the real stash), which would otherwise cut the animation short.
 import { ViewTransition, type ReactNode } from "react";
 
 const MAP = { "nav-forward": "zk-vt-push", "nav-back": "zk-vt-pop", tab: "zk-vt-tab", default: "zk-vt-fade" };
@@ -11,7 +13,7 @@ const MAP = { "nav-forward": "zk-vt-push", "nav-back": "zk-vt-pop", tab: "zk-vt-
 export function PageTransition({ children }: { children: ReactNode }) {
   return (
     <ViewTransition enter={MAP} exit={MAP} default="none">
-      {children}
+      <div className="zk-route">{children}</div>
     </ViewTransition>
   );
 }

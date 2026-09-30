@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
-import { takeStash } from "@/lib/stashCache";
+import { readyStash, takeStash } from "@/lib/stashCache";
 import { StashSkeleton } from "./StashSkeleton";
 import type { WinPayload } from "@/lib/types";
 import { Button, Icon } from "@/components/zk";
@@ -41,7 +41,10 @@ const tile: CSSProperties = {
 export default function StashPage() {
   const params = useParams<{ id: string }>();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
-  const [load, setLoad] = useState<Load>({ kind: "loading" });
+  // Tapped from the feed, the stash has usually arrived already: draw it on the very first frame, so the
+  // screen that slides in is the real one (no skeleton swapped out mid-slide).
+  const [first] = useState(() => (id ? readyStash(id) : null));
+  const [load, setLoad] = useState<Load>(() => (first ? { kind: "ready", data: first } : { kind: "loading" }));
   const [win, setWin] = useState<WinPayload | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   // One request per visit, even when effects run twice (dev StrictMode) and would take the cache twice.
@@ -62,12 +65,16 @@ export default function StashPage() {
   }, [id]);
 
   useEffect(() => {
-    void fetchStash();
-  }, [fetchStash]);
+    // Already drawn from the warm read: just hand it over (that also counts the view), nothing to redraw.
+    if (first) void (pending.current ??= takeStash(id)).catch(() => {});
+    else void fetchStash();
+  }, [fetchStash, first, id]);
 
 
-  // Only used for the banner copy; a failure just means "treat as guest".
+  // Only used for the banner copy on a match you won; a failure just means "treat as guest".
+  const wonIt = load.kind === "ready" && load.data.stash.status === "zecked" && !!load.data.stash.result?.winnerIsYou;
   useEffect(() => {
+    if (!wonIt) return;
     let alive = true;
     api
       .me()
@@ -78,7 +85,7 @@ export default function StashPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [wonIt]);
 
   const handleWin = useCallback((w: WinPayload) => setWin(w), []);
 

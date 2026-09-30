@@ -7,31 +7,13 @@ import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } 
 import { api } from "@/lib/api";
 import { useAppBack } from "@/lib/nav";
 import type { BadgeId, PublicProfile as Profile, PublicStash } from "@/lib/types";
-import { BADGE_META, Badge, Button, Emblem, Icon, Logo, StashCard, TIER_LABEL } from "@/components/zk";
+import { Avatar, BADGE_META, Badge, Button, Emblem, Icon, Logo, StashCard, TIER_LABEL } from "@/components/zk";
 import { TopToast, shareLink } from "@/components/screens/WinMoment";
 
 const ALL_BADGES: BadgeId[] = ["first-crack", "uncrackable", "oracle", "speed-demon", "whale-hider", "shielded", "birthday-og"];
 
-// The same avatar palette as the leaderboard, so a player's colour matches from one screen to the next.
-const AVATAR_COLORS = [
-  "var(--zk-pink)",
-  "var(--zk-sky)",
-  "var(--zk-mint)",
-  "var(--zk-gold)",
-  "var(--zk-purple-light)",
-  "var(--zk-tier-rookie-hi)",
-  "var(--zk-sky-light)",
-  "var(--zk-mint-light)",
-];
-function colorFor(handle: string) {
-  let h = 0;
-  for (let i = 0; i < handle.length; i++) h = (h * 31 + handle.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
-const initialOf = (h: string) => (h.replace(/^@+/, "")[0] || "?").toUpperCase();
 
 function sinceLabel(iso: string) {
   const d = new Date(iso);
@@ -92,20 +74,13 @@ function Header({ p }: { p: Profile }) {
           <Logo variant="mark" size={52} stroke="var(--zk-gold-deep)" />
         </div>
       ) : (
-        <div
-          aria-hidden="true"
-          style={{
-            ...avatar,
-            background: colorFor(p.handle),
-            color: "var(--zk-bg)",
-            border: "4px solid rgb(var(--zk-white-rgb) / .9)",
-            boxSizing: "border-box",
-            boxShadow: "0 5px 0 rgb(var(--zk-black-rgb) / .35)",
-            font: "var(--zk-fw-black) clamp(32px, 9vw, 40px)/1 var(--zk-font-display)",
-          }}
-        >
-          {initialOf(p.handle)}
-        </div>
+        <Avatar
+          handle={p.handle}
+          src={p.avatarUrl}
+          size={avatar.width}
+          ring="none"
+          style={{ ...avatar, border: "4px solid rgb(var(--zk-white-rgb) / .9)", boxShadow: "0 5px 0 rgb(var(--zk-black-rgb) / .35)" }}
+        />
       )}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-4)", maxWidth: "100%" }}>
         <h1

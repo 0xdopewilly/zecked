@@ -3,13 +3,15 @@
 // buttons pop, links and tabs tap, radios/switches/tabs select. Opt out or pick another with data-sfx:
 //   <button data-sfx="none">  ·  <button data-sfx="lock">
 import { useEffect } from "react";
-import { enableSfx, sfx, unlockAudio, type Sound } from "@/lib/sfx";
+import { enableSfx, prewarmAudio, sfx, unlockAudio, type Sound } from "@/lib/sfx";
 
 const TAPPABLE = "[data-sfx],button,a[href],[role=button],[role=tab],[role=radio],[role=switch],[role=checkbox],[role=option],summary";
 
 export function Sfx() {
   useEffect(() => {
     enableSfx();
+    // The splash plays first; the audio device opens once things are idle, so the first tap is instant.
+    const warm = window.setTimeout(prewarmAudio, 2600);
     const unlock = () => unlockAudio();
     const onClick = (e: MouseEvent) => {
       unlockAudio(); // iOS only unlocks audio on a completed tap (touchend/click), not on touchstart
@@ -31,6 +33,7 @@ export function Sfx() {
       window.removeEventListener("keydown", unlock, { capture: true });
       window.removeEventListener("touchend", unlock, { capture: true });
       document.removeEventListener("click", onClick, { capture: true });
+      window.clearTimeout(warm);
     };
   }, []);
   return null;

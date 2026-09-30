@@ -4,6 +4,7 @@ import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { useRef, useState } from "react";
 import { Confetti, Icon, Vault } from "@/components/zk";
 import { Eyebrow, Float, Magnetic, Parallax, Reveal, SplitText, Sticker } from "../fx";
+import { GetAppButton, PhoneGlyph } from "../GetApp";
 import { Burst } from "./extras/Burst";
 import { SPLIT_FIX_CSS, srOnly, useReduced } from "./extras/kit";
 
@@ -139,6 +140,16 @@ export function FinalCta({ appUrl }: { appUrl: string }) {
                   Play now <Icon icon="arrowRight" size={26} stroke={2.8} />
                 </a>
               </Magnetic>
+            </div>
+            <div className="zkfc-demo">
+              <Magnetic strength={0.3}>
+                <GetAppButton appUrl={appUrl} className="zks-btn zks-btn-purple">
+                  <PhoneGlyph size={24} stroke={2.6} /> Get the app
+                </GetAppButton>
+              </Magnetic>
+              <span className="zkfc-note">
+                <Icon icon="bolt" size={14} stroke={2.4} /> On your Home Screen, no app store
+              </span>
             </div>
             <div className="zkfc-demo">
               <Magnetic strength={0.25}>

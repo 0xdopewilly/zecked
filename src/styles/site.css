@@ -83,6 +83,12 @@
 @media (min-width: 900px) { .zks-nav-links { display: flex; } }
 .zks-nav-link { padding: 10px 14px; border-radius: 999px; color: var(--zk-text-muted); font: var(--zk-type-body-strong); background: transparent; border: 0; cursor: pointer; transition: color .2s, background .2s; }
 .zks-nav-link:hover { color: var(--zk-text); background: rgb(255 255 255 / .06); }
+/* "Play in browser" beside "Get the app" (just "Play" on phones) */
+.zks-nav-play { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
+.zks-nav-play-more { display: none; }
+@media (min-width: 640px) { .zks-nav-play-more { display: inline; } }
+@media (max-width: 379px) { .zks-nav-play { display: none; } }
+@media (max-width: 349px) { .zks-nav-getapp { padding: 0 14px !important; } .zks-nav-getapp svg { display: none; } }
 
 /* Phone frame */
 .zks-phone {

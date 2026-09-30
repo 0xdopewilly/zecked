@@ -1,0 +1,146 @@
+/* Home (src/components/screens/Feed.tsx): greeting, live pulse, the free-drop hero, "Live now" with pinned
+   filter chips, and small rows for finished stashes. Roomy on purpose: one thing per block. */
+
+/* Covers the status bar (notch) once the page scrolls under it. Zero-height when there's no inset. */
+.zk-notch-cover {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 6;
+  width: 100%; max-width: 430px; height: env(safe-area-inset-top, 0px);
+  background: var(--zk-bg); pointer-events: none;
+}
+
+.zk-home-stagger { display: flex; flex-direction: column; }
+.zk-home-block { padding: 0 var(--zk-space-16); margin-top: var(--zk-space-20); }
+.zk-home-lists { margin-top: var(--zk-space-28); }
+
+/* ---------- live pulse ---------- */
+.zk-pulse {
+  margin: var(--zk-space-14) var(--zk-space-16) 0; height: 34px; padding: 0 14px 0 13px;
+  display: flex; align-items: center; gap: 10px; overflow: hidden;
+  border-radius: var(--zk-radius-pill);
+  background: rgb(var(--zk-mint-rgb) / .07); border: 1px solid rgb(var(--zk-mint-rgb) / .16);
+  font: var(--zk-type-small); color: var(--zk-text);
+}
+.zk-pulse-dot, .zk-live-dot { position: relative; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--zk-mint); }
+.zk-live-dot { width: 7px; height: 7px; background: var(--zk-pink); }
+.zk-pulse-dot::after, .zk-live-dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit;
+  animation: zk-ping 2.2s ease-out infinite;
+}
+.zk-pulse-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; animation: zk-pulse-in 450ms var(--zk-ease-out) both; }
+.zk-pulse-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zk-pulse-text b { color: var(--zk-gold); font-weight: var(--zk-fw-bold); }
+@keyframes zk-pulse-in { from { opacity: 0; transform: translateY(10px); } }
+
+/* ---------- hero: the free drop ---------- */
+.zk-hero {
+  position: relative; display: flex; flex-direction: column; overflow: hidden;
+  padding: var(--zk-space-18); border-radius: var(--zk-radius-3xl);
+  color: var(--zk-text);
+  background:
+    radial-gradient(110% 90% at 100% 0%, rgb(var(--zk-pink-rgb) / .42), transparent 55%),
+    radial-gradient(90% 80% at 0% 100%, rgb(var(--zk-gold-rgb) / .16), transparent 60%),
+    linear-gradient(160deg, var(--zk-purple-mid), var(--zk-purple-night));
+  border: 2.5px solid var(--zk-ink);
+  box-shadow: inset 0 2px 0 rgb(var(--zk-white-rgb) / .16), 0 6px 0 var(--zk-ink), 0 22px 40px -14px rgb(var(--zk-purple-rgb) / .6);
+  transition: transform 160ms var(--zk-ease-out), box-shadow 160ms var(--zk-ease-out);
+  touch-action: manipulation;
+}
+a.zk-hero:hover { color: var(--zk-text); }
+a.zk-hero:active { transform: translateY(4px); box-shadow: inset 0 2px 0 rgb(var(--zk-white-rgb) / .16), 0 2px 0 var(--zk-ink); }
+.zk-hero.is-wait {
+  background:
+    radial-gradient(100% 90% at 100% 0%, rgb(var(--zk-gold-rgb) / .22), transparent 60%),
+    linear-gradient(160deg, var(--zk-surface-purple), var(--zk-surface));
+  box-shadow: inset 0 2px 0 rgb(var(--zk-white-rgb) / .08), 0 6px 0 var(--zk-ink);
+}
+.zk-hero-vault { position: absolute; right: 14px; top: 14px; pointer-events: none; }
+.zk-hero-sticker {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px; border-radius: 9px;
+  background: var(--zk-gold); color: var(--zk-gold-ink);
+  border: 2px solid var(--zk-ink); box-shadow: 0 2px 0 var(--zk-ink);
+  font: var(--zk-fw-black) 12px/1 var(--zk-font-display); letter-spacing: .06em;
+  transform: rotate(-3deg);
+}
+.zk-hero-sticker.is-wait { background: var(--zk-surface-raised); color: var(--zk-gold); }
+.zk-hero-kicker { margin-top: var(--zk-space-12); padding-right: 88px; font: var(--zk-fw-semibold) 13px/1.35 var(--zk-font-body); color: rgb(var(--zk-white-rgb) / .78); }
+.zk-hero-riddle {
+  margin-top: var(--zk-space-8);
+  font: var(--zk-fw-black) clamp(21px, 6vw, 25px)/1.15 var(--zk-font-display); letter-spacing: -.015em;
+  text-wrap: balance; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.zk-hero-foot { margin-top: var(--zk-space-18); display: flex; align-items: flex-end; justify-content: space-between; gap: var(--zk-space-12); }
+.zk-hero-zec { font: var(--zk-type-mono-lg); color: var(--zk-gold-light); white-space: nowrap; }
+.zk-hero-sub { display: inline-flex; align-items: center; gap: 7px; font: var(--zk-fw-semibold) 12px/1 var(--zk-font-body); color: rgb(var(--zk-white-rgb) / .75); }
+.zk-hero-cta {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  height: 46px; padding: 0 16px 0 18px; border-radius: var(--zk-radius-lg);
+  background: var(--zk-grad-gold); color: var(--zk-gold-ink);
+  border: 2.5px solid var(--zk-ink); box-shadow: inset 0 2px 0 rgb(var(--zk-white-rgb) / .4), 0 4px 0 var(--zk-ink);
+  font: var(--zk-fw-black) 16px/1 var(--zk-font-display);
+}
+.zk-hero-count { margin-top: var(--zk-space-14); }
+@media (max-width: 350px) {
+  .zk-hero-zec { font-size: 20px; }
+  .zk-hero-kicker { padding-right: 112px; }
+  .zk-hero-cta { height: 42px; padding: 0 12px 0 14px; font-size: 15px; }
+}
+
+/* ---------- sections ---------- */
+.zk-sec-head { display: flex; align-items: center; gap: 10px; padding: 0 var(--zk-space-18); }
+.zk-sec-title { margin: 0; font: var(--zk-fw-black) 24px/1.05 var(--zk-font-display); letter-spacing: -.02em; }
+.zk-sec-count {
+  min-width: 26px; height: 26px; padding: 0 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--zk-radius-pill);
+  background: var(--zk-gold); color: var(--zk-gold-ink);
+  border: 2px solid var(--zk-ink); box-shadow: 0 2px 0 var(--zk-ink);
+  font: var(--zk-fw-black) 13px/1 var(--zk-font-display);
+}
+
+/* Filter chips: pinned under the notch while the lists scroll. */
+.zk-chips { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; margin-top: var(--zk-space-8); transition: background-color 180ms, box-shadow 180ms; }
+.zk-chips.is-stuck { background: rgb(var(--zk-bg-rgb) / .97); box-shadow: 0 1px 0 var(--zk-border), 0 14px 24px -14px rgb(var(--zk-black-rgb) / .8); }
+.zk-chips-row { display: flex; gap: var(--zk-space-8); padding: var(--zk-space-8) var(--zk-space-16) var(--zk-space-10); }
+.zk-new-pill-wrap { position: absolute; top: calc(100% + 8px); left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; }
+.zk-new-pill {
+  pointer-events: auto; min-height: 44px; padding: 0 18px 0 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--zk-radius-pill); cursor: pointer; touch-action: manipulation;
+  background: var(--zk-purple); color: var(--zk-text); font: var(--zk-type-btn-sm);
+  border: 2.5px solid var(--zk-ink); box-shadow: 0 4px 0 var(--zk-ink), 0 10px 24px rgb(var(--zk-black-rgb) / .4);
+  animation: zk-vt-rise 220ms var(--zk-ease-out) both;
+}
+.zk-home-list { display: flex; flex-direction: column; gap: var(--zk-space-16); padding: var(--zk-space-8) var(--zk-space-16) 0; }
+/* Cards off screen skip layout and paint, so a long list doesn't stall screen changes. That also clips
+   what pokes out of a card (the YOURS / WHALE stickers, the shadow), hence the clip margin. */
+.zk-feed-item { content-visibility: auto; contain-intrinsic-size: auto 290px; overflow-clip-margin: 36px; }
+
+/* ---------- finished stashes ---------- */
+.zk-ended-list { display: flex; flex-direction: column; gap: var(--zk-space-8); padding: var(--zk-space-12) var(--zk-space-16) 0; }
+.zk-ended {
+  content-visibility: auto; contain-intrinsic-size: auto 62px;
+  display: flex; align-items: center; gap: var(--zk-space-12);
+  padding: 10px 12px 10px 10px; border-radius: var(--zk-radius-xl);
+  background: rgb(var(--zk-surface-rgb) / .7); border: 1.5px solid var(--zk-border);
+  color: var(--zk-text); touch-action: manipulation;
+  transition: transform 140ms var(--zk-ease-out), background-color 140ms;
+}
+a.zk-ended:hover { color: var(--zk-text); background: var(--zk-surface); }
+.zk-ended:active { transform: scale(.98); }
+.zk-ended-tile {
+  width: 40px; height: 40px; flex: none; border-radius: var(--zk-radius-md);
+  display: flex; align-items: center; justify-content: center;
+  background: rgb(var(--zk-purple-rgb) / .2); color: var(--zk-purple-light);
+}
+.zk-ended-tile.is-match { background: rgb(var(--zk-sky-rgb) / .18); color: var(--zk-sky); }
+.zk-ended-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.zk-ended-title { font: var(--zk-fw-bold) 14px/1.25 var(--zk-font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zk-ended-sub { font: var(--zk-fw-medium) 12px/1.2 var(--zk-font-body); color: var(--zk-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zk-ended-stamp {
+  flex: none; padding: 4px 7px; border-radius: 8px;
+  border: 2px solid var(--zk-pink); color: var(--zk-pink);
+  font: var(--zk-fw-black) 11px/1 var(--zk-font-display); letter-spacing: .04em;
+  transform: rotate(-6deg);
+}
+.zk-ended-stamp.is-safe { border-color: var(--zk-purple-light); color: var(--zk-purple-light); }

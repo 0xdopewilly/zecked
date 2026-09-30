@@ -41,6 +41,7 @@ export interface PlayerRecord {
   depositAddress?: string; // personal in-app wallet address
   depositUri?: string;
   mergedGuests?: string[];
+  avatarV?: string; // profile photo key (see avatars.ts), accounts only
 }
 
 const ADJ = ["night", "quiet", "shadow", "ghost", "zero", "gold", "vault", "cipher", "silent", "lucky", "neon", "velvet", "hidden", "sly", "misty"];
@@ -72,6 +73,11 @@ export function isAccount(p: PlayerRecord | null | undefined): boolean {
   return !!p && !!(p.house || p.email || p.googleSub || (p.passkeys ?? 0) > 0);
 }
 
+/** A player's profile photo URL, or null (the app then draws their buddy face). */
+export function avatarUrl(p: PlayerRecord | null | undefined): string | null {
+  return p?.avatarV ? `/api/avatar/${p.avatarV}` : null;
+}
+
 export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
   const via: ("email" | "google" | "passkey")[] = [];
   if (p.googleSub) via.push("google");
@@ -82,6 +88,7 @@ export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
   return {
     id: p.id,
     handle: p.handle,
+    avatarUrl: avatarUrl(p),
     createdAt: p.createdAt,
     xp: p.xp,
     tier: TIERS[i].id,
@@ -221,6 +228,8 @@ export async function leaderboard(board: Board, period: Leaderboard["period"], v
   const out: LeaderRow[] = top.map((r, i) => ({
     rank: i + 1,
     handle: players[i]?.handle || "@anon",
+    avatarUrl: avatarUrl(players[i]),
+    isHouse: players[i]?.house || undefined,
     tier: tierOf(players[i]),
     score: r.score,
     isYou: r.member === viewerId,
@@ -235,6 +244,7 @@ export async function leaderboard(board: Board, period: Leaderboard["period"], v
       you = {
         rank: idx >= 0 ? idx + 1 : rows.length + 1,
         handle: me.handle,
+        avatarUrl: avatarUrl(me),
         tier: tierOf(me),
         score: idx >= 0 ? rows[idx].score : 0,
         isYou: true,

@@ -7,6 +7,7 @@ import { Sfx } from "@/components/zk/Sfx";
 import { LiveNotices } from "@/components/zk/LiveNotices";
 import { LaunchSplash } from "@/components/zk/LaunchSplash";
 import { SwRegister } from "@/components/zk/PushSetup";
+import { InstallCapture } from "@/components/zk/InstallCapture";
 import { SPLASH_KEY } from "@/lib/splash";
 import { NavTracker } from "@/lib/nav";
 
@@ -81,6 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <NavTracker />
             <LiveNotices />
             <SwRegister />
+            <InstallCapture />
             <div className="zk-app">{children}</div>
           </>
         )}

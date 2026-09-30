@@ -125,6 +125,10 @@ export const api = {
   setHandle: (handle: string) =>
     req<{ player: Player }>("/me", { method: "PATCH", body: JSON.stringify({ handle }) }),
   myStashes: () => req<{ stashes: PublicStash[] }>("/me/stashes"),
+  /** Set your profile photo (signed-in accounts): a small square JPEG, sent as raw bytes. */
+  uploadAvatar: (photo: Blob) =>
+    req<{ player: Player }>("/me/avatar", { method: "POST", body: photo, headers: { "content-type": photo.type || "image/jpeg" } }),
+  removeAvatar: () => req<{ player: Player }>("/me/avatar", { method: "DELETE" }),
   leaderboard: (board: Leaderboard["board"], period: Leaderboard["period"]) =>
     req<Leaderboard>(`/leaderboard?board=${board}&period=${period}`),
   ticker: () => req<{ items: TickerItem[] }>("/ticker"),

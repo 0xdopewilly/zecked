@@ -28,6 +28,8 @@ let muted = false;
 let ctx: AudioContext | null = null;
 let dry: GainNode | null = null;
 let wet: GainNode | null = null;
+let master: GainNode | null = null;
+let verbOn = false;
 let noiseBuf: AudioBuffer | null = null;
 const last: Partial<Record<Sound, number>> = {};
 
@@ -68,42 +70,76 @@ function roomImpulse(c: AudioContext, seconds = 1.3) {
   return ir;
 }
 
+/** Opening the audio device takes ~60-100ms of main thread, and the reverb another ~40ms: done ahead of
+ *  time (prewarmAudio, when the app is idle) so the first tap only has to resume it. */
+function build() {
+  // iOS: mix with the user's music and respect the silent switch, like any polite app UI.
+  const nav = navigator as Navigator & { audioSession?: { type: string } };
+  if (nav.audioSession) nav.audioSession.type = "ambient";
+  const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  if (!AC) return;
+  ctx = new AC({ latencyHint: "interactive" });
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -16;
+  comp.knee.value = 12;
+  comp.ratio.value = 3;
+  master = ctx.createGain();
+  master.gain.value = 0.7;
+  master.connect(comp).connect(ctx.destination);
+  // Voices feed a dry bus and a reverb send; the mix is mostly dry with a sweet tail.
+  dry = ctx.createGain();
+  dry.gain.value = 0.85;
+  dry.connect(master);
+  wet = ctx.createGain();
+  wet.gain.value = 0.26;
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const n = noiseBuf.getChannelData(0);
+  for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
+}
+
+/** The reverb tail, plugged in once it's built (sounds before that are simply dry). */
+function buildVerb() {
+  if (!ctx || !wet || !master || verbOn) return;
+  verbOn = true;
+  try {
+    const verb = ctx.createConvolver();
+    verb.buffer = roomImpulse(ctx);
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 6500;
+    wet.connect(verb).connect(tone).connect(master);
+  } catch {}
+}
+
+function whenIdle(fn: () => void, timeout: number) {
+  const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+  if (w.requestIdleCallback) w.requestIdleCallback(fn, { timeout });
+  else window.setTimeout(fn, Math.min(timeout, 300));
+}
+
+/** Gets the audio ready in the background (suspended until the first tap), then the reverb. */
+export function prewarmAudio() {
+  if (!enabled || muted || ctx || typeof window === "undefined") return;
+  whenIdle(() => {
+    try {
+      if (!ctx) build();
+    } catch {
+      ctx = null;
+      return;
+    }
+    whenIdle(buildVerb, 2000);
+  }, 4000);
+}
+
 /** Browsers only allow audio after a gesture: <Sfx /> calls this from pointerdown/keydown/touchend/click.
- *  Until the first gesture, sfx() stays silent (no AudioContext is created). */
+ *  Until the first gesture, sfx() stays silent (the context, if prewarmed, is still suspended). */
 export function unlockAudio() {
   if (!enabled || typeof window === "undefined") return;
   try {
-    if (!ctx) {
-      // iOS: mix with the user's music and respect the silent switch, like any polite app UI.
-      const nav = navigator as Navigator & { audioSession?: { type: string } };
-      if (nav.audioSession) nav.audioSession.type = "ambient";
-      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AC) return;
-      ctx = new AC({ latencyHint: "interactive" });
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -16;
-      comp.knee.value = 12;
-      comp.ratio.value = 3;
-      const master = ctx.createGain();
-      master.gain.value = 0.7;
-      master.connect(comp).connect(ctx.destination);
-      // Voices feed a dry bus and a reverb send; the mix is mostly dry with a sweet tail.
-      dry = ctx.createGain();
-      dry.gain.value = 0.85;
-      dry.connect(master);
-      const verb = ctx.createConvolver();
-      verb.buffer = roomImpulse(ctx);
-      const tone = ctx.createBiquadFilter();
-      tone.type = "lowpass";
-      tone.frequency.value = 6500;
-      wet = ctx.createGain();
-      wet.gain.value = 0.26;
-      wet.connect(verb).connect(tone).connect(master);
-      noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-      const n = noiseBuf.getChannelData(0);
-      for (let i = 0; i < n.length; i++) n[i] = Math.random() * 2 - 1;
-    }
+    if (!ctx) build();
+    if (!ctx) return;
     if (ctx.state === "suspended") void ctx.resume();
+    if (!verbOn) whenIdle(buildVerb, 1500);
   } catch {
     ctx = null;
   }

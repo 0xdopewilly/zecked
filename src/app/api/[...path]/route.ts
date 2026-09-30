@@ -33,6 +33,7 @@ import { notices } from "@/lib/server/notify";
 import { publicProfile, toggleReaction } from "@/lib/server/social";
 import { removePushSub, savePushSub } from "@/lib/server/push";
 import { houseAdmin, houseStatus, houseTopUpSim, maybeHouseDrop, welcomeGift } from "@/lib/server/house";
+import { adminRemoveAvatar, readCapped, removeAvatar, serveAvatar, setAvatar } from "@/lib/server/avatars";
 import { HttpError } from "@/lib/server/util";
 import { networkName } from "@/lib/zcash/engine";
 
@@ -61,6 +62,13 @@ function json(data: unknown, init: { status?: number; sid?: string; setCookie?: 
 
 async function pub(p: PlayerRecord) {
   return toPublicPlayer(p, isAccount(p) ? await balanceOf(p.id) : 0);
+}
+
+/** The owner's admin token (ZECKED_ADMIN_TOKEN), as a header or ?token=. Unset → no admin at all. */
+function isOwner(req: NextRequest) {
+  const token = process.env.ZECKED_ADMIN_TOKEN;
+  const given = req.headers.get("x-admin-token") || req.nextUrl.searchParams.get("token");
+  return !!token && given === token;
 }
 
 /** Same-origin app paths only (never `//host` or `javascript:`). */
@@ -94,6 +102,8 @@ async function handle(req: NextRequest, ctx: Ctx) {
   const [a, b, c] = path;
   const method = req.method;
   try {
+    // Profile photos: immutable bytes, no session or player work at all.
+    if (a === "avatar" && b && !c && method === "GET") return await serveAvatar(b);
     await ensureSeeded();
     // Public, cookie-less reads never create a guest profile (website stats, crawlers, link previews).
     const hasSession = !!(req.cookies.get(SID)?.value || req.cookies.get(LEGACY_PID)?.value);
@@ -176,9 +186,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
 
     // ---- owner: the house account (top-up address, balance, force a drop) ----
     if (a === "admin" && b === "house") {
-      const token = process.env.ZECKED_ADMIN_TOKEN;
-      const given = req.headers.get("x-admin-token") || req.nextUrl.searchParams.get("token");
-      if (!token || given !== token) return json({ error: "Not found" }, { status: 404 });
+      if (!isOwner(req)) return json({ error: "Not found" }, { status: 404 });
       if (!c && method === "GET") return json(await houseAdmin());
       if (c === "drop" && method === "POST") {
         const s = await maybeHouseDrop(true);
@@ -186,6 +194,15 @@ async function handle(req: NextRequest, ctx: Ctx) {
       }
       if (c === "topup" && method === "POST" && networkName() === "sim") {
         return json({ balanceZat: await houseTopUpSim(Number(req.nextUrl.searchParams.get("zat") || 10_000_000)) });
+      }
+    }
+
+    // ---- owner: take down a player's profile photo ----
+    if (a === "admin" && b === "avatar") {
+      if (!isOwner(req)) return json({ error: "Not found" }, { status: 404 });
+      if (c === "remove" && method === "POST") {
+        const { handle: h } = await body<{ handle: string }>(req);
+        return json(await adminRemoveAvatar(String(h || "")));
       }
     }
 
@@ -239,6 +256,15 @@ async function handle(req: NextRequest, ctx: Ctx) {
       }
     }
     if (a === "me" && b === "stashes" && method === "GET") return out({ stashes: await myStashes(player.id) });
+    // Profile photo: the raw image bytes (a 320×320 JPEG from the app's cropper).
+    if (a === "me" && b === "avatar") {
+      if (method === "POST") {
+        if (!isAccount(player)) throw new HttpError(403, "Sign up to add a profile photo");
+        const bytes = await readCapped(req.body, req.headers.get("content-length"));
+        return out({ player: await pub(await setAvatar(player, bytes)) });
+      }
+      if (method === "DELETE") return out({ player: await pub(await removeAvatar(player)) });
+    }
 
     if (a === "leaderboard" && method === "GET") {
       const board = (req.nextUrl.searchParams.get("board") || "crackers") as "crackers" | "hiders" | "oracles";
@@ -321,3 +347,4 @@ async function timed(req: NextRequest, ctx: Ctx) {
 export const GET = timed;
 export const POST = timed;
 export const PATCH = timed;
+export const DELETE = timed;

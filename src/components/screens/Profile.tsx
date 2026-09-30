@@ -14,6 +14,8 @@ import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, 
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { isMuted, setMuted } from "@/lib/sfx";
 import { PUSH_COPY, usePush } from "@/components/zk/PushSetup";
+import { useInstall } from "@/lib/install";
+import { AvatarPhoto } from "@/components/screens/AvatarPicker";
 
 const ALL_BADGES: BadgeId[] = [
   "first-crack",
@@ -33,7 +35,6 @@ const GENERATED_HANDLE_RE =
 
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
-const initialOf = (h: string) => (h.replace(/^@+/, "")[0] || "?").toUpperCase();
 
 /** Friendly copy for a failed request: never the raw browser text ("Failed to fetch", "Request failed (500)"). */
 function friendlyErr(e: unknown, fallback: string): string {
@@ -176,23 +177,8 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
 
   return (
     <div style={{ display: "flex", alignItems: editing ? "flex-start" : "center", gap: "var(--zk-space-10)" }}>
-      <div
-        aria-hidden="true"
-        style={{
-          width: "clamp(44px, 13.4vw, 52px)",
-          height: "clamp(44px, 13.4vw, 52px)",
-          flex: "none",
-          borderRadius: "50%",
-          background: "var(--zk-grad-tile-purple)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "var(--zk-inset-gloss), 0 3px 0 var(--zk-purple-shade)",
-          font: "var(--zk-type-h3)",
-        }}
-      >
-        {initialOf(editing ? draft || player.handle : player.handle)}
-      </div>
+      {/* Tap to add or change your photo. Without one, the buddy follows the name as you type it. */}
+      <AvatarPhoto player={player} handle={editing ? draft || player.handle : player.handle} size="clamp(44px, 13.4vw, 52px)" onSaved={onSaved} />
 
       <div style={{ flex: 1, minWidth: 0 }}>
         {editing ? (
@@ -622,6 +608,28 @@ function NotificationsRow() {
   );
 }
 
+/** "Add ZECKED to your Home Screen": opens /install. Hidden once ZECKED runs as the installed app. */
+function InstallRow() {
+  const { ready, installed, platform } = useInstall();
+  if (!ready || installed) return null;
+  return (
+    <div style={{ borderTop: "1px solid var(--zk-border)" }}>
+      <Link href="/install" transitionTypes={["nav-forward"]} style={{ ...settingRow, color: "var(--zk-text)", textDecoration: "none" }}>
+        <div style={tile("var(--zk-gold-tint)", "var(--zk-gold)", 40)}>
+          <Icon icon="plus" size={19} stroke={2.6} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: "var(--zk-type-h4)" }}>{platform === "desktop" ? "Get the ZECKED app" : "Add ZECKED to your Home Screen"}</div>
+          <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)", textWrap: "pretty" }}>
+            Opens full screen in one tap, like a real app.
+          </div>
+        </div>
+        <Icon icon="arrowRight" size={18} stroke={2.4} color="var(--zk-text-faint)" />
+      </Link>
+    </div>
+  );
+}
+
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
@@ -739,6 +747,7 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
           />
         </div>
         <NotificationsRow />
+        <InstallRow />
         {signedIn && (
           <div style={{ borderTop: "1px solid var(--zk-border)" }}>
             <div style={settingRow}>

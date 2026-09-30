@@ -64,6 +64,7 @@ export async function publicProfile(
   const pub = toPublicPlayer(p, 0);
   return {
     handle: pub.handle,
+    avatarUrl: pub.avatarUrl,
     tier: pub.tier,
     nextTier: pub.nextTier,
     xp: pub.xp,

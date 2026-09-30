@@ -18,7 +18,8 @@ function keyBytes(b64: string) {
 export async function registerServiceWorker() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
   try {
-    return await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    // updateViaCache "none": every launch checks /sw.js for a new deployment, never a cached copy.
+    return await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
   } catch {
     return null;
   }

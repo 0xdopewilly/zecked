@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import type { LeaderRow, Leaderboard } from "@/lib/types";
-import { Button, Emblem, Icon, TabBar } from "@/components/zk";
+import { Avatar, Button, Emblem, Icon, TabBar } from "@/components/zk";
 
 type Board = Leaderboard["board"];
 type Period = Leaderboard["period"];
@@ -55,23 +55,6 @@ function friendlyErr(e: unknown): string {
   return "We couldn’t load the board just now. Try again in a moment.";
 }
 
-const AVATAR_COLORS = [
-  "var(--zk-pink)",
-  "var(--zk-sky)",
-  "var(--zk-mint)",
-  "var(--zk-gold)",
-  "var(--zk-purple-light)",
-  "var(--zk-tier-rookie-hi)",
-  "var(--zk-sky-light)",
-  "var(--zk-mint-light)",
-];
-
-function colorFor(handle: string) {
-  let h = 0;
-  for (let i = 0; i < handle.length; i++) h = (h * 31 + handle.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-const initialOf = (h: string) => (h.replace(/^@+/, "")[0] || "?").toUpperCase();
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
 const profileHref = (h: string) => `/u/${encodeURIComponent(h.replace(/^@+/, ""))}`;
 
@@ -97,7 +80,6 @@ const PLACE: Record<
   Place,
   {
     avatar: number;
-    avatarFont: string;
     border: string;
     avatarShadow: string;
     nameFont: string;
@@ -113,7 +95,6 @@ const PLACE: Record<
 > = {
   1: {
     avatar: 74,
-    avatarFont: "var(--zk-fw-black) var(--zk-fs-26)/1 var(--zk-font-display)",
     border: "4px solid var(--zk-gold)",
     avatarShadow: "0 5px 0 var(--zk-gold-deep), var(--zk-glow-gold)",
     nameFont: "var(--zk-type-body-strong)",
@@ -128,7 +109,6 @@ const PLACE: Record<
   },
   2: {
     avatar: 58,
-    avatarFont: "var(--zk-fw-black) var(--zk-fs-22)/var(--zk-lh-snug) var(--zk-font-display)",
     border: "3px solid var(--zk-tier-cracker-mid)",
     avatarShadow: "var(--zk-shadow-3d-sm)",
     nameFont: "var(--zk-fw-bold) var(--zk-fs-13)/1.35 var(--zk-font-body)",
@@ -143,7 +123,6 @@ const PLACE: Record<
   },
   3: {
     avatar: 58,
-    avatarFont: "var(--zk-fw-black) var(--zk-fs-22)/var(--zk-lh-snug) var(--zk-font-display)",
     border: "3px solid var(--zk-tier-rookie-mid)",
     avatarShadow: "var(--zk-shadow-3d-sm)",
     nameFont: "var(--zk-fw-bold) var(--zk-fs-13)/1.35 var(--zk-font-body)",
@@ -193,25 +172,26 @@ function PodiumSlot({ place, row, board, loading }: { place: Place; row?: Leader
           <Icon icon="crown" size={34} filled stroke={1.5} />
         </div>
       )}
-      <div
-        aria-hidden="true"
-        style={{
-          width: c.avatar,
-          height: c.avatar,
-          boxSizing: "border-box",
-          borderRadius: "50%",
-          background: empty ? "transparent" : colorFor(row.handle),
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          font: c.avatarFont,
-          color: empty ? "var(--zk-text-faint)" : "var(--zk-bg)",
-          border: empty ? "2px dashed var(--zk-border-strong)" : c.border,
-          boxShadow: empty ? "none" : c.avatarShadow,
-        }}
-      >
-        {empty ? loading ? "" : <Icon icon="plus" size={place === 1 ? 26 : 22} stroke={2.6} /> : initialOf(row.handle)}
-      </div>
+      {empty ? (
+        <div
+          aria-hidden="true"
+          style={{
+            width: c.avatar,
+            height: c.avatar,
+            boxSizing: "border-box",
+            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--zk-text-faint)",
+            border: "2px dashed var(--zk-border-strong)",
+          }}
+        >
+          {loading ? "" : <Icon icon="plus" size={place === 1 ? 26 : 22} stroke={2.6} />}
+        </div>
+      ) : (
+        <Avatar handle={row.handle} src={row.avatarUrl} house={row.isHouse} size={c.avatar} ring="none" style={{ border: c.border, boxShadow: c.avatarShadow }} />
+      )}
       <div
         style={{
           ...ellipsis,
@@ -323,23 +303,7 @@ function Row({ row, board }: { row: LeaderRow; board: Board }) {
         }}
       >
         <span style={{ width: 24, flex: "none", font: "var(--zk-type-mono-sm)", color: "var(--zk-text-muted)" }}>{row.rank}</span>
-        <span
-          aria-hidden="true"
-          style={{
-            width: 34,
-            height: 34,
-            flex: "none",
-            borderRadius: "50%",
-            background: colorFor(row.handle),
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            font: "var(--zk-type-btn-sm)",
-            color: "var(--zk-bg)",
-          }}
-        >
-          {initialOf(row.handle)}
-        </span>
+        <Avatar handle={row.handle} src={row.avatarUrl} house={row.isHouse} size={34} />
         <span style={{ flex: 1, minWidth: 0, font: "var(--zk-type-body-strong)", ...ellipsis }}>
           {atHandle(row.handle)}
           {row.isYou && <span className="zk-sr-only"> (you)</span>}
@@ -489,23 +453,7 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
         }}
       >
         {ranked ? <span style={{ font: "var(--zk-type-mono-sm)", flex: "none" }}>#{you.rank}</span> : null}
-        <span
-          aria-hidden="true"
-          style={{
-            width: 34,
-            height: 34,
-            flex: "none",
-            borderRadius: "50%",
-            background: "var(--zk-text)",
-            color: "var(--zk-purple-deep)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            font: "var(--zk-type-btn-sm)",
-          }}
-        >
-          {initialOf(you.handle)}
-        </span>
+        <Avatar handle={you.handle} src={you.avatarUrl} house={you.isHouse} size={34} />
         <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
           <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-2)", minWidth: 0 }}>
             <span style={{ font: "var(--zk-type-h4)", ...ellipsis, minWidth: 0 }}>You · {atHandle(you.handle)}</span>

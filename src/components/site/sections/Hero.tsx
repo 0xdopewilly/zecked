@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { Icon, TeamBadge, Vault } from "@/components/zk";
 import { DEMO_BARCELONA } from "@/lib/crest";
 import { EASE_OUT, Float, Magnetic, Sticker, Tilt } from "../fx";
+import { GetAppButton, PhoneGlyph } from "../GetApp";
 
 const LINES: { text: string; gold?: boolean }[] = [{ text: "Hide it." }, { text: "Crack it." }, { text: "Get Zecked.", gold: true }];
 
@@ -105,13 +106,19 @@ export function Hero({ appUrl, network }: { appUrl: string; network?: string }) 
             </motion.p>
 
             <motion.div
+              className="zks-hero-cta"
               style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 34, alignItems: "center" }}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.95, duration: 0.8, ease: EASE_OUT }}
             >
               <Magnetic>
-                <a href={appUrl} className="zks-btn zks-btn-gold">
+                <GetAppButton appUrl={appUrl} className="zks-btn zks-btn-gold">
+                  <PhoneGlyph size={22} stroke={2.6} /> Get the app
+                </GetAppButton>
+              </Magnetic>
+              <Magnetic strength={0.25}>
+                <a href={appUrl} className="zks-btn zks-btn-purple">
                   Play now <Icon icon="arrowRight" size={22} stroke={2.6} />
                 </a>
               </Magnetic>
@@ -201,6 +208,14 @@ export function Hero({ appUrl, network }: { appUrl: string; network?: string }) 
 
       <style>{`
         .zks-hero-grid { display: grid; grid-template-columns: 1fr; gap: 28px; align-items: center; }
+        /* Phones: "Get the app" and "Play now" share a row, test ZEC gets the next one. */
+        @media (max-width: 520px) {
+          .zks-hero-cta > * { flex: 1 1 100%; }
+          .zks-hero-cta > :nth-child(-n+2) { flex: 1 1 0; min-width: 0; }
+          .zks-hero-cta .zks-btn { width: 100%; }
+          .zks-hero-cta > :nth-child(-n+2) .zks-btn { padding: 0 12px; gap: 8px; }
+        }
+        @media (max-width: 370px) { .zks-hero-cta > :nth-child(-n+2) { flex-basis: 100%; } }
         @media (min-width: 980px) { .zks-hero-grid { grid-template-columns: 1.08fr 1fr; gap: 20px; } }
         @media (max-width: 979px) { .zks-hero-grid > div:first-child { text-align: left; } }
         .zks-blob { position: absolute; border-radius: 50%; opacity: .5; will-change: transform; animation: zks-blob 16s ease-in-out infinite; pointer-events: none; }

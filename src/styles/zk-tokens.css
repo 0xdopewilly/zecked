@@ -315,6 +315,7 @@
   --zk-ease-out: cubic-bezier(.22, 1, .36, 1);
   --zk-ease-in-out: cubic-bezier(.65, 0, .35, 1);
   --zk-ease-spring: cubic-bezier(.3, 1.6, .5, 1);
+  --zk-ease-ios: cubic-bezier(.32, .72, 0, 1); /* screen pushes: quick start, long soft settle */
 }
 
 /* ---------- Keyframes ---------- */

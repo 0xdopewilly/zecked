@@ -42,3 +42,5 @@ export type { ConfettiProps } from "./Confetti";
 export { StashCard } from "./StashCard";
 export type { StashCardProps } from "./StashCard";
 export { Reactions, ReactionSummary } from "./Reactions";
+export { Avatar } from "./Avatar";
+export type { AvatarProps, AvatarRing } from "./Avatar";

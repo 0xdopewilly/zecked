@@ -14,8 +14,11 @@ import { api, formatZec, type FeedFilter } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import { warmStash } from "@/lib/stashCache";
 import type { Player, PublicStash, TickerItem } from "@/lib/types";
-import { Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
+import { Avatar, Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
+import { formatDuration } from "@/components/zk/StashCard";
+import { InstallNudge } from "@/components/zk/Install";
 import { NOTICES_EVENT, NoticeBell } from "@/components/screens/NoticeBell";
+import "@/styles/home.css";
 
 const CHIPS: { label: string; filter: FeedFilter }[] = [
   { label: "All", filter: "all" },
@@ -29,7 +32,7 @@ const FEED_MS = 8_000;
 const TICKER_MS = 15_000;
 const ME_MS = 30_000;
 const FILTER_KEY = "zk:feed-filter";
-const LIST_GAP = 14; // px, = --zk-space-14 between cards
+const LIST_GAP = 16; // px, = --zk-space-16 between cards
 const PRACTICE_DONE = "zk:practice-done"; // set by the practice screen when you solve one
 const PRACTICE_DISMISSED = "zk:practice-dismissed";
 const PRACTICE_EVENT = "zk:practice";
@@ -55,13 +58,8 @@ const mem: {
 } = { visited: false, filter: "all", lists: {}, player: null, ticker: { items: [], now: 0, loaded: false }, house: null, scrollY: 0 };
 
 // Back/forward (the ← button, the browser, an edge swipe) restores the scroll position; a fresh visit
-// (tab bar, links) starts at the top like any other screen.
-let poppedAt = 0;
-if (typeof window !== "undefined") {
-  window.addEventListener("popstate", () => {
-    poppedAt = Date.now();
-  });
-}
+// (tab bar, links) starts at the top like any other screen. lib/nav.ts marks a back with html[data-nav].
+const cameBack = () => document.documentElement.getAttribute("data-nav") === "back";
 
 /* ---------- practice riddle card ---------- */
 
@@ -151,103 +149,50 @@ function ago(iso: string, now: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-// The strip always takes its 36px (+12px margin), loaded or not, so nothing below it moves.
-const TICKER_STRIP: CSSProperties = {
-  marginTop: "var(--zk-space-12)",
-  height: 36,
-  flex: "none",
-  overflow: "hidden",
-  background: "rgb(var(--zk-mint-rgb) / .07)",
-  borderTop: "1px solid rgb(var(--zk-mint-rgb) / .18)",
-  borderBottom: "1px solid rgb(var(--zk-mint-rgb) / .18)",
-  display: "flex",
-  alignItems: "center",
-  paddingLeft: "var(--zk-space-16)",
-};
-
-function Ticker({ items, now }: { items: TickerItem[]; now: number }) {
-  const [paused, setPaused] = useState(false);
-  // Each half must be at least as wide as the column for the −50% loop to be seamless.
-  let half = items;
-  while (half.length < 4) half = half.concat(items);
-  const pause = () => setPaused(true);
-  const resume = () => setPaused(false);
-
-  const renderHalf = (hidden: boolean) => (
-    <span aria-hidden={hidden || undefined} style={{ display: "flex" }}>
-      {half.map((t, i) => {
-        const [before, bold, after] = splitBold(t.text);
-        const look = tickerLook(t);
-        return (
-          <span
-            key={`${t.id}-${i}`}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--zk-space-6)",
-              marginRight: "var(--zk-space-28)",
-            }}
-          >
-            <span style={{ color: look.color, display: "flex" }}>
-              <Icon icon={look.icon} size={14} stroke={2.4} />
-            </span>
-            <span>
-              {before}
-              {bold && <b style={{ color: "var(--zk-gold)" }}>{bold}</b>}
-              {after} · <span style={{ color: "var(--zk-text-muted)" }}>{ago(t.at, now)}</span>
-            </span>
-          </span>
-        );
-      })}
-    </span>
-  );
-
-  return (
-    <div
-      aria-label="Live activity"
-      role="marquee"
-      onTouchStart={pause}
-      onTouchEnd={resume}
-      onTouchCancel={resume}
-      onMouseEnter={pause}
-      onMouseLeave={resume}
-      style={TICKER_STRIP}
-    >
-      <div
-        style={{
-          display: "flex",
-          whiteSpace: "nowrap",
-          width: "max-content",
-          animation: "zk-marquee var(--zk-dur-ticker) linear infinite",
-          animationDuration: `calc(var(--zk-dur-ticker) * ${half.length / 4})`,
-          animationPlayState: paused ? "paused" : "running",
-          font: "var(--zk-type-small)",
-        }}
-      >
-        {renderHalf(false)}
-        {renderHalf(true)}
-      </div>
-    </div>
-  );
-}
-
-function TickerSlot({ ticker }: { ticker: TickerState }) {
-  if (ticker.items.length > 0) return <Ticker items={ticker.items} now={ticker.now} />;
-  if (!ticker.loaded) {
-    return (
-      <div aria-hidden="true" style={TICKER_STRIP}>
-        <div style={{ width: 180, height: 10, borderRadius: "var(--zk-radius-sm)", background: "rgb(var(--zk-mint-rgb) / .12)" }} />
-      </div>
+/** One line of live activity under the greeting ("Someone just zecked 0.02 ZEC · 2m ago"), a new one
+ *  every few seconds. Always the same height, loaded or not, so nothing below it moves. */
+function LivePulse({ ticker }: { ticker: TickerState }) {
+  const { items } = ticker;
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (items.length < 2 || reducedMotion()) return;
+    const t = setInterval(() => {
+      if (!document.hidden) setI((n) => n + 1);
+    }, 4200);
+    return () => clearInterval(t);
+  }, [items.length]);
+  const t = items.length ? items[i % items.length] : null;
+  let line: ReactNode;
+  if (t) {
+    const [before, bold, after] = splitBold(t.text);
+    const look = tickerLook(t);
+    line = (
+      <span key={`${t.id}-${i}`} className="zk-pulse-line">
+        <span style={{ color: look.color, display: "flex", flex: "none" }}>
+          <Icon icon={look.icon} size={14} stroke={2.4} />
+        </span>
+        <span className="zk-pulse-text">
+          {before}
+          {bold && <b>{bold}</b>}
+          {after} <span style={{ color: "var(--zk-text-faint)" }}>· {ago(t.at, Date.now())}</span>
+        </span>
+      </span>
     );
+  } else if (ticker.loaded) {
+    line = (
+      <span className="zk-pulse-line">
+        <span className="zk-pulse-text" style={{ color: "var(--zk-text-muted)" }}>
+          All quiet. New stashes land here live.
+        </span>
+      </span>
+    );
+  } else {
+    line = <span aria-hidden="true" style={{ width: 170, height: 10, borderRadius: "var(--zk-radius-sm)", background: "rgb(var(--zk-mint-rgb) / .14)" }} />;
   }
   return (
-    <div style={{ ...TICKER_STRIP, gap: "var(--zk-space-6)", font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
-      <span style={{ color: "var(--zk-mint)", display: "flex" }}>
-        <Icon icon="sparkle" size={14} stroke={2.4} />
-      </span>
-      <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: "var(--zk-space-16)" }}>
-        All quiet. New stashes land here live.
-      </span>
+    <div className="zk-pulse" aria-label="Live activity">
+      <span className="zk-pulse-dot" aria-hidden="true" />
+      {line}
     </div>
   );
 }
@@ -275,7 +220,7 @@ function compactZec(zat: number): string {
   return formatZec(Math.floor(Math.max(0, zat) / 10_000) * 10_000, 4);
 }
 
-function Header({ player, collapsed }: { player: Player | null; collapsed: boolean }) {
+function Header({ player, scrolled }: { player: Player | null; scrolled: boolean }) {
   const streak = player?.stats.streak ?? 0;
   const [tip, setTip] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
@@ -298,7 +243,7 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
       document.removeEventListener("keydown", esc);
     };
   }, [tip]);
-  const tipOpen = tip && !collapsed;
+  const tipOpen = tip && !scrolled;
 
   const coin = (
     <span
@@ -339,9 +284,11 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
         aria-label={handle ? `Your profile, @${handle}` : "Your profile"}
         style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "var(--zk-space-10)", color: "var(--zk-text)" }}
       >
-        <span aria-hidden="true" className="zk-hello-avatar">
-          {handle ? handle[0].toUpperCase() : ""}
-        </span>
+        {player ? (
+          <Avatar handle={player.handle} src={player.avatarUrl} className="zk-hello-avatar" />
+        ) : (
+          <span aria-hidden="true" className="zk-hello-avatar is-empty" />
+        )}
         <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
           <span style={{ font: "var(--zk-fw-semibold) var(--zk-fs-13)/1 var(--zk-font-body)", color: "var(--zk-text-muted)" }}>
             Hey <span aria-hidden="true">👋</span>
@@ -410,7 +357,7 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
             <span aria-hidden="true" style={HIT_SLOP_36} />
           </Link>
         )}
-        <NoticeBell hidden={collapsed} />
+        <NoticeBell hidden={scrolled} />
       </div>
 
       {tipOpen && (
@@ -814,6 +761,22 @@ function FilterEmpty({ filter, onAll }: { filter: Exclude<FeedFilter, "all">; on
   );
 }
 
+/** "All" has nothing live (only finished stashes, or just the house drop up top). */
+function NothingLive({ hasDrop }: { hasDrop: boolean }) {
+  return (
+    <StateCard>
+      <StateTile icon="vault" grad="var(--zk-grad-tile-purple)" edge="var(--zk-purple-shade)" />
+      <div style={{ font: "var(--zk-type-h3)" }}>{hasDrop ? "The free drop is the only one live." : "Nothing live right now."}</div>
+      <div style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", marginTop: "calc(-1 * var(--zk-space-6))", textWrap: "balance" } as CSSProperties}>
+        Hide one and get it going. New stashes pop up here the moment they’re hidden.
+      </div>
+      <div style={{ marginTop: "var(--zk-space-4)" }}>
+        <Button label="Hide a stash" icon="plus" variant="primary" size="md" full={false} href="/hide" />
+      </div>
+    </StateCard>
+  );
+}
+
 function ErrorState({ kind, onRetry }: { kind: FeedError; onRetry: () => void }) {
   const c = ERROR_COPY[kind];
   return (
@@ -885,10 +848,158 @@ function FeedItem({ stash, animate }: { stash: PublicStash; animate: boolean }) 
     };
   }, []);
   return (
-    <div ref={ref} style={{ flex: "none" }}>
+    <div ref={ref} className="zk-feed-item" style={{ flex: "none" }}>
       <StashCard stash={stash} href={`/s/${stash.id}`} markMine />
     </div>
   );
+}
+
+/* ---------- home sections ---------- */
+
+/**
+ * The top of home: the house's free drop, big (tap to crack it), or a countdown to the next one. Nothing
+ * when the house isn't dropping (the live list starts right away).
+ */
+function HomeHero({ drop, nextAt, onDue }: { drop: PublicStash | null; nextAt: string | null; onDue: () => void }) {
+  if (drop) {
+    const cracking = drop.riddle?.crackingNow ?? 0;
+    return (
+      <Link
+        href={`/s/${drop.id}`}
+        transitionTypes={["nav-forward"]}
+        prefetch
+        data-sfx="pop"
+        className="zk-hero"
+        onPointerDown={() => warmStash(drop.id)}
+        aria-label={`Free drop from the house: ${drop.riddle?.text ?? "a riddle"}. Crack it`}
+      >
+        <span aria-hidden="true" className="zk-hero-vault">
+          <Vault mode="loop" size={76} />
+        </span>
+        <span className="zk-hero-sticker">
+          <Icon icon="sparkle" size={13} stroke={2.8} />
+          FREE DROP
+        </span>
+        <span className="zk-hero-kicker">From the house · first to crack it keeps it</span>
+        <span className="zk-hero-riddle">“{drop.riddle?.text ?? ""}”</span>
+        <span className="zk-hero-foot">
+          <span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+            <span className="zk-hero-zec">{formatZec(drop.amountZat)} ZEC</span>
+            <span className="zk-hero-sub">
+              {cracking > 0 ? (
+                <>
+                  <span className="zk-live-dot" aria-hidden="true" />
+                  {cracking} cracking now
+                </>
+              ) : (
+                `~$${drop.usd} · free to play`
+              )}
+            </span>
+          </span>
+          <span className="zk-hero-cta">
+            Crack it
+            <Icon icon="arrowRight" size={17} stroke={3} />
+          </span>
+        </span>
+      </Link>
+    );
+  }
+  if (!nextAt || Date.parse(nextAt) <= Date.now()) return null;
+  const secs = (Date.parse(nextAt) - Date.now()) / 1000;
+  const far = secs >= 86_400 ? `${Math.floor(secs / 86_400)}d ${Math.floor((secs % 86_400) / 3600)}h` : undefined;
+  return (
+    <div className="zk-hero is-wait">
+      <span aria-hidden="true" className="zk-hero-vault">
+        <Vault mode="closed" size={76} />
+      </span>
+      <span className="zk-hero-sticker is-wait">
+        <Icon icon="clock" size={13} stroke={2.8} />
+        NEXT FREE DROP
+      </span>
+      <span className="zk-hero-count">
+        <Countdown to={nextAt} format="hms" text={far} tone="gold" size="lg" onDone={onDue} />
+      </span>
+      <span className="zk-hero-kicker" style={{ marginTop: 6 }}>
+        The house hides free ZEC every few hours. First to crack it keeps it.
+      </span>
+    </div>
+  );
+}
+
+function SectionHead({ title, count, id }: { title: string; count?: number; id: string }) {
+  return (
+    <div className="zk-sec-head">
+      <h2 id={id} className="zk-sec-title">
+        {title}
+      </h2>
+      {count ? <span className="zk-sec-count">{count}</span> : null}
+    </div>
+  );
+}
+
+/** A finished stash, small: it's over, so it shouldn't take a full card. Tap to see how it went. */
+function EndedRow({ stash }: { stash: PublicStash }) {
+  const riddle = stash.type === "riddle";
+  const m = stash.prediction?.match;
+  const zecked = stash.status === "zecked";
+  const title = riddle ? `“${stash.riddle?.text ?? ""}”` : m ? `${m.home.name} vs ${m.away.name}` : "Match call";
+  const secs = stash.result?.crackSeconds;
+  const how = zecked
+    ? riddle
+      ? secs != null
+        ? `Cracked in ${formatDuration(secs)}`
+        : "Cracked"
+      : `Called it${stash.result?.finalScore ? ` · ${stash.result.finalScore}` : ""}`
+    : stash.status === "void"
+      ? "Called off"
+      : riddle
+        ? "Nobody cracked it"
+        : "Nobody called it";
+  return (
+    <Link href={`/s/${stash.id}`} transitionTypes={["nav-forward"]} className="zk-ended">
+      <span aria-hidden="true" className={riddle ? "zk-ended-tile" : "zk-ended-tile is-match"}>
+        <Icon icon={riddle ? (zecked ? "unlock" : "lock") : "ball"} size={18} stroke={2.4} />
+      </span>
+      <span className="zk-ended-main">
+        <span className="zk-ended-title">{title}</span>
+        <span className="zk-ended-sub">
+          {how} · <span style={{ color: "var(--zk-gold)" }}>{formatZec(stash.amountZat)} ZEC</span>
+        </span>
+      </span>
+      <span className={zecked ? "zk-ended-stamp" : "zk-ended-stamp is-safe"}>{zecked ? "ZECKED" : stash.status === "void" ? "OFF" : "SAFE"}</span>
+    </Link>
+  );
+}
+
+const ENDED_STATUS = new Set(["zecked", "expired", "refunded", "void"]);
+const ENDED_SHOWN = 6;
+
+/* ---------- memory across launches ---------- */
+
+// The last home you saw, so opening the app shows it straight away (then refreshes).
+const HOME_KEY = "zk:home";
+const HOME_MAX_AGE = 6 * 3600_000;
+type HomeSnap = { at: number; all: PublicStash[]; player: Player | null; house: HouseStatus | null; ticker: TickerItem[] };
+function readHome(): HomeSnap | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(HOME_KEY) || "null") as HomeSnap | null;
+    return v && Date.now() - v.at < HOME_MAX_AGE ? v : null;
+  } catch {
+    return null;
+  }
+}
+function writeHome(v: Omit<HomeSnap, "at">) {
+  try {
+    localStorage.setItem(HOME_KEY, JSON.stringify({ ...v, at: Date.now() }));
+  } catch {}
+}
+
+/** Tells the launch splash the home has something to show (it waits a moment for it). */
+function markReady() {
+  const w = window as Window & { __zkReady?: boolean };
+  if (w.__zkReady) return;
+  w.__zkReady = true;
+  window.dispatchEvent(new Event("zk:ready"));
 }
 
 /* ---------- screen ---------- */
@@ -902,16 +1013,14 @@ export default function Feed() {
   const [house, setHouse] = useState<HouseStatus | null>(() => mem.house);
   const [held, setHeld] = useState<string[]>([]); // new stashes waiting behind the pill
   const [fresh, setFresh] = useState<string[]>([]); // new stashes that animate in
-  const [collapsed, setCollapsed] = useState(false);
-  const [lift, setLift] = useState(0);
-  const [headerH, setHeaderH] = useState(0);
+  const [scrolled, setScrolled] = useState(false); // past the greeting: close its popovers
+  const [stuck, setStuck] = useState(false); // the filter chips are pinned to the top
   const [refreshing, setRefreshing] = useState(false);
   const practice = useSyncExternalStore(subscribePractice, practiceWanted, noPractice);
 
   const mainRef = useRef<HTMLElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const topRef = useRef<HTMLDivElement>(null);
-  const insetRef = useRef<HTMLDivElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const pinRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pullRef = useRef<HTMLDivElement>(null);
   const pullIconRef = useRef<HTMLDivElement>(null);
@@ -946,33 +1055,36 @@ export default function Feed() {
     mem.house = house;
   }, [house]);
 
-  // First visit this session (a reload, a fresh tab): pick the filter back up.
-  useEffect(() => {
+  // First visit this session (a reload, a fresh tab, opening the app): pick the filter back up and show
+  // the last home straight away, before the network answers (before paint, so no skeleton flash).
+  useLayoutEffect(() => {
     if (mem.visited) return;
     mem.visited = true;
     try {
       const f = sessionStorage.getItem(FILTER_KEY) as FeedFilter | null;
       if (f && f !== "all" && CHIPS.some((c) => c.filter === f)) setFilter(f);
     } catch {}
+    const snap = readHome();
+    if (!snap) return;
+    setLists((p) => (p.all ? p : { ...p, all: snap.all }));
+    setPlayer((p) => p ?? snap.player);
+    setHouse((h) => h ?? snap.house);
+    setTicker((t) => (t.loaded ? t : { items: snap.ticker, now: Date.now(), loaded: snap.ticker.length > 0 }));
   }, []);
+
+  // Keep that snapshot fresh (a moment after things settle, not on every poll tick).
+  useEffect(() => {
+    if (!lists.all) return;
+    const t = window.setTimeout(() => writeHome({ all: lists.all!.slice(0, 30), player, house, ticker: ticker.items.slice(0, 12) }), 1200);
+    return () => window.clearTimeout(t);
+  }, [lists.all, player, house, ticker.items]);
 
   // Coming back (←, browser back, swipe): the list is already rendered from memory, so jump straight to
   // where you were, before the first paint.
   useLayoutEffect(() => {
-    if (Date.now() - poppedAt > 2500) return;
+    if (!cameBack()) return;
     const y = mem.scrollY;
     if (y > 0 && (listsRef.current[filterRef.current]?.length ?? 0) > 0) window.scrollTo(0, y);
-  }, []);
-
-  // The header's height, for placing the "new stashes" pill right under it.
-  useLayoutEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const measure = () => setHeaderH(el.offsetHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
   }, []);
 
   const showFresh = useCallback((ids: string[]) => {
@@ -1086,32 +1198,16 @@ export default function Feed() {
     };
   }, [loadTicker, loadMe]);
 
-  // One scroll listener: remembers the position, slides the header away on the way down (back on the way
-  // up), and shows held stashes once you're back at the top.
+  // One scroll listener: remembers the position, notes when you're past the greeting, and shows held
+  // stashes once you're back at the top.
   useEffect(() => {
-    let lastY = window.scrollY;
-    let acc = 0;
     let raf = 0;
     const run = () => {
       raf = 0;
       if (!mainRef.current?.isConnected) return;
       const y = Math.max(0, window.scrollY);
       mem.scrollY = y;
-      const dy = y - lastY;
-      lastY = y;
-      if (y < 80) {
-        acc = 0;
-        setCollapsed(false);
-      } else if (dy > 0) {
-        acc = Math.max(0, acc) + dy;
-        if (acc > 24) {
-          setLift(Math.max(0, (topRef.current?.offsetHeight ?? 0) - (insetRef.current?.offsetHeight ?? 0)));
-          setCollapsed(true);
-        }
-      } else if (dy < 0) {
-        acc = Math.min(0, acc) + dy;
-        if (acc < -24) setCollapsed(false);
-      }
+      setScrolled(y > 40);
       if (y <= 2 && heldRef.current.length && !touching.current) reveal();
     };
     const onScroll = () => {
@@ -1285,9 +1381,14 @@ export default function Feed() {
   const freshSet = new Set(fresh);
   const shown = list?.filter((s) => !heldSet.has(s.id));
 
+  // The house's live drop leads the page (from the full list, whatever the filter), so "All" skips it below.
+  const drop = (house?.liveId && lists.all?.find((s) => s.id === house.liveId && s.status === "live")) || null;
+  const live = shown?.filter((s) => !ENDED_STATUS.has(s.status) && !(filter === "all" && drop && s.id === drop.id));
+  const ended = shown?.filter((s) => ENDED_STATUS.has(s.status)).slice(0, ENDED_SHOWN);
+
   // Warm the top few live stashes in the background (a "peek" that doesn't count as viewing them),
   // so tapping one opens instantly. Re-warmed as the list changes; the cache drops stale reads.
-  const warmKey = (shown || []).filter((s) => s.status === "live" || s.status === "locked").slice(0, 4).map((s) => s.id).join(",");
+  const warmKey = [drop, ...(live || [])].filter((s): s is PublicStash => !!s).slice(0, 4).map((s) => s.id).join(",");
   useEffect(() => {
     if (!warmKey) return;
     const t = window.setTimeout(() => warmKey.split(",").forEach((id) => warmStash(id)), 900);
@@ -1297,28 +1398,50 @@ export default function Feed() {
   // The whole feed is empty (not just this filter): the teaser, with its own single primary button.
   const feedEmpty = !!list && list.length === 0 && (filter === "all" || lists.all?.length === 0);
 
+  // Something to show (or a clear error): the launch splash can step aside.
+  const settled = !!list || !!error;
+  useEffect(() => {
+    if (settled) markReady();
+  }, [settled]);
+  useLayoutEffect(() => {
+    const w = window as Window & { __zkReady?: boolean };
+    if (!w.__zkReady && !listsRef.current[filterRef.current]) w.__zkReady = false;
+  }, []);
+
+  // The chips show a pinned look once they reach the top (a zero-height marker just above them scrolls away).
+  useEffect(() => {
+    const pin = pinRef.current;
+    const chips = chipsRef.current;
+    if (!pin || !chips) return;
+    const top = parseFloat(getComputedStyle(chips).top) || 0;
+    const io = new IntersectionObserver(([e]) => setStuck(!e.isIntersecting && e.boundingClientRect.top < top + 1), {
+      rootMargin: `${-Math.ceil(top) - 1}px 0px 0px 0px`,
+    });
+    io.observe(pin);
+    return () => io.disconnect();
+  }, [feedEmpty]);
+
   // Shown with the list (never over the loading skeletons), so it never pushes the cards down later.
   const practiceCard = practice ? <PracticeCard /> : null;
+  const dropAt = house?.nextDropAt && Date.parse(house.nextDropAt) > Date.now() ? house.nextDropAt : null;
+  const onDue = () => void loadFeed(filter, "poll");
 
   let body: ReactNode;
-  if (shown && shown.length > 0) {
+  if (live && live.length > 0) {
     body = (
       <>
         {error && <StaleBanner kind={error} onRetry={retry} />}
         {practiceCard}
-        {shown.map((s) => (
+        {live.map((s) => (
           <FeedItem key={s.id} stash={s} animate={freshSet.has(s.id)} />
         ))}
       </>
     );
-  } else if (feedEmpty) {
-    const dropAt = house?.nextDropAt && Date.parse(house.nextDropAt) > Date.now() ? house.nextDropAt : null;
-    body = <EmptyFeed practice={practice} nextDrop={dropAt ? <NextDrop at={dropAt} onDone={() => void loadFeed(filter, "poll")} /> : undefined} />;
   } else if (list) {
     body = (
       <>
         {practiceCard}
-        <FilterEmpty filter={filter as Exclude<FeedFilter, "all">} onAll={() => pick("all")} />
+        {filter === "all" ? <NothingLive hasDrop={!!drop} /> : <FilterEmpty filter={filter as Exclude<FeedFilter, "all">} onAll={() => pick("all")} />}
       </>
     );
   } else if (error) {
@@ -1330,177 +1453,123 @@ export default function Feed() {
     );
   } else {
     body = (
-      <div aria-busy="true" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)" }}>
+      <div aria-busy="true" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-16)" }}>
         <span className="zk-sr-only">Loading stashes…</span>
         <SkeletonCard />
         <SkeletonCard delay={0.2} />
-        <SkeletonCard delay={0.4} />
       </div>
     );
   }
 
+  const at = (i: number) => ({ ["--i" as string]: i }) as CSSProperties;
+
   return (
-    <main
-      ref={mainRef}
-      className="zk-screen has-tabs"
-      style={{ background: "var(--zk-bg)", paddingTop: 0, paddingLeft: 0, paddingRight: 0 }}
-    >
-      {/* Covers the status bar (notch) while the header is slid away. Zero-height when there's no inset. */}
+    <main ref={mainRef} className="zk-screen has-tabs" style={{ background: "var(--zk-bg-hero-purple)", paddingTop: 0, paddingLeft: 0, paddingRight: 0 }}>
+      {/* Covers the status bar (notch) once the page scrolls under it. Zero-height when there's no inset. */}
+      <div aria-hidden="true" className="zk-notch-cover" />
+
+      {/* Pull-to-refresh indicator, revealed in the gap as the page is pulled down. */}
       <div
+        ref={pullRef}
         aria-hidden="true"
         style={{
-          position: "fixed",
-          top: 0,
+          position: "absolute",
+          top: "calc(var(--zk-top-inset) + 8px)",
           left: "50%",
-          transform: "translateX(-50%)",
-          width: "100%",
-          maxWidth: 430,
-          height: "var(--zk-top-inset)",
-          background: "var(--zk-bg)",
-          zIndex: 6,
+          marginLeft: -22,
+          width: 44,
+          height: 44,
+          borderRadius: "var(--zk-radius-md)",
+          background: "var(--zk-grad-tile-gold)",
+          border: "2.5px solid var(--zk-ink)",
+          boxShadow: "var(--zk-inset-gloss), 0 3px 0 var(--zk-ink)",
+          color: "var(--zk-gold-ink)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: 0,
+          transform: "translate3d(0, -22px, 0) scale(.6)",
           pointerEvents: "none",
         }}
-      />
-
-      {/* Header, ticker and chips stay pinned while the list scrolls; the top part slides away on the
-          way down (a transform, so nothing below reflows) and the chips stay. */}
-      <div
-        ref={headerRef}
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 5,
-          background: "var(--zk-bg)",
-          transform: collapsed && lift > 0 ? `translate3d(0, ${-lift}px, 0)` : "none",
-          transition: "transform 260ms var(--zk-ease-out)",
-        }}
       >
-        <div ref={topRef} aria-hidden={collapsed || undefined} inert={collapsed || undefined}>
-          <div ref={insetRef} style={{ height: "var(--zk-top-inset)" }} />
-          <div style={{ paddingTop: "var(--zk-space-14)" }}>
-            <Header player={player} collapsed={collapsed} />
-            <TickerSlot ticker={ticker} />
-          </div>
+        <div ref={pullIconRef} style={{ display: "flex" }}>
+          <Icon icon="vault" size={24} stroke={2.4} />
         </div>
-        <div
-          role="group"
-          aria-label="Filter stashes"
-          className="zk-scroll-x"
-          style={{
-            display: "flex",
-            gap: "var(--zk-space-8)",
-            padding: "var(--zk-space-12) var(--zk-space-16) var(--zk-space-8)",
-            flex: "none",
-          }}
-        >
-          {CHIPS.map((c) => (
-            <Chip
-              key={c.filter}
-              active={filter === c.filter}
-              onClick={() => pick(c.filter)}
-              style={{ position: "relative" }}
-              label={
-                <>
-                  {c.label}
-                  <span aria-hidden="true" style={HIT_SLOP_38} />
-                </>
-              }
-            />
-          ))}
-        </div>
-
       </div>
+      <span className="zk-sr-only" role="status">
+        {refreshing ? "Refreshing stashes…" : ""}
+      </span>
 
-      {/* New stashes that arrived while you were scrolled down. Outside the header: its transform would
-          otherwise pin this to the header instead of the screen. */}
-      {waiting > 0 && (
-        <div
-          style={{
-            position: "fixed",
-            top: (collapsed ? headerH - lift : headerH) + 10,
-            left: 0,
-            right: 0,
-            margin: "0 auto",
-            maxWidth: 430,
-            zIndex: 7,
-            display: "flex",
-            justifyContent: "center",
-            pointerEvents: "none",
-            transition: "top 260ms var(--zk-ease-out)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={onPill}
-            data-sfx="tap"
-            style={{
-              pointerEvents: "auto",
-              minHeight: 44,
-              padding: "0 var(--zk-space-18) 0 var(--zk-space-14)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--zk-space-6)",
-              border: 0,
-              borderRadius: "var(--zk-radius-pill)",
-              background: "var(--zk-purple)",
-              color: "var(--zk-text)",
-              font: "var(--zk-type-btn-sm)",
-              boxShadow: "0 4px 0 var(--zk-purple-shade), 0 10px 24px rgb(var(--zk-black-rgb) / .4)",
-              cursor: "pointer",
-              touchAction: "manipulation",
-              animation: "zk-vt-rise 220ms var(--zk-ease-out) both",
-            }}
-          >
-            <Icon icon="back" size={16} stroke={2.8} style={{ transform: "rotate(90deg)" }} />
-            {waiting} new {waiting === 1 ? "stash" : "stashes"}
-          </button>
+      {/* Everything below follows the finger on pull-to-refresh. On launch, each block rises in as the splash
+          steps aside (globals.css: .zk-home-stagger). */}
+      <div ref={listRef} className="zk-home-stagger">
+        <div style={{ ...at(0), paddingTop: "calc(var(--zk-top-inset) + var(--zk-space-18))" }}>
+          <Header player={player} scrolled={scrolled} />
         </div>
-      )}
+        <div style={at(1)}>
+          <LivePulse ticker={ticker} />
+        </div>
 
-      <div style={{ position: "relative" }}>
-        {/* Pull-to-refresh indicator, revealed in the gap as the list is pulled down. */}
-        <div
-          ref={pullRef}
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            top: 0,
-            left: "50%",
-            marginLeft: -22,
-            width: 44,
-            height: 44,
-            borderRadius: "var(--zk-radius-md)",
-            background: "var(--zk-grad-tile-gold)",
-            boxShadow: "var(--zk-inset-gloss), 0 3px 0 var(--zk-gold-deep)",
-            color: "var(--zk-gold-ink)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: 0,
-            transform: "translate3d(0, -22px, 0) scale(.6)",
-            pointerEvents: "none",
-          }}
-        >
-          <div ref={pullIconRef} style={{ display: "flex" }}>
-            <Icon icon="vault" size={24} stroke={2.4} />
+        {!feedEmpty && (drop || dropAt) && (
+          <div className="zk-home-block" style={at(2)}>
+            <HomeHero drop={drop} nextAt={dropAt} onDue={onDue} />
           </div>
-        </div>
-        <span className="zk-sr-only" role="status">
-          {refreshing ? "Refreshing stashes…" : ""}
-        </span>
+        )}
 
-        <div
-          ref={listRef}
-          style={{
-            // 16px on top so a card's sticker (WHALE STASH) never tucks under the header.
-            padding: "var(--zk-space-16) var(--zk-space-16) 72px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--zk-space-14)",
-          }}
-        >
-          {body}
-        </div>
+        {/* Phones in a browser tab: one tap to put ZECKED on the Home Screen (renders nothing once installed). */}
+        <InstallNudge style={{ ...at(3), margin: "var(--zk-space-20) var(--zk-space-16) 0" }} />
+
+        {feedEmpty ? (
+          <div className="zk-home-block" style={at(2)}>
+            <EmptyFeed practice={practice} nextDrop={dropAt ? <NextDrop at={dropAt} onDone={onDue} /> : undefined} />
+          </div>
+        ) : (
+          <div className="zk-home-lists" style={at(3)}>
+            <section aria-labelledby="zk-live-title">
+              <SectionHead id="zk-live-title" title="Live now" count={live?.length} />
+              <div ref={pinRef} aria-hidden="true" />
+              {/* Pinned under the notch while you scroll. The "new stashes" pill hangs just below it. */}
+              <div ref={chipsRef} className={stuck ? "zk-chips is-stuck" : "zk-chips"}>
+                <div role="group" aria-label="Filter stashes" className="zk-scroll-x zk-chips-row">
+                  {CHIPS.map((c) => (
+                    <Chip
+                      key={c.filter}
+                      active={filter === c.filter}
+                      onClick={() => pick(c.filter)}
+                      style={{ position: "relative" }}
+                      label={
+                        <>
+                          {c.label}
+                          <span aria-hidden="true" style={HIT_SLOP_38} />
+                        </>
+                      }
+                    />
+                  ))}
+                </div>
+                {waiting > 0 && (
+                  <div className="zk-new-pill-wrap">
+                    <button type="button" onClick={onPill} data-sfx="tap" className="zk-new-pill">
+                      <Icon icon="back" size={16} stroke={2.8} style={{ transform: "rotate(90deg)" }} />
+                      {waiting} new {waiting === 1 ? "stash" : "stashes"}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="zk-home-list">{body}</div>
+            </section>
+
+            {ended && ended.length > 0 && (
+              <section aria-labelledby="zk-ended-title" style={{ marginTop: "var(--zk-space-32)" }}>
+                <SectionHead id="zk-ended-title" title="Recently zecked" />
+                <div className="zk-ended-list">
+                  {ended.map((s) => (
+                    <EndedRow key={s.id} stash={s} />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </div>
 
       <TabBar active="home" />

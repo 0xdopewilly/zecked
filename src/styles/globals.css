@@ -116,18 +116,11 @@ a { text-decoration: none; }
   .zk-dock-item.is-pop { animation: none; }
 }
 /* Feed header: your avatar and the notices bell, sticker style. */
-.zk-hello-avatar {
-  width: 46px; height: 46px; flex: none;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  background: var(--zk-grad-tile-purple);
-  border: 2.5px solid var(--zk-ink);
-  box-shadow: var(--zk-inset-gloss), 0 3px 0 var(--zk-ink);
-  font: var(--zk-fw-black) 21px/1 var(--zk-font-display); color: var(--zk-text);
-}
+.zk-hello-avatar { width: 46px; height: 46px; flex: none; }
+.zk-hello-avatar.is-empty { border-radius: 50%; background: var(--zk-surface-raised); border: 2.5px solid var(--zk-ink); }
 /* Small phones: give the name room. */
 @media (max-width: 350px) {
-  .zk-hello-avatar { width: 40px; height: 40px; font-size: 18px; }
+  .zk-hello-avatar { width: 40px; height: 40px; }
   .zk-hello-coin { display: none !important; }
   :has(> .zk-hello-coin) { padding-left: 12px !important; }
 }
@@ -209,31 +202,41 @@ a { text-decoration: none; }
 /* Taps during a transition reach the live page instead of the snapshot overlay. */
 ::view-transition { pointer-events: none; }
 
-/* push: opening something (a stash) */
-::view-transition-old(.zk-vt-push) { animation: 260ms cubic-bezier(.4, 0, .2, 1) both zk-vt-out-left; }
-::view-transition-new(.zk-vt-push) { animation: 340ms cubic-bezier(.16, 1, .3, 1) both zk-vt-in-right; }
-/* pop: going back */
-::view-transition-old(.zk-vt-pop) { animation: 220ms cubic-bezier(.4, 0, 1, 1) both zk-vt-out-right; }
-::view-transition-new(.zk-vt-pop) { animation: 320ms cubic-bezier(.16, 1, .3, 1) both zk-vt-in-left; }
-/* tab: switching tabs */
-::view-transition-old(.zk-vt-tab) { animation: 110ms ease-out both zk-vt-fade-out; }
-::view-transition-new(.zk-vt-tab) { animation: 240ms cubic-bezier(.16, 1, .3, 1) 40ms both zk-vt-rise; }
+/* push: opening something (a stash). Like a native app: the new screen slides all the way in over the
+   last one, which eases back and dims. A quick start, then a long soft settle. */
+::view-transition-old(.zk-vt-push) { animation: 460ms var(--zk-ease-ios) both zk-vt-under-out; }
+::view-transition-new(.zk-vt-push) { animation: 460ms var(--zk-ease-ios) both zk-vt-over-in; box-shadow: -10px 0 36px rgb(var(--zk-black-rgb) / .5); }
+/* pop: going back (the ← button, the browser's or the phone's back: html[data-nav=back], lib/nav.ts).
+   The screen slides away to the right, uncovering the one underneath. */
+::view-transition-old(.zk-vt-pop),
+html[data-nav="back"]::view-transition-old(.zk-vt-fade) { animation: 400ms var(--zk-ease-ios) both zk-vt-over-out; z-index: 1; box-shadow: -10px 0 36px rgb(var(--zk-black-rgb) / .5); }
+::view-transition-new(.zk-vt-pop),
+html[data-nav="back"]::view-transition-new(.zk-vt-fade) { animation: 400ms var(--zk-ease-ios) both zk-vt-under-in; }
+/* tab: switching tabs. A quick crossfade, the new screen rising a touch. */
+::view-transition-old(.zk-vt-tab) { animation: 120ms ease-out both zk-vt-fade-out; }
+::view-transition-new(.zk-vt-tab) { animation: 300ms var(--zk-ease-out) 30ms both zk-vt-rise; }
 /* fade: everything else */
 ::view-transition-old(.zk-vt-fade) { animation: 140ms ease-out both zk-vt-fade-out; }
 ::view-transition-new(.zk-vt-fade) { animation: 220ms ease-out 60ms both zk-vt-fade-in; }
 
-@keyframes zk-vt-out-left { to { transform: translateX(-18%); opacity: 0; } }
-@keyframes zk-vt-in-right { from { transform: translateX(34%); opacity: 0; } }
-@keyframes zk-vt-out-right { to { transform: translateX(26%); opacity: 0; } }
-@keyframes zk-vt-in-left { from { transform: translateX(-14%); opacity: 0; } }
+@keyframes zk-vt-over-in { from { transform: translateX(100%); } }
+@keyframes zk-vt-under-out { to { transform: translateX(-24%); opacity: .4; } }
+@keyframes zk-vt-over-out { to { transform: translateX(100%); } }
+@keyframes zk-vt-under-in { from { transform: translateX(-24%); opacity: .4; } }
 @keyframes zk-vt-fade-out { to { opacity: 0; } }
 @keyframes zk-vt-fade-in { from { opacity: 0; } }
-@keyframes zk-vt-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes zk-vt-rise { from { opacity: 0; transform: translateY(12px) scale(.99); } }
 
-/* Anchors: the tab bar and the test-mode ribbon never move during a transition. */
+/* Anchors: the tab bar and the test-mode ribbon never move between two screens that both have them. */
 ::view-transition-group(zk-tabbar), ::view-transition-group(zk-ribbon) { animation: none; z-index: 100; }
 ::view-transition-old(zk-tabbar), ::view-transition-old(zk-ribbon) { display: none; }
 ::view-transition-new(zk-tabbar), ::view-transition-new(zk-ribbon) { animation: none; }
+/* Opening a screen without the tab bar (a stash, Hide): the bar drops out of the way; coming back, it
+   springs back up. (:only-child = only one side of the transition has it.) */
+::view-transition-old(zk-tabbar):only-child { display: block; animation: 240ms cubic-bezier(.4, 0, 1, 1) both zk-vt-dock-away; }
+::view-transition-new(zk-tabbar):only-child { animation: 520ms var(--zk-ease-spring) 140ms both zk-vt-dock-back; }
+@keyframes zk-vt-dock-away { to { transform: translateY(160%); } }
+@keyframes zk-vt-dock-back { from { transform: translateY(160%); } }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation-duration: 0s !important; animation-delay: 0s !important; }
@@ -244,17 +247,23 @@ a { text-decoration: none; }
 .zk-splash {
   position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; overflow: hidden;
   background: radial-gradient(90% 60% at 50% 42%, #2F1F7A 0%, #170F3A 45%, var(--zk-bg) 80%);
-  transition: opacity 420ms var(--zk-ease-out), transform 420ms var(--zk-ease-out);
+  transition: opacity 520ms cubic-bezier(.4, 0, .2, 1) 80ms;
   -webkit-user-select: none; user-select: none; touch-action: manipulation;
 }
 /* Already seen this visit (set before paint by the head script): never flash it. */
 html[data-splashed] .zk-splash { display: none; }
-.zk-splash.is-out { opacity: 0; transform: scale(1.08); pointer-events: none; }
+/* The exit: the vault rushes at you and the splash dissolves into home, which rises in behind it. */
+.zk-splash.is-out { opacity: 0; pointer-events: none; }
 .zk-splash-sun {
   position: absolute; left: 50%; top: 42%; width: 900px; height: 900px; margin: -450px 0 0 -450px; border-radius: 50%;
   background: var(--zk-sunburst-gold); opacity: .16; animation: zk-spin 40s linear infinite; will-change: transform;
 }
-.zk-splash-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 18px; margin-top: -4vh; }
+.zk-splash-stage {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 18px; margin-top: -4vh;
+  transform-origin: 50% 32%; transition: transform 640ms cubic-bezier(.55, 0, .2, 1), opacity 380ms ease-in 140ms;
+}
+.zk-splash.is-out .zk-splash-stage { transform: scale(1.7); opacity: 0; }
+.zk-splash.is-out .zk-splash-sun { opacity: 0; transition: opacity 300ms ease-out; }
 .zk-splash-vault { position: relative; animation: zk-splash-pop 520ms var(--zk-ease-spring) both; }
 /* The glow is a soft gradient, not the vault's big box-shadow (which some renderers clip into a visible square). */
 .zk-splash-vault::before {
@@ -270,3 +279,11 @@ html[data-splashed] .zk-splash { display: none; }
 @keyframes zk-splash-pop { from { opacity: 0; transform: scale(.55) translateY(12px) } to { opacity: 1; transform: none } }
 @keyframes zk-splash-rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 @media (prefers-reduced-motion: reduce) { .zk-splash-sun { animation: none; } }
+
+/* Home under the splash: hidden until the splash steps aside, then each block rises in (Feed's
+   .zk-home-stagger children carry --i) and the nav dock springs up from below. */
+html:not([data-splashed]) .zk-home-stagger > * { opacity: 0; }
+html[data-splash-exit] .zk-home-stagger > * { animation: zk-home-in 760ms var(--zk-ease-out) both; animation-delay: calc(var(--i, 0) * 80ms + 60ms); }
+html[data-splash-exit] .zk-dock { animation: zk-dock-in 760ms var(--zk-ease-spring) 180ms both; }
+@keyframes zk-home-in { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes zk-dock-in { from { transform: translate(-50%, 160%); } to { transform: translate(-50%, 0); } }

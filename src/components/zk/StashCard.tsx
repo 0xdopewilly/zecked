@@ -139,7 +139,7 @@ function formatLeft(ms: number): string {
 }
 
 /** "42s", "4m 12s", "2h 5m". */
-function formatDuration(sec: number): string {
+export function formatDuration(sec: number): string {
   const s = Math.max(0, Math.round(sec));
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
@@ -547,7 +547,8 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
             {hasReactions && (
               <ReactionSummary counts={stash.reactions} fit style={{ flex: "0 1 auto" }} />
             )}
-            {!needsFunding && (
+            {/* "0 tries" says nothing: the count shows up once someone has a go. */}
+            {!needsFunding && metaN > 0 && (
               <Bump value={metaN}>
                 <Chip
                   variant="info"
