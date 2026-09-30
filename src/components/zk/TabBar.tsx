@@ -36,6 +36,7 @@ export function TabBar({ active = "home", onSelect }: TabBarProps) {
         // Design height (90px) includes the home-indicator zone; on devices with a safe area the bar
         // grows only if the inset is larger than that zone.
         minHeight: "var(--zk-tabbar-h)",
+        viewTransitionName: "zk-tabbar",
         background: "rgb(var(--zk-bg-rgb) / .97)",
         borderTop: "1px solid var(--zk-border)",
         display: "grid",
@@ -52,6 +53,7 @@ export function TabBar({ active = "home", onSelect }: TabBarProps) {
           <Link
             key={id}
             href={href}
+            transitionTypes={["tab"]}
             aria-current={on ? "page" : undefined}
             onClick={() => onSelect?.(id)}
             style={{

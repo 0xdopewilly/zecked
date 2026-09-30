@@ -417,6 +417,7 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
   return (
     <Link
       href={href}
+      transitionTypes={["nav-forward"]}
       style={{
         display: "block",
         flex: "none",

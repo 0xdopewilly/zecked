@@ -1,0 +1,17 @@
+"use client";
+// Screen-to-screen motion (browser View Transitions via React's <ViewTransition>):
+//   "nav-forward" (opening a stash): the new screen pushes in from the right
+//   "tab" (tab bar): a quick crossfade with a small rise
+//   anything else (back, redirects, links): a soft crossfade
+// The tab bar and the test-mode ribbon stay put. Styles live in globals.css (zk-vt-*).
+import { ViewTransition, type ReactNode } from "react";
+
+const MAP = { "nav-forward": "zk-vt-push", "nav-back": "zk-vt-pop", tab: "zk-vt-tab", default: "zk-vt-fade" };
+
+export function PageTransition({ children }: { children: ReactNode }) {
+  return (
+    <ViewTransition enter={MAP} exit={MAP} default="none">
+      {children}
+    </ViewTransition>
+  );
+}

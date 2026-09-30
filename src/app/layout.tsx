@@ -51,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ) : (
           <>
             {testMode && (
-              <div className="zk-testmode">
+              <div className="zk-testmode" style={{ viewTransitionName: "zk-ribbon" }}>
                 {process.env.ZECKED_NETWORK === "testnet" ? "Testnet · test ZEC, not real money" : "Sim mode · play ZEC, not real money"}
               </div>
             )}

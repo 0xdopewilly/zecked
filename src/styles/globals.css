@@ -62,3 +62,38 @@ a { text-decoration: none; }
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ---------- Screen transitions (src/components/zk/PageTransition.tsx) ---------- */
+/* Taps during a transition reach the live page instead of the snapshot overlay. */
+::view-transition { pointer-events: none; }
+::view-transition-group(root) { animation-duration: 0s; }
+
+/* push: opening something (a stash) */
+::view-transition-old(.zk-vt-push) { animation: 260ms cubic-bezier(.4, 0, .2, 1) both zk-vt-out-left; }
+::view-transition-new(.zk-vt-push) { animation: 340ms cubic-bezier(.16, 1, .3, 1) both zk-vt-in-right; }
+/* pop: going back */
+::view-transition-old(.zk-vt-pop) { animation: 220ms cubic-bezier(.4, 0, 1, 1) both zk-vt-out-right; }
+::view-transition-new(.zk-vt-pop) { animation: 320ms cubic-bezier(.16, 1, .3, 1) both zk-vt-in-left; }
+/* tab: switching tabs */
+::view-transition-old(.zk-vt-tab) { animation: 110ms ease-out both zk-vt-fade-out; }
+::view-transition-new(.zk-vt-tab) { animation: 240ms cubic-bezier(.16, 1, .3, 1) 40ms both zk-vt-rise; }
+/* fade: everything else */
+::view-transition-old(.zk-vt-fade) { animation: 140ms ease-out both zk-vt-fade-out; }
+::view-transition-new(.zk-vt-fade) { animation: 220ms ease-out 60ms both zk-vt-fade-in; }
+
+@keyframes zk-vt-out-left { to { transform: translateX(-18%); opacity: 0; } }
+@keyframes zk-vt-in-right { from { transform: translateX(34%); opacity: 0; } }
+@keyframes zk-vt-out-right { to { transform: translateX(26%); opacity: 0; } }
+@keyframes zk-vt-in-left { from { transform: translateX(-14%); opacity: 0; } }
+@keyframes zk-vt-fade-out { to { opacity: 0; } }
+@keyframes zk-vt-fade-in { from { opacity: 0; } }
+@keyframes zk-vt-rise { from { opacity: 0; transform: translateY(10px); } }
+
+/* Anchors: the tab bar and the test-mode ribbon never move during a transition. */
+::view-transition-group(zk-tabbar), ::view-transition-group(zk-ribbon) { animation: none; z-index: 100; }
+::view-transition-old(zk-tabbar), ::view-transition-old(zk-ribbon) { display: none; }
+::view-transition-new(zk-tabbar), ::view-transition-new(zk-ribbon) { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation-duration: 0s !important; animation-delay: 0s !important; }
+}
