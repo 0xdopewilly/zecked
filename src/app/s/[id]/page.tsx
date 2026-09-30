@@ -4,7 +4,7 @@
 // wallet" (/wallet); guest → "Sign up to keep it" (/signin?reason=win, back here after).
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { takeStash } from "@/lib/stashCache";
 import { StashSkeleton } from "./StashSkeleton";
@@ -41,7 +41,6 @@ const tile: CSSProperties = {
 export default function StashPage() {
   const params = useParams<{ id: string }>();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id ?? "";
-  const router = useRouter();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [win, setWin] = useState<WinPayload | null>(null);
   const [signedIn, setSignedIn] = useState(false);
@@ -66,9 +65,6 @@ export default function StashPage() {
     void fetchStash();
   }, [fetchStash]);
 
-  useEffect(() => {
-    if (id) router.prefetch(`/s/${id}/claim`);
-  }, [id, router]);
 
   // Only used for the banner copy; a failure just means "treat as guest".
   useEffect(() => {

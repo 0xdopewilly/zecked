@@ -15,6 +15,9 @@ const peeks = new Map<string, { at: number; p: Promise<Detail> }>();
 export function prefetchStash(id: string) {
   const hit = taps.get(id);
   if (hit && Date.now() - hit.at < TAP_TTL_MS) return;
+  // Already warmed by the feed: open from that (takeStash registers the view), no new request.
+  const peek = peeks.get(id);
+  if (peek && Date.now() - peek.at < PEEK_TTL_MS) return;
   const p = api.stash(id);
   p.catch(() => taps.delete(id));
   taps.set(id, { at: Date.now(), p });
