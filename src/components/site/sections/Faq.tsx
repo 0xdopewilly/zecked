@@ -13,7 +13,7 @@ const QA: { q: string; a: ReactNode }[] = [
   },
   {
     q: "Is this real money?",
-    a: "Not yet. ZECKED is in test mode on the Zcash testnet, plus a play-money demo. Real ZEC comes after a security review.",
+    a: "Not yet. ZECKED runs on the Zcash testnet with free test ZEC, which has no market value. Real ZEC comes after a security review.",
   },
   {
     q: "How do you pick the winner?",

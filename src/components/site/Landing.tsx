@@ -13,7 +13,7 @@ import { LiveStats, type SiteStats } from "./sections/LiveStats";
 import { TickerStrip } from "./sections/TickerStrip";
 import { WhyZcash } from "./sections/WhyZcash";
 
-export function Landing({ appUrl, demoUrl, stats, ticker }: { appUrl: string; demoUrl: string; stats: SiteStats | null; ticker: string[] }) {
+export function Landing({ appUrl, stats, ticker }: { appUrl: string; stats: SiteStats | null; ticker: string[] }) {
   // Pause CSS animations in sections that are far off screen (cheap frames while scrolling).
   useEffect(() => {
     const els = Array.from(document.querySelectorAll<HTMLElement>("main.zks > section, main.zks > div, main.zks > footer"));
@@ -30,7 +30,7 @@ export function Landing({ appUrl, demoUrl, stats, ticker }: { appUrl: string; de
       <CursorGlow />
       <Grain />
       <Nav appUrl={appUrl} />
-      <Hero appUrl={appUrl} demoUrl={demoUrl} network={stats?.network} />
+      <Hero appUrl={appUrl} network={stats?.network} />
       <TickerStrip items={ticker} />
       <HowItWorks />
       <Games appUrl={appUrl} />
@@ -38,8 +38,8 @@ export function Landing({ appUrl, demoUrl, stats, ticker }: { appUrl: string; de
       <LiveStats stats={stats} />
       <GetTestZec appUrl={appUrl} />
       <Faq />
-      <FinalCta appUrl={appUrl} demoUrl={demoUrl} />
-      <Footer appUrl={appUrl} demoUrl={demoUrl} />
+      <FinalCta appUrl={appUrl} />
+      <Footer appUrl={appUrl} />
     </main>
   );
 }

@@ -96,7 +96,7 @@ export function RiddleCard({ appUrl, reduce }: { appUrl: string; reduce: boolean
 
       <div className="zkg-demo">
         <div className="zkg-demo-top">
-          <LiveBadge state={won ? "ended" : "live"} label={won ? "Cracked by you" : "Live demo · try it"} />
+          <LiveBadge state={won ? "ended" : "live"} label={won ? "Cracked by you" : "Try it right here"} />
           <AnimatePresence mode="popLayout" initial={false}>
             {won ? (
               <motion.button
@@ -110,7 +110,7 @@ export function RiddleCard({ appUrl, reduce }: { appUrl: string; reduce: boolean
                 whileTap={{ scale: 0.9 }}
                 transition={{ type: "spring", stiffness: 500, damping: 18 }}
               >
-                <Icon icon="back" size={14} stroke={2.8} /> Replay demo
+                <Icon icon="back" size={14} stroke={2.8} /> Play again
               </motion.button>
             ) : (
               <motion.span key="prize" className="zkg-prize" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }}>

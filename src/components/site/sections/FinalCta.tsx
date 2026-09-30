@@ -48,7 +48,7 @@ ${SPLIT_FIX_CSS}
 @media (max-width: 520px) { .zkfc-play, .zkfc-demo .zks-btn { height: 66px; font-size: 21px; padding: 0 26px; } }
 `;
 
-export function FinalCta({ appUrl, demoUrl }: { appUrl: string; demoUrl: string }) {
+export function FinalCta({ appUrl }: { appUrl: string }) {
   const ref = useRef<HTMLElement>(null);
   const reduce = useReduced();
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
@@ -142,12 +142,12 @@ export function FinalCta({ appUrl, demoUrl }: { appUrl: string; demoUrl: string 
             </div>
             <div className="zkfc-demo">
               <Magnetic strength={0.25}>
-                <a className="zks-btn zks-btn-ghost" href={demoUrl}>
-                  Try the 10-second demo
+                <a className="zks-btn zks-btn-ghost" href="#testzec">
+                  <Icon icon="coin" size={22} stroke={2.4} /> Get free test ZEC
                 </a>
               </Magnetic>
               <span className="zkfc-note">
-                <Icon icon="sparkle" size={14} stroke={2.4} /> Play ZEC, no setup
+                <Icon icon="sparkle" size={14} stroke={2.4} /> From the Zcash faucet, in a minute
               </span>
             </div>
           </div>

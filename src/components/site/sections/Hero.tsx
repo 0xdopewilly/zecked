@@ -26,7 +26,7 @@ function Blob({ color, size, x, y, delay, dur }: { color: string; size: number; 
   );
 }
 
-export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: string; network?: string }) {
+export function Hero({ appUrl, network }: { appUrl: string; network?: string }) {
   const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
   const p = useSpring(scrollYProgress, { stiffness: 120, damping: 26, mass: 0.4 });
@@ -116,8 +116,8 @@ export function Hero({ appUrl, demoUrl, network }: { appUrl: string; demoUrl: st
                 </a>
               </Magnetic>
               <Magnetic strength={0.2}>
-                <a href={demoUrl} className="zks-btn zks-btn-ghost">
-                  Try the 10-second demo
+                <a href="#testzec" className="zks-btn zks-btn-ghost">
+                  <Icon icon="coin" size={20} stroke={2.4} /> Get free test ZEC
                 </a>
               </Magnetic>
             </motion.div>

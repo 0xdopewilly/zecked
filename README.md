@@ -17,7 +17,7 @@ Players never pay to play; the hider puts up the prize. Winners stay anonymous, 
 | App | Next.js 16 (App Router) + React 19, ported 1:1 from the Claude Design handoff (tokens, components, motion) | `src/app`, `src/components` |
 | Game server | Stash lifecycle, rate-limited riddle guesses, sealed calls, first-correct-wins, XP / tiers / badges, leaderboards, ticker | `src/lib/server/game.ts`, `players.ts` |
 | Storage | Upstash Redis (`KV_REST_API_URL` / `UPSTASH_REDIS_REST_URL`), falling back to an in-memory store | `src/lib/server/kv.ts` |
-| Sports feed | Live fixtures and results (ESPN public scoreboard), plus quick demo matches in test mode | `src/lib/server/sports.ts` |
+| Sports feed | Live fixtures and results (ESPN public scoreboard), plus quick demo matches in local sim mode | `src/lib/server/sports.ts` |
 | Zcash engine | `sim`, or the `vault` HTTP service holding a testnet hot wallet (ZIP-321 funding with `ZK:<id>` memos, shielded payouts) | `src/lib/zcash/engine.ts`, `vault/` |
 | Share cards | 1200×630 OG images for X and Telegram | `src/app/s/[id]/opengraph-image.tsx` |
 
@@ -26,7 +26,7 @@ Players never pay to play; the hider puts up the prize. Winners stay anonymous, 
 npm install
 npm run dev          # http://localhost:3100
 ```
-Test mode seeds a feed on first boot: riddles, real upcoming matches, and a demo match that kicks off every 8 minutes and plays out in about 6.
+Sim mode (local dev only) seeds a feed on first boot: riddles, real upcoming matches, and a demo match that kicks off every 8 minutes and plays out in about 6.
 
 ## Environment
 | Var | Default | Purpose |

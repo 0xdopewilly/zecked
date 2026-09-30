@@ -133,7 +133,7 @@ export function PredictionCard({ appUrl, reduce }: { appUrl: string; reduce: boo
 
       <div ref={panel} className="zkg-demo">
         <div className="zkg-demo-top">
-          <LiveBadge label={sealed ? "Your call is in" : "Calls open · demo"} />
+          <LiveBadge label={sealed ? "Your call is in" : "Calls open · example"} />
           <AnimatePresence mode="popLayout" initial={false}>
             {sealed ? (
               <motion.button
@@ -156,7 +156,7 @@ export function PredictionCard({ appUrl, reduce }: { appUrl: string; reduce: boo
             )}
           </AnimatePresence>
         </div>
-        <div className="zkg-league">Champions League · demo match</div>
+        <div className="zkg-league">Champions League · example match</div>
 
         <div className="zkg-teams">
           <div className="zkg-team">

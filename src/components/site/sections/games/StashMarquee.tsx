@@ -117,7 +117,7 @@ export function StashMarquee() {
         <span className="zkg-kind" style={{ color: "var(--zk-text)" }}>
           A peek at the feed
         </span>
-        <span className="zkg-marquee-note">Demo stashes</span>
+        <span className="zkg-marquee-note">Example stashes</span>
       </div>
       <Marquee speed={70} gap={26}>
         {stashes.map((s, i) => (

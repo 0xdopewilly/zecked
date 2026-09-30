@@ -56,7 +56,7 @@ function FooterLink({ href, children, external }: { href: string; children: stri
   );
 }
 
-export function Footer({ appUrl, demoUrl }: { appUrl: string; demoUrl: string }) {
+export function Footer({ appUrl }: { appUrl: string }) {
   const ref = useRef<HTMLElement>(null);
   const reduce = useReduced();
   const lenis = useLenis();
@@ -90,9 +90,6 @@ export function Footer({ appUrl, demoUrl }: { appUrl: string; demoUrl: string })
             <ul>
               <FooterLink href={appUrl} external>
                 App
-              </FooterLink>
-              <FooterLink href={demoUrl} external>
-                Demo
               </FooterLink>
               <FooterLink href="#how">How it works</FooterLink>
             </ul>
