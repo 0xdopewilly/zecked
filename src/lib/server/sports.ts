@@ -2,6 +2,7 @@
 // Source: ESPN's public scoreboard JSON (no key). Swap for a licensed provider before a real-money launch.
 // Test mode also offers quick "demo" matches that play out in a few minutes.
 import { crestUrl } from "@/lib/crest";
+import { kv } from "./kv";
 import type { Match, MatchEvent, MatchStatus, Team } from "@/lib/types";
 import { hashSeed, prng } from "./util";
 
@@ -137,7 +138,20 @@ const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
 
 /** Upcoming fixtures (next `days` days) across curated leagues, plus demo matches in test mode. */
 export async function upcomingMatches(days = 6, includeDemo = true): Promise<Match[]> {
+  // Per instance (memory) and shared across instances (KV): a cold server never makes the picker wait
+  // on ~55 ESPN requests if any other server fetched the list in the last 10 minutes.
   const list = await cached(`upcoming:${days}`, 10 * 60_000, async () => {
+    const shared = await kv().get<Match[]>(`sports:upcoming:${days}`).catch(() => null);
+    if (shared?.length) return shared;
+    const fresh = await fetchUpcoming(days);
+    if (fresh.length) await kv().set(`sports:upcoming:${days}`, fresh, { exSeconds: 600 }).catch(() => false);
+    return fresh;
+  });
+  return includeDemo ? [...demoMatches(), ...list] : list;
+}
+
+async function fetchUpcoming(days: number): Promise<Match[]> {
+  {
     const dates = Array.from({ length: days }, (_, i) => ymd(new Date(Date.now() + i * 86400_000)));
     const jobs = LEAGUES.flatMap((l) => dates.map((d) => ({ l: l.slug, d })));
     const out: Match[] = [];
@@ -152,8 +166,7 @@ export async function upcomingMatches(days = 6, includeDemo = true): Promise<Mat
       .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)))
       .sort((a, b) => a.kickoff.localeCompare(b.kickoff))
       .slice(0, 60);
-  });
-  return includeDemo ? [...demoMatches(), ...list] : list;
+  }
 }
 
 /** Current state of one match (cached ~20s). */

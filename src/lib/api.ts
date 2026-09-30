@@ -24,7 +24,7 @@ import type {
 
 export type SignedIn = { player: Player; creditedZat: number; isNew?: boolean };
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: { "content-type": "application/json", ...(init?.headers || {}) },
@@ -37,6 +37,50 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     throw err;
   }
   return data as T;
+}
+
+/* Client cache for reads. Identical GETs in flight share one request; a few slow-changing reads are
+   remembered briefly so hopping between screens doesn't wait on the network again. Any write (POST…)
+   clears it all, so what you just did always shows. Polled endpoints (feed, stash, notices) stay live. */
+const TTL: [RegExp, number][] = [
+  [/^\/config$/, 300_000],
+  [/^\/matches/, 60_000],
+  [/^\/leaderboard/, 15_000],
+  [/^\/players\//, 15_000],
+  [/^\/me$/, 4_000],
+  [/^\/me\/stashes$/, 4_000],
+];
+const reads = new Map<string, { at: number; p: Promise<unknown> }>();
+
+function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || "GET").toUpperCase();
+  if (method !== "GET") {
+    reads.clear();
+    return send<T>(path, init);
+  }
+  const ttl = TTL.find(([re]) => re.test(path))?.[1] ?? 0;
+  const hit = reads.get(path);
+  if (hit && (Date.now() - hit.at < ttl || !("done" in hit))) return hit.p as Promise<T>;
+  const entry: { at: number; p: Promise<unknown>; done?: true } = { at: Date.now(), p: Promise.resolve() };
+  entry.p = send<T>(path, init).then(
+    (v) => {
+      entry.done = true;
+      entry.at = Date.now();
+      if (!ttl) reads.delete(path);
+      return v;
+    },
+    (e) => {
+      reads.delete(path);
+      throw e;
+    },
+  );
+  reads.set(path, entry);
+  return entry.p as Promise<T>;
+}
+
+/** Forget cached reads (e.g. after signing in or out). */
+export function clearApiCache() {
+  reads.clear();
 }
 
 export type FeedFilter = "all" | "riddles" | "predictions" | "ending" | "biggest";

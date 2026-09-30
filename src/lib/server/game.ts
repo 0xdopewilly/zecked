@@ -69,7 +69,7 @@ export interface StashRecord {
   network: string;
   riddle?: { text: string; answerHashes: string[]; salt: string; hint?: string; hintUnlocksAt?: string; answer?: string };
   usdAtHide?: number; // the dollar size the hider picked (shown as-is, not re-derived from rounded zats)
-  prediction?: { matchId: string; kind: PredictionKind; kickoff: string };
+  prediction?: { matchId: string; kind: PredictionKind; kickoff: string; home?: { code: string; name: string }; away?: { code: string; name: string }; leagueName?: string };
   refundAddress?: string;
   funding: { address: string; uri: string; amountZat: number };
   simFundedZat?: number;
@@ -183,7 +183,8 @@ export async function createStash(
     if (!m) throw new HttpError(400, "Couldn't find that match");
     const lead = m.demo ? 60_000 : 10 * 60_000;
     if (m.status !== "scheduled" || Date.parse(m.kickoff) < now + lead) throw new HttpError(400, "That match kicks off too soon. Pick another one");
-    prediction = { matchId, kind, kickoff: m.kickoff };
+    // Team names are kept on the record so link previews never need a live sports lookup.
+    prediction = { matchId, kind, kickoff: m.kickoff, home: { code: m.home.code, name: m.home.name }, away: { code: m.away.code, name: m.away.name }, leagueName: m.leagueName };
     expiresAt = new Date(Date.parse(m.kickoff) + 5 * 3600_000).toISOString();
     expiryHours = Math.round((Date.parse(expiresAt) - now) / 3600_000);
   } else {
@@ -613,8 +614,11 @@ export async function claim(s: StashRecord, p: PlayerRecord, body: { claimToken:
 
 // ---------- views & projection ----------
 async function recordView(s: StashRecord, pid: string) {
-  await kv().set(K.firstSeen(s.id, pid), Date.now(), { nx: true, exSeconds: 14 * 86400 });
-  const map = (await kv().get<Record<string, number>>(K.viewers(s.id))) || {};
+  const [, seen] = await Promise.all([
+    kv().set(K.firstSeen(s.id, pid), Date.now(), { nx: true, exSeconds: 14 * 86400 }),
+    kv().get<Record<string, number>>(K.viewers(s.id)),
+  ]);
+  const map = seen || {};
   const cutoff = Date.now() - 5 * 60_000;
   for (const k of Object.keys(map)) if (map[k] < cutoff) delete map[k];
   map[pid] = Date.now();
@@ -622,8 +626,16 @@ async function recordView(s: StashRecord, pid: string) {
 }
 
 export async function toPublic(s: StashRecord, viewerId?: string, rate?: number): Promise<PublicStash> {
-  const r = rate ?? (await zecUsd());
-  const hider = await getPlayer(s.hiderId);
+  // Everything this card needs, fetched in parallel (one pipelined round trip to Redis instead of ~6).
+  const [r, hider, triesN, viewersMap, match, callsN, rx] = await Promise.all([
+    rate ?? zecUsd(),
+    getPlayer(s.hiderId),
+    s.riddle ? kv().get<number>(K.tries(s.id)) : Promise.resolve(null),
+    s.riddle ? kv().get<Record<string, number>>(K.viewers(s.id)) : Promise.resolve(null),
+    s.prediction ? getMatch(s.prediction.matchId) : Promise.resolve(null),
+    s.prediction ? kv().get<number>(K.callCount(s.id)) : Promise.resolve(null),
+    reactionCounts(s.id),
+  ]);
   const isMine = viewerId === s.hiderId;
   const usd = s.usdAtHide ?? Math.round((s.amountZat / 1e8) * r * 100) / 100;
   const ended = s.status === "zecked" || s.status === "refunded" || s.status === "void";
@@ -642,8 +654,8 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     isMine,
   };
   if (s.riddle) {
-    const tries = (await kv().get<number>(K.tries(s.id))) || 0;
-    const viewers = (await kv().get<Record<string, number>>(K.viewers(s.id))) || {};
+    const tries = triesN || 0;
+    const viewers = viewersMap || {};
     const cutoff = Date.now() - 5 * 60_000;
     const unlocked = !!s.riddle.hintUnlocksAt && Date.now() >= Date.parse(s.riddle.hintUnlocksAt);
     out.riddle = {
@@ -658,8 +670,8 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     };
   }
   if (s.prediction) {
-    const m = await getMatch(s.prediction.matchId);
-    const calls = (await kv().get<number>(K.callCount(s.id))) || 0;
+    const m = match;
+    const calls = callsN || 0;
     out.prediction = {
       match: m || {
         id: s.prediction.matchId,
@@ -687,7 +699,6 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     };
   }
   if (isMine && s.status === "awaiting_funding") out.funding = s.funding;
-  const rx = await reactionCounts(s.id);
   if (rx && Object.keys(rx).length) out.reactions = rx;
   return out;
 }
@@ -695,19 +706,22 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
 export async function stashDetail(id: string, viewer: PlayerRecord) {
   let s = await getStash(id);
   if (!s) throw new HttpError(404, "Stash not found");
-  s = await tickStash(s);
-  s = (await getStash(id))!;
-  if (s.status === "live" || s.status === "locked") await recordView(s, viewer.id);
-  const stash = await toPublic(s, viewer.id);
+  s = await tickStash(s); // returns the (possibly updated) record: no second read needed
+  const live = s.status === "live" || s.status === "locked";
+  // The view ping, the public card and the viewer's own bits, all at once.
+  const [, stash, mineRx, t, c] = await Promise.all([
+    live ? recordView(s, viewer.id) : Promise.resolve(),
+    toPublic(s, viewer.id),
+    myReactions(s.id, viewer.id),
+    s.type === "riddle" ? kv().get<{ used: number; windowStart: number }>(K.myTries(s.id, viewer.id)) : Promise.resolve(null),
+    s.type === "prediction" ? kv().get<CallRecord>(K.myCall(s.id, viewer.id)) : Promise.resolve(null),
+  ]);
   const extra: { myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload; myReactions?: Reaction[] } = {};
-  const mineRx = await myReactions(s.id, viewer.id);
   if (mineRx.length) extra.myReactions = mineRx;
   if (s.type === "riddle") {
-    const t = await kv().get<{ used: number; windowStart: number }>(K.myTries(s.id, viewer.id));
     const fresh = !t || Date.now() - t.windowStart > TRY_WINDOW_MS;
     extra.myTries = fresh ? { left: MAX_TRIES } : { left: MAX_TRIES - t!.used, resetsAt: new Date(t!.windowStart + TRY_WINDOW_MS).toISOString() };
   } else {
-    const c = await kv().get<CallRecord>(K.myCall(s.id, viewer.id));
     if (c) extra.myCall = { kind: c.kind, home: c.home, away: c.away, pick: c.pick, at: c.at };
     const m = stash.prediction!.match;
     if (m.status !== "scheduled" || s.status !== "live") extra.runners = await runners(s, m, viewer.id);

@@ -14,7 +14,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   let title = `Riddle stash · ${zec} ZEC · ZECKED`;
   let description = s.riddle ? `“${s.riddle.text}” First one to crack it keeps it.` : "First correct call keeps the ZEC.";
   if (s.prediction) {
-    const m = await getMatch(s.prediction.matchId);
+    // Stored at hide time (no live sports/price lookups on every navigation); older stashes fall back.
+    const p = s.prediction;
+    const m = p.home && p.away ? { home: p.home, away: p.away, leagueName: p.leagueName || "Football" } : await getMatch(p.matchId);
     const usd = s.usdAtHide ?? Math.round((s.amountZat / 1e8) * (await zecUsd()));
     if (m) {
       share = s.prediction.kind === "exact" ? `First to call ${m.home.code} vs ${m.away.code} exactly ZECKS $${usd} ⚽` : `First to call the ${m.home.code} vs ${m.away.code} winner ZECKS $${usd} ⚽`;

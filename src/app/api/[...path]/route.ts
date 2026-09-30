@@ -28,7 +28,7 @@ import { passkeyLoginOptions, passkeyLoginVerify, passkeyRegisterOptions, passke
 import { SIM_WELCOME_BONUS_ZAT, balanceOf, credit, simulateDeposit, walletInfo, withdraw } from "@/lib/server/wallet";
 import { ensureSeeded } from "@/lib/server/seed";
 import { upcomingMatches } from "@/lib/server/sports";
-import { kv } from "@/lib/server/kv";
+import { kv, withKvStats } from "@/lib/server/kv";
 import { notices } from "@/lib/server/notify";
 import { publicProfile, toggleReaction } from "@/lib/server/social";
 import { removePushSub, savePushSub } from "@/lib/server/push";
@@ -305,6 +305,19 @@ async function handle(req: NextRequest, ctx: Ctx) {
   }
 }
 
-export const GET = handle;
-export const POST = handle;
-export const PATCH = handle;
+/** Every API response says how long it took and how many KV calls it made (DevTools → Timing). */
+async function timed(req: NextRequest, ctx: Ctx) {
+  const t0 = performance.now();
+  const { result, stats } = await withKvStats(() => handle(req, ctx));
+  const total = performance.now() - t0;
+  try {
+    result.headers.set("server-timing", `kv;desc="${stats.calls} calls";dur=${stats.ms.toFixed(1)}, app;dur=${total.toFixed(1)}`);
+  } catch {
+    /* immutable redirect headers */
+  }
+  return result;
+}
+
+export const GET = timed;
+export const POST = timed;
+export const PATCH = timed;

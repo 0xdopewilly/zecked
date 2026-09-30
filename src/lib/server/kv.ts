@@ -1,7 +1,32 @@
 // Tiny key-value layer. Uses Upstash Redis when configured (production / Vercel),
 // otherwise an in-process memory store (local dev, single-instance demos).
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Redis } from "@upstash/redis";
 import { Redis as IORedis } from "ioredis";
+
+/* Per-request KV accounting, reported as a Server-Timing header by the API (see route.ts). */
+type KvStats = { calls: number; ms: number };
+const kvStore = new AsyncLocalStorage<KvStats>();
+export function withKvStats<T>(fn: () => Promise<T>) {
+  const stats: KvStats = { calls: 0, ms: 0 };
+  return kvStore.run(stats, async () => ({ result: await fn(), stats }));
+}
+function instrument(inner: KV): KV {
+  return new Proxy(inner, {
+    get(target, prop, recv) {
+      const v = Reflect.get(target, prop, recv);
+      if (typeof v !== "function") return v;
+      return (...args: unknown[]) => {
+        const st = kvStore.getStore();
+        if (!st) return (v as (...a: unknown[]) => unknown).apply(target, args);
+        const t0 = performance.now();
+        st.calls++;
+        const out = (v as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+        return Promise.resolve(out).finally(() => (st.ms += performance.now() - t0));
+      };
+    },
+  });
+}
 
 export interface KV {
   get<T>(key: string): Promise<T | null>;
@@ -212,11 +237,12 @@ export function kv(): KV {
   const tcp = process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL;
   const prefix = `zk:${process.env.ZECKED_NETWORK || "sim"}:`;
   if (tcp) {
-    const client = new IORedis(tcp, { maxRetriesPerRequest: 2, enableReadyCheck: true, lazyConnect: false, connectTimeout: 8000, family: 0 });
+    // Auto-pipelining: commands issued in the same tick (e.g. a Promise.all) share one round trip.
+    const client = new IORedis(tcp, { maxRetriesPerRequest: 2, enableReadyCheck: true, lazyConnect: false, connectTimeout: 8000, family: 0, enableAutoPipelining: true });
     client.on("error", (e) => console.error("redis error", e.message));
-    globalThis.__zkKV = new TcpRedisKV(client, prefix);
+    globalThis.__zkKV = instrument(new TcpRedisKV(client, prefix));
   } else {
-    globalThis.__zkKV = url && token ? new RedisKV(new Redis({ url, token }), prefix) : new MemoryKV();
+    globalThis.__zkKV = instrument(url && token ? new RedisKV(new Redis({ url, token }), prefix) : new MemoryKV());
   }
   return globalThis.__zkKV;
 }

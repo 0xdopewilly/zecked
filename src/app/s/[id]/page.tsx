@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { takeStash } from "@/lib/stashCache";
+import { StashSkeleton } from "./StashSkeleton";
 import type { WinPayload } from "@/lib/types";
 import { Button, Icon } from "@/components/zk";
 import RiddleStash from "@/components/screens/RiddleStash";
@@ -85,36 +86,7 @@ export default function StashPage() {
 
   const handleWin = useCallback((w: WinPayload) => setWin(w), []);
 
-  if (load.kind === "loading") {
-    // Shaped like the stash screen, so the real one settles in without a jump.
-    const bar = (w: string, h: number, extra: CSSProperties = {}): CSSProperties => ({
-      width: w,
-      height: h,
-      borderRadius: "var(--zk-radius-md)",
-      background: "rgb(var(--zk-white-rgb) / .07)",
-      animation: "zk-glow 1.4s ease-in-out infinite",
-      ...extra,
-    });
-    return (
-      <main className="zk-screen" style={{ background: "var(--zk-bg-hero-purple)", gap: "var(--zk-space-18)" }} aria-busy="true" aria-label="Loading stash">
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <div style={bar("44px", 44, { borderRadius: "var(--zk-radius-lg)" })} />
-          <div style={bar("44px", 44, { borderRadius: "var(--zk-radius-lg)" })} />
-        </div>
-        <div style={{ display: "flex", gap: "var(--zk-space-10)", alignItems: "center" }}>
-          <div style={bar("48px", 48, { borderRadius: "var(--zk-radius-lg)" })} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={bar("40%", 12)} />
-            <div style={bar("60%", 14)} />
-          </div>
-        </div>
-        <div style={bar("100%", 180, { borderRadius: "var(--zk-radius-2xl)" })} />
-        <div style={bar("70%", 30)} />
-        <div style={bar("100%", 60, { borderRadius: "var(--zk-radius-xl)" })} />
-        <div style={{ marginTop: "auto", ...bar("100%", 64, { borderRadius: "var(--zk-radius-2xl)" }) }} />
-      </main>
-    );
-  }
+  if (load.kind === "loading") return <StashSkeleton />;
 
   if (load.kind === "missing" || load.kind === "error") {
     const missing = load.kind === "missing";

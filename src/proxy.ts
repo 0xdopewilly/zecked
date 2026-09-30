@@ -34,6 +34,17 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except build assets; /api is included so a retired deployment forwards API calls too.
-  matcher: ["/((?!_next/|icons/|favicon.ico|icon.svg|apple-icon|manifest.webmanifest|opengraph-image).*)"],
+  // Real page loads only. Client-side navigations and prefetches (RSC requests) skip the proxy, so they
+  // come straight from the edge cache near the player instead of detouring through a server region.
+  // API routes skip it too.
+  matcher: [
+    {
+      source: "/((?!_next/|api/|icons/|splash/|sw\\.js|favicon.ico|icon.svg|apple-icon|manifest.webmanifest|opengraph-image).*)",
+      missing: [
+        { type: "header", key: "rsc" },
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+  ],
 };
