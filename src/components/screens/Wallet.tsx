@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api, formatUsd, formatZec } from "@/lib/api";
-import { useAppBack } from "@/lib/nav";
 import { sfx } from "@/lib/sfx";
 import { ZAT } from "@/lib/types";
 import type { WalletInfo, WalletTx, WalletTxKind } from "@/lib/types";
@@ -346,15 +345,11 @@ function CopyButton({ ariaLabel, onCopy, tone = "raised" }: { ariaLabel: string;
 
 /* ───────────────────────── header ───────────────────────── */
 
-function Header({ onBack }: { onBack: () => void }) {
+function Header() {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <button type="button" aria-label="Back" onClick={onBack} style={ICON_BTN}>
-        <Icon icon="back" size={20} stroke={2.6} />
-      </button>
-      <h1 style={{ margin: 0, font: "var(--zk-type-mono-sm)", letterSpacing: ".12em", color: "var(--zk-text-muted)" }}>WALLET</h1>
-      <div style={{ width: 44 }} aria-hidden="true" />
-    </div>
+    <h1 className="zk-title" style={{ margin: 0 }}>
+      Wallet
+    </h1>
   );
 }
 
@@ -1714,7 +1709,6 @@ const ACTION_BTN: CSSProperties = {
 
 export default function Wallet() {
   const params = useSearchParams();
-  const goBack = useAppBack("/me");
   const initialAction = params.get("action");
   const [panel, setPanel] = useState<Panel | null>(
     initialAction === "add" || initialAction === "withdraw" ? initialAction : null,
@@ -1970,7 +1964,7 @@ export default function Wallet() {
   return (
     <main className="zk-screen has-tabs" style={{ background: "var(--zk-bg-hero-gold)", gap: "var(--zk-space-14)" }}>
       <style>{SCOPED_CSS}</style>
-      <Header onBack={goBack} />
+      <Header />
       {body}
       {toast ? (
         <div
@@ -1988,7 +1982,7 @@ export default function Wallet() {
           <Toast key={toast.id} text={toast.text} variant={toast.variant} icon={toast.icon} />
         </div>
       ) : null}
-      <TabBar active="profile" />
+      <TabBar active="wallet" />
     </main>
   );
 }

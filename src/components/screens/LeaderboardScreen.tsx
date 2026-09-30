@@ -457,8 +457,8 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
         position: "fixed",
         left: "50%",
         transform: "translateX(-50%)",
-        width: "calc(min(100vw, 430px) - 24px)",
-        bottom: "calc(var(--zk-tabbar-h) + var(--zk-space-10))",
+        width: "min(calc(100vw - 28px), 380px)",
+        bottom: "calc(var(--zk-tabbar-h) + var(--zk-space-24))",
         display: "flex",
         alignItems: "center",
         gap: "var(--zk-space-12)",
@@ -466,7 +466,8 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
         boxSizing: "border-box",
         borderRadius: "var(--zk-radius-xl)",
         background: "linear-gradient(90deg, var(--zk-purple), var(--zk-purple-mid))",
-        boxShadow: "0 5px 0 var(--zk-purple-shade), var(--zk-shadow-float)",
+        border: "2.5px solid var(--zk-ink)",
+        boxShadow: "inset 0 1.5px 0 rgb(var(--zk-white-rgb) / .2), 0 5px 0 var(--zk-ink), var(--zk-shadow-float)",
         zIndex: 12,
       }}
     >
@@ -583,10 +584,10 @@ export default function LeaderboardScreen() {
           display: "flex",
           flexDirection: "column",
           gap: "var(--zk-space-12)",
-          paddingBottom: you ? 76 : 0,
+          paddingBottom: you ? 92 : 0,
         }}
       >
-        <h1 style={{ margin: 0, font: "var(--zk-fw-black) var(--zk-fs-30)/1 var(--zk-font-display)" }}>Leaderboard</h1>
+        <h1 className="zk-title" style={{ margin: 0 }}>Leaderboard</h1>
 
         <div
           role="tablist"

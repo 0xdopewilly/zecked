@@ -1,6 +1,6 @@
 "use client";
-// Screen 02 · Home feed. Header (wordmark, streak, wallet balance), live ticker, filter chips,
-// stash list, floating "Hide a stash" button and the tab bar.
+// Screen 02 · Home feed. Header ("Hey 👋 @you", streak, wallet balance, notices bell), live ticker,
+// filter chips, stash list and the nav dock (its big + hides a stash).
 //  - Feels live: polls every 8s while visible; new stashes slide in at the top, or wait behind a
 //    "↑ 2 new stashes" pill while you're scrolled down. Touch: pull down to refresh.
 //  - Coming back is instant: the last feed, player, ticker, filter and scroll position live in memory
@@ -15,6 +15,7 @@ import { sfx } from "@/lib/sfx";
 import { warmStash } from "@/lib/stashCache";
 import type { Player, PublicStash, TickerItem } from "@/lib/types";
 import { Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
+import { NOTICES_EVENT, NoticeBell } from "@/components/screens/NoticeBell";
 
 const CHIPS: { label: string; filter: FeedFilter }[] = [
   { label: "All", filter: "all" },
@@ -255,9 +256,11 @@ function TickerSlot({ ticker }: { ticker: TickerState }) {
 
 const headerChip: CSSProperties = {
   position: "relative",
-  height: 36,
+  height: 40,
   borderRadius: "var(--zk-radius-pill)",
-  background: "var(--zk-surface)",
+  background: "var(--zk-surface-raised)",
+  border: "2px solid var(--zk-ink)",
+  boxShadow: "inset 0 1.5px 0 rgb(var(--zk-white-rgb) / .08), 0 3px 0 var(--zk-ink)",
   display: "flex",
   alignItems: "center",
   gap: "var(--zk-space-6)",
@@ -299,35 +302,69 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
 
   const coin = (
     <span
+      className="zk-hello-coin"
       style={{
-        width: 28,
-        height: 28,
+        width: 26,
+        height: 26,
         borderRadius: "50%",
         background: "var(--zk-grad-tile-gold)",
+        border: "2px solid var(--zk-ink)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         color: "var(--zk-gold-ink)",
       }}
     >
-      <Logo variant="mark" size={14} stroke="var(--zk-gold-ink)" />
+      <Logo variant="mark" size={12} stroke="var(--zk-gold-ink)" />
     </span>
   );
   const balanceStyle: CSSProperties = {
     ...headerChip,
     padding: "0 var(--zk-space-12) 0 var(--zk-space-4)",
-    font: "var(--zk-type-mono-sm)",
+    font: "var(--zk-fw-bold) var(--zk-fs-14)/1 var(--zk-font-mono)",
     color: "var(--zk-gold)",
     textDecoration: "none",
   };
   // Signed in: your ZECKED wallet balance → /wallet. Guests: "Sign up" (they have no wallet yet).
   const signedIn = player?.account?.signedIn;
   const balanceZat = player?.balanceZat ?? 0;
+  const handle = player?.handle.replace(/^@+/, "");
 
   return (
-    <div style={{ padding: "0 var(--zk-screen-pad)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <Logo variant="wordmark" size={28} />
-      <div ref={groupRef} style={{ position: "relative", display: "flex", gap: "var(--zk-space-8)", alignItems: "center" }}>
+    <div style={{ position: "relative", padding: "0 var(--zk-screen-pad)", display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
+      {/* You: avatar + "Hey 👋 @you" → your profile. */}
+      <Link
+        href="/me"
+        transitionTypes={["tab"]}
+        aria-label={handle ? `Your profile, @${handle}` : "Your profile"}
+        style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "var(--zk-space-10)", color: "var(--zk-text)" }}
+      >
+        <span aria-hidden="true" className="zk-hello-avatar">
+          {handle ? handle[0].toUpperCase() : ""}
+        </span>
+        <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+          <span style={{ font: "var(--zk-fw-semibold) var(--zk-fs-13)/1 var(--zk-font-body)", color: "var(--zk-text-muted)" }}>
+            Hey <span aria-hidden="true">👋</span>
+          </span>
+          {handle ? (
+            <span
+              style={{
+                font: "var(--zk-fw-black) clamp(17px, 5.2vw, 21px)/1.1 var(--zk-font-display)",
+                letterSpacing: "-.01em",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              @{handle}
+            </span>
+          ) : (
+            <span aria-hidden="true" style={{ width: 110, height: 18, borderRadius: 6, background: "var(--zk-surface-raised)" }} />
+          )}
+        </span>
+      </Link>
+
+      <div ref={groupRef} style={{ display: "flex", gap: "var(--zk-space-8)", alignItems: "center", flex: "none" }}>
         {/* A 0 streak says nothing: the chip shows up once you've played. */}
         {streak > 0 && (
           <button
@@ -338,15 +375,15 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
             onClick={() => setTip((v) => !v)}
             style={{
               ...headerChip,
-              padding: "0 var(--zk-space-12)",
+              padding: "0 var(--zk-space-10)",
+              gap: 3,
               font: "var(--zk-type-btn-sm)",
               color: "var(--zk-text)",
-              border: 0,
               cursor: "pointer",
               touchAction: "manipulation",
             }}
           >
-            <Icon icon="flame" size={16} filled stroke={1.5} color="var(--zk-pink)" />
+            <Icon icon="flame" size={15} filled stroke={1.5} color="var(--zk-pink)" />
             {streak}
             <span aria-hidden="true" style={HIT_SLOP_36} />
           </button>
@@ -357,7 +394,7 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
             <span style={{ color: "var(--zk-text-faint)" }}>…</span>
           </div>
         ) : signedIn ? (
-          <Link href="/wallet" aria-label={`Your ZEC: ${formatZec(balanceZat, 8)} ZEC. Open your wallet`} style={balanceStyle}>
+          <Link href="/wallet" transitionTypes={["tab"]} aria-label={`Your ZEC: ${formatZec(balanceZat, 8)} ZEC. Open your wallet`} style={balanceStyle}>
             {coin}
             {compactZec(balanceZat)}
             <span aria-hidden="true" style={HIT_SLOP_36} />
@@ -366,43 +403,44 @@ function Header({ player, collapsed }: { player: Player | null; collapsed: boole
           <Link
             href="/signin?next=/feed"
             aria-label="Sign up to get your own ZECKED wallet"
-            style={{ ...balanceStyle, font: "var(--zk-type-btn-sm)" }}
+            style={{ ...balanceStyle, font: "var(--zk-type-btn-sm)", color: "var(--zk-gold)" }}
           >
             {coin}
             Sign up
             <span aria-hidden="true" style={HIT_SLOP_36} />
           </Link>
         )}
-
-        {tipOpen && (
-          <div
-            id="zk-streak-tip"
-            role="status"
-            style={{
-              position: "absolute",
-              top: "calc(100% + var(--zk-space-10))",
-              right: 0,
-              width: 236,
-              zIndex: 20,
-              padding: "var(--zk-space-12) var(--zk-space-14)",
-              borderRadius: "var(--zk-radius-lg)",
-              background: "var(--zk-surface-raised)",
-              border: "1px solid var(--zk-border-strong)",
-              boxShadow: "var(--zk-shadow-card)",
-              animation: "zk-vt-rise 180ms var(--zk-ease-out) both",
-            }}
-          >
-            <div style={{ font: "var(--zk-type-h4)" }}>
-              {streak}-day streak <span aria-hidden="true">🔥</span>
-            </div>
-            <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-4)" }}>
-              {streak === 1
-                ? "You played today. Crack a riddle or make a call tomorrow to make it 2."
-                : `You’ve played ${streak} days in a row. Crack a riddle or make a call every day to keep it going.`}
-            </div>
-          </div>
-        )}
+        <NoticeBell hidden={collapsed} />
       </div>
+
+      {tipOpen && (
+        <div
+          id="zk-streak-tip"
+          role="status"
+          style={{
+            position: "absolute",
+            top: "calc(100% + var(--zk-space-10))",
+            right: "var(--zk-screen-pad)",
+            width: 236,
+            zIndex: 20,
+            padding: "var(--zk-space-12) var(--zk-space-14)",
+            borderRadius: "var(--zk-radius-lg)",
+            background: "var(--zk-surface-raised)",
+            border: "2.5px solid var(--zk-ink)",
+            boxShadow: "0 4px 0 var(--zk-ink), var(--zk-shadow-card)",
+            animation: "zk-vt-rise 180ms var(--zk-ease-out) both",
+          }}
+        >
+          <div style={{ font: "var(--zk-type-h4)" }}>
+            {streak}-day streak <span aria-hidden="true">🔥</span>
+          </div>
+          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-4)" }}>
+            {streak === 1
+              ? "You played today. Crack a riddle or make a call tomorrow to make it 2."
+              : `You’ve played ${streak} days in a row. Crack a riddle or make a call every day to keep it going.`}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1036,11 +1074,15 @@ export default function Feed() {
       void loadTicker();
       void loadMe();
     };
+    // A notice (ZEC landed, stash zecked…) means the balance just changed.
+    const onNotice = () => void loadMe();
     document.addEventListener("visibilitychange", onBack);
+    window.addEventListener(NOTICES_EVENT, onNotice);
     return () => {
       clearInterval(tt);
       clearInterval(tm);
       document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener(NOTICES_EVENT, onNotice);
     };
   }, [loadTicker, loadMe]);
 
@@ -1460,19 +1502,6 @@ export default function Feed() {
           {body}
         </div>
       </div>
-
-      {!feedEmpty && (
-        <div
-          style={{
-            position: "fixed",
-            right: "max(var(--zk-space-16), calc((100vw - 430px) / 2 + var(--zk-space-16)))",
-            bottom: "calc(var(--zk-tabbar-h) + var(--zk-space-16))",
-            zIndex: 10,
-          }}
-        >
-          <Button label="Hide a stash" icon="plus" variant="primary" size="md" full={false} href="/hide" />
-        </div>
-      )}
 
       <TabBar active="home" />
     </main>

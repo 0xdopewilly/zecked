@@ -481,6 +481,8 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
               {sub}
             </div>
           </div>
+          {/* Room for the stamp, so a long handle stops short of it instead of running under it. */}
+          {cracked && <span aria-hidden="true" style={{ flex: "none", width: stamp.text.length > 7 ? 124 : 100 }} />}
           {badge && (
             <>
               <span className="zk-sc-long" style={{ flex: "none" }}>

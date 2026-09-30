@@ -49,6 +49,7 @@ const TTL: [RegExp, number][] = [
   [/^\/players\//, 20_000],
   [/^\/me$/, 20_000],
   [/^\/me\/stashes$/, 20_000],
+  [/^\/notifications$/, 15_000],
 ];
 const reads = new Map<string, { at: number; p: Promise<unknown> }>();
 

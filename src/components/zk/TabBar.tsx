@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Icon, type IconName } from "@/components/zk/Icon";
 
-/* Port of "ZK Tab Bar": Home · Leaderboard · Hide · Profile, fixed to the bottom of the app column. */
+/* The floating nav dock: Home · Leaderboard · (+ Hide) · Wallet · Profile. The current tab is a gold circle
+   that pops in; Hide is the big raised button in the middle. Styles live in globals.css (.zk-dock). */
 
-export type TabId = "home" | "leaderboard" | "hide" | "profile";
+export type TabId = "home" | "leaderboard" | "wallet" | "profile";
 
 export interface TabBarProps {
   active?: TabId;
@@ -15,12 +16,16 @@ export interface TabBarProps {
   onSelect?: (id: TabId) => void;
 }
 
-const TABS: [id: TabId, label: string, icon: IconName, href: string][] = [
+const TABS: [id: TabId, name: string, icon: IconName, href: string][] = [
   ["home", "Home", "home", "/feed"],
   ["leaderboard", "Leaderboard", "trophy", "/leaderboard"],
-  ["hide", "Hide", "vault", "/hide"],
+  ["wallet", "Wallet", "wallet", "/wallet"],
   ["profile", "Profile", "user", "/me"],
 ];
+
+const POP_MS = 460;
+/** The last tab tapped. The next screen's dock picks the bubble's pop up where this one left off. */
+let tapped: { id: TabId; at: number } | null = null;
 
 /** Once the screen is idle, warm the data the other tabs open with, so the first tap on a tab is instant. */
 function useWarmTabs(active: TabId) {
@@ -46,73 +51,51 @@ function useWarmTabs(active: TabId) {
 
 export function TabBar({ active = "home", onSelect }: TabBarProps) {
   useWarmTabs(active);
+  // The bubble moves on tap, before the next screen arrives.
+  const [picked, setPicked] = useState<TabId | null>(null);
+  const current = picked ?? active;
+  // Arriving from a tab tap: carry on the pop the last screen started (a negative delay), so it plays once.
+  const [carry] = useState(() => {
+    if (!tapped || tapped.id !== active) return null;
+    const t = performance.now() - tapped.at;
+    return t < POP_MS ? t : null;
+  });
+  const [popping, setPopping] = useState(carry !== null);
+
+  const pick = (id: TabId) => {
+    onSelect?.(id);
+    if (id === current) return;
+    tapped = { id, at: performance.now() };
+    setPicked(id);
+    setPopping(true);
+  };
+
+  const tab = ([id, name, icon, href]: (typeof TABS)[number]) => {
+    const on = id === current;
+    return (
+      <Link
+        key={id}
+        href={href}
+        transitionTypes={["tab"]}
+        aria-current={on ? "page" : undefined}
+        aria-label={name}
+        onClick={() => pick(id)}
+        className={on && popping ? "zk-dock-item is-pop" : "zk-dock-item"}
+        style={on && carry !== null && !picked ? { animationDelay: `-${Math.round(carry)}ms` } : undefined}
+        onAnimationEnd={() => setPopping(false)}
+      >
+        <Icon icon={icon} size={23} stroke={on ? 2.6 : 2.2} />
+      </Link>
+    );
+  };
+
   return (
-    <nav
-      aria-label="Main"
-      style={{
-        position: "fixed",
-        bottom: 0,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "100%",
-        maxWidth: "430px",
-        zIndex: 50,
-        flex: "none",
-        // Design height (90px) includes the home-indicator zone; on devices with a safe area the bar
-        // grows only if the inset is larger than that zone.
-        minHeight: "var(--zk-tabbar-h)",
-        viewTransitionName: "zk-tabbar",
-        background: "rgb(var(--zk-bg-rgb) / .97)",
-        borderTop: "1px solid var(--zk-border)",
-        display: "grid",
-        gridTemplateColumns: "repeat(4,1fr)",
-        alignContent: "start",
-        padding: "var(--zk-space-10) var(--zk-space-8) env(safe-area-inset-bottom, 0px)",
-        boxSizing: "border-box",
-      }}
-    >
-      {TABS.map(([id, label, icon, href]) => {
-        const on = id === active;
-        const fg = on ? "var(--zk-gold)" : "var(--zk-text-muted)";
-        return (
-          <Link
-            key={id}
-            href={href}
-            transitionTypes={["tab"]}
-            aria-current={on ? "page" : undefined}
-            onClick={() => onSelect?.(id)}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "var(--zk-space-4)",
-              cursor: "pointer",
-              color: fg,
-              textDecoration: "none",
-              WebkitTapHighlightColor: "transparent",
-              touchAction: "manipulation",
-            }}
-          >
-            <div
-              style={{
-                width: "52px",
-                height: "32px",
-                borderRadius: "var(--zk-radius-lg)",
-                background: on ? "var(--zk-gold-tint)" : "transparent",
-                color: fg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Icon icon={icon} size={22} stroke={on ? 2.4 : 2} />
-            </div>
-            <span style={{ font: on ? "var(--zk-fw-black) var(--zk-fs-11)/1 var(--zk-font-body)" : "var(--zk-type-tab)", color: fg }}>
-              {label}
-            </span>
-          </Link>
-        );
-      })}
+    <nav aria-label="Main" className="zk-dock">
+      {TABS.slice(0, 2).map(tab)}
+      <Link href="/hide" transitionTypes={["nav-forward"]} aria-label="Hide a stash" data-sfx="pop" className="zk-dock-hide">
+        <Icon icon="plus" size={28} stroke={3.4} />
+      </Link>
+      {TABS.slice(2).map(tab)}
     </nav>
   );
 }

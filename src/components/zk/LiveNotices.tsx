@@ -7,6 +7,7 @@ import { api, clearApiCache } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import type { Notice } from "@/lib/types";
 import { HiderToast } from "@/components/screens/HiderToast";
+import { NOTICES_EVENT } from "@/components/screens/NoticeBell";
 
 const SEEN_KEY = "zk:notice-seen";
 const POLL_MS = 12_000;
@@ -43,6 +44,7 @@ export function LiveNotices() {
       if (!items.length) return;
       writeSeen(items[0].at);
       clearApiCache(); // balances/stats just changed: next reads go to the server
+      window.dispatchEvent(new Event(NOTICES_EVENT)); // the bell's count
       setQueue((q) => [...q, ...[...items].reverse()]);
     } catch {
       /* offline or signed out: try again next tick */

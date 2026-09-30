@@ -255,7 +255,7 @@
   --zk-phone-w: 390px;
   --zk-phone-h: 844px;
   --zk-statusbar-h: 50px;
-  --zk-tabbar-h: 90px;
+  /* --zk-tabbar-h: set with the nav dock in globals.css */
   --zk-h-btn-lg: 62px;
   --zk-h-btn-md: 52px;
   --zk-h-btn-sm: 40px;

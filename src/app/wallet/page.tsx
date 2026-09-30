@@ -11,7 +11,7 @@ export default function Page() {
     <Suspense
       fallback={
         <main className="zk-screen has-tabs" style={{ background: "var(--zk-bg-hero-gold)" }}>
-          <TabBar active="profile" />
+          <TabBar active="wallet" />
         </main>
       }
     >
