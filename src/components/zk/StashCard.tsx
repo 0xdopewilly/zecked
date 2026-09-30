@@ -687,6 +687,9 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
     <Link
       href={link}
       transitionTypes={["nav-forward"]}
+      // Full prefetch while the card is on screen: the stash route (dynamic, per-stash metadata) is ready
+      // before the tap, so opening one doesn't wait on a server round trip.
+      prefetch
       onPointerDown={(e) => (e.pointerType === "mouse" ? warm() : warmSoon(70))}
       onPointerUp={warm}
       onPointerCancel={cool}
