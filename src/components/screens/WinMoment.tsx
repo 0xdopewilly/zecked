@@ -2,6 +2,7 @@
 // Screen 07 · Win moment. Full-screen overlay over the app column: sunburst, open vault, confetti,
 // "YOU ZECKED IT!", ZEC/USD count-up, unlocked badges, the tier XP bar filling, and the CTA:
 // signed-in winners see "Added to your ZECKED wallet"; guests are asked to sign up to keep it.
+import { sfx } from "@/lib/sfx";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { BadgeId, WinPayload } from "@/lib/types";
 import { ZAT } from "@/lib/types";
@@ -43,11 +44,7 @@ export function WinMoment({ win }: WinMomentProps) {
 
   useEffect(() => {
     const t = setTimeout(() => setFilled(true), 60);
-    try {
-      navigator.vibrate?.([40, 60, 120]);
-    } catch {
-      /* no haptics */
-    }
+    sfx("win");
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     dialogRef.current?.focus({ preventScroll: true });
@@ -133,7 +130,7 @@ export function WinMoment({ win }: WinMomentProps) {
           <Vault mode="open" size={200} />
         </div>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 5, pointerEvents: "none", overflow: "hidden" }}>
-          <Confetti count={70} seed={7} run={run} />
+          <Confetti count={70} seed={7} run={run} sound={false} />
         </div>
 
         <div

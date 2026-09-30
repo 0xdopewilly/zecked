@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, ReactNode } from "react";
 import { Icon, type IconProp } from "@/components/zk/Icon";
+import type { Sound } from "@/lib/sfx";
 
 /* Port of "ZK Button": 3D buttons with hover (-1px lift, bigger shadow), pressed (down 4px, 2px shadow), disabled. */
 
@@ -31,6 +32,8 @@ export interface ButtonProps {
   href?: string;
   ariaLabel?: string;
   style?: CSSProperties;
+  /** Sound on tap (the app's <Sfx /> plays it). Default "pop"; "none" for silence. */
+  sfx?: Sound | "none";
 }
 
 type VariantSpec = { bg: string; bgH?: string; bgP?: string; fg: string; bd?: string; sh: string; shH: string; shP: string; dy: number };
@@ -65,6 +68,7 @@ export function Button({
   href,
   ariaLabel,
   style,
+  sfx = "pop",
 }: ButtonProps) {
   const [hover, setHover] = useState(false);
   const [press, setPress] = useState(false);
@@ -146,7 +150,7 @@ export function Button({
 
   if (href && !dis) {
     return (
-      <Link href={href} aria-label={ariaLabel} onClick={onClick} style={css} {...handlers}>
+      <Link href={href} aria-label={ariaLabel} onClick={onClick} style={css} data-sfx={sfx} {...handlers}>
         {content}
       </Link>
     );
@@ -158,6 +162,7 @@ export function Button({
       disabled={dis}
       aria-disabled={dis}
       aria-label={ariaLabel}
+      data-sfx={sfx}
       onClick={(e) => {
         if (!dis && onClick) onClick(e);
       }}

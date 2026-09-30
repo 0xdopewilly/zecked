@@ -17,7 +17,9 @@ import type {
 } from "@/lib/types";
 import { NETWORK_FEE_ZAT, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
-import { XP, bumpBoard, ensurePlayer, getPlayer, grant, savePlayer, tierOf, toPublicPlayer, touchPlay, type PlayerRecord } from "./players";
+import { emailSignInAvailable } from "./auth";
+import { googleEnabled } from "./google";
+import { XP, bumpBoard, ensurePlayer, getPlayer, grant, isAccount, savePlayer, tierOf, toPublicPlayer, touchPlay, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
 import { balanceOf, credit, debit } from "./wallet";
 import { getMatch } from "./sports";
@@ -112,7 +114,14 @@ const saveStash = (s: StashRecord) => kv().set(K.stash(s.id), s);
 // ---------- config ----------
 export async function appConfig(): Promise<AppConfig> {
   const net = networkName();
-  return { testMode: net !== "mainnet", network: net, zecUsd: await zecUsd(), maxStashUsd: MAX_USD, minStashUsd: MIN_USD };
+  return {
+    testMode: net !== "mainnet",
+    network: net,
+    zecUsd: await zecUsd(),
+    maxStashUsd: MAX_USD,
+    minStashUsd: MIN_USD,
+    auth: { google: googleEnabled(), passkey: true, email: emailSignInAvailable() },
+  };
 }
 
 // ---------- ticker ----------
@@ -137,7 +146,7 @@ export async function createStash(
   },
   opts: { seeded?: boolean; now?: number } = {}
 ): Promise<StashRecord> {
-  if (!opts.seeded && !hider.email) throw new HttpError(401, "Sign up to hide a stash");
+  if (!opts.seeded && !isAccount(hider)) throw new HttpError(401, "Sign up to hide a stash");
   const usd = Number(body.usd);
   if (!(usd >= MIN_USD && usd <= MAX_USD)) throw new HttpError(400, `Stash size must be between $${MIN_USD} and $${MAX_USD}`);
   const rate = await zecUsd();
@@ -265,7 +274,7 @@ async function refund(s: StashRecord, reason: string) {
   let txid: string | undefined;
   const hider = s.seeded ? null : await getPlayer(s.hiderId);
   const wasFunded = !!s.liveAt;
-  if (hider?.email && wasFunded) {
+  if (hider && isAccount(hider) && wasFunded) {
     await credit(hider.id, s.amountZat, "refund", reason === "Nobody cracked it" || reason === "Nobody called it" ? "Uncrackable! Your stash came back" : `Stash returned · ${reason}`, { stashId: s.id });
     s.refund = { at: nowIso(), reason, internal: true };
     return;
@@ -394,7 +403,7 @@ async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinP
   badges.push(...touchPlay(p));
   p.xp += xp;
   if (kind === "riddle") await kv().set(`celebrated:${s.id}`, 1, { nx: true, exSeconds: 30 * 86400 }); // riddle winners celebrate from the guess response
-  if (p.email) {
+  if (isAccount(p)) {
     await creditWin(s, p);
   } else if (!p.pendingClaims.includes(s.id)) p.pendingClaims.push(s.id);
   await savePlayer(p);
@@ -436,7 +445,7 @@ export async function creditPendingClaims(p: PlayerRecord): Promise<number> {
 
 /** Pay for an awaiting stash straight from the hider's ZECKED balance. */
 export async function fundFromBalance(s: StashRecord, p: PlayerRecord) {
-  if (!p.email) throw new HttpError(401, "Sign up first");
+  if (!isAccount(p)) throw new HttpError(401, "Sign up first");
   if (s.hiderId !== p.id) throw new HttpError(403, "Only the hider can fund this stash");
   if (s.status !== "awaiting_funding") throw new HttpError(400, "This stash is already funded");
   if (!(await kv().set(`fundlock:${s.id}`, 1, { nx: true, exSeconds: 30 }))) throw new HttpError(409, "Funding in progress");
@@ -465,7 +474,7 @@ async function winPayload(s: StashRecord, p: PlayerRecord, xpGained: number, bad
     usd: Math.round((s.amountZat / 1e8) * rate * 100) / 100,
     xpGained,
     badgesUnlocked: badges,
-    player: toPublicPlayer(p, p.email ? await balanceOf(p.id) : 0),
+    player: toPublicPlayer(p, isAccount(p) ? await balanceOf(p.id) : 0),
     claimToken: s.claimToken!,
     credited: !!s.claimed?.internal,
   };

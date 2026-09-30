@@ -1,4 +1,6 @@
-import { useMemo, type CSSProperties } from "react";
+"use client";
+import { useEffect, useMemo, type CSSProperties } from "react";
+import { sfx } from "@/lib/sfx";
 
 const COLORS = [
   "var(--zk-gold)",
@@ -20,13 +22,18 @@ export interface ConfettiProps {
   size?: "md" | "sm";
   /** Change this value to rebuild the layer and replay the burst. */
   run?: number | string;
+  /** Party-popper sound with each burst (app only; default true). */
+  sound?: boolean;
 }
 
 /**
  * Decorative confetti layer. Fills its (positioned) parent, ignores pointer events,
  * and is CSS-animated with `zk-fall`. Built once per count/seed/size/run.
  */
-export function Confetti({ count = 70, seed = 7, size = "md", run }: ConfettiProps) {
+export function Confetti({ count = 70, seed = 7, size = "md", run, sound = true }: ConfettiProps) {
+  useEffect(() => {
+    if (sound) sfx("confetti");
+  }, [run, sound]);
   const pieces = useMemo(() => {
     const small = size === "sm";
     let s = Math.abs(Math.floor(seed)) % 2147483647 || 7;

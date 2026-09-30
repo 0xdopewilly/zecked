@@ -1,15 +1,17 @@
 "use client";
-// Sign in / sign up (one door). Step 1: email → "Send my code". Step 2: six digit boxes (auto-submit).
+// Sign in / sign up (one door). Step 1: Continue with Google, or a passkey (Face ID / fingerprint / screen
+// lock), or email when a sender is set up. Email: six digit boxes (auto-submit).
 // Success: confetti, "You're in, @handle!", any guest wins credited, then back to `?next=`.
-// The first verified email creates the account; the guest's XP, badges and wins carry over.
+// The first sign-in creates the account; the guest's XP, badges and wins carry over.
 import { useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { api, formatZec } from "@/lib/api";
-import type { AuthStartResult, Player } from "@/lib/types";
+import type { AppConfig, AuthStartResult, Player } from "@/lib/types";
 import { Button, Confetti, Icon, Input, Logo, type IconName } from "@/components/zk";
 
 type Reason = "win" | "hide" | "wallet" | "default";
-type Step = "email" | "code" | "done";
+type Step = "methods" | "email" | "code" | "done";
 type Note = { text: string; tone: "error" | "success" | "muted" };
 
 const CODE_LEN = 6;
@@ -24,25 +26,25 @@ type Hero = { icon: IconName; grad: string; deep: string; ink: string };
 const REASONS: Record<Reason, { title: string; sub: string; bg: string; hero: Hero }> = {
   win: {
     title: "Sign up to keep your ZEC",
-    sub: "Just your email. We’ll send a 6-digit code and your win lands in your ZECKED wallet.",
+    sub: "One tap and your win lands in your own ZECKED wallet. No passwords.",
     bg: "var(--zk-bg-hero-gold)",
     hero: { icon: "unlock", grad: "var(--zk-grad-tile-gold)", deep: "var(--zk-gold-deep)", ink: "var(--zk-gold-ink)" },
   },
   hide: {
     title: "Sign up to hide a stash",
-    sub: "Just your email. We’ll send you a 6-digit code.",
+    sub: "One tap. No passwords, no seed phrases.",
     bg: "var(--zk-bg-hero-purple)",
     hero: { icon: "vault", grad: "var(--zk-grad-tile-purple)", deep: "var(--zk-purple-shade)", ink: "var(--zk-text)" },
   },
   wallet: {
     title: "Get your own ZECKED wallet",
-    sub: "Just your email. We’ll send you a 6-digit code.",
+    sub: "One tap. Your wallet is ready the moment you’re in.",
     bg: "var(--zk-bg-hero-mint)",
     hero: { icon: "wallet", grad: "var(--zk-grad-tile-mint)", deep: "var(--zk-mint-deep)", ink: "var(--zk-mint-ink)" },
   },
   default: {
     title: "Welcome to ZECKED",
-    sub: "Just your email. We’ll send you a 6-digit code.",
+    sub: "One tap. No passwords, no seed phrases.",
     bg: "var(--zk-bg-hero-purple)",
     hero: { icon: "sparkle", grad: "var(--zk-grad-tile-purple)", deep: "var(--zk-purple-shade)", ink: "var(--zk-text)" },
   },
@@ -60,6 +62,27 @@ function safeNext(raw: string | null): string {
   if (!v.startsWith("/") || v.startsWith("//") || /[\\\u0000-\u001f]/.test(v)) return "/feed";
   if (/^\/signin(?:[/?#]|$)/i.test(v)) return "/feed";
   return v;
+}
+
+/** The official multicolour Google "G" (required on "Continue with Google" buttons). */
+function GoogleG({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" style={{ flex: "none" }}>
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
+  );
+}
+
+/** Friendly words for the browser's passkey errors. */
+function passkeyError(e: unknown, creating: boolean): Note {
+  const name = e instanceof Error ? e.name : "";
+  if (name === "NotAllowedError" || name === "AbortError") return { text: "No worries, nothing was saved. Tap again when you’re ready.", tone: "muted" };
+  if (name === "InvalidStateError") return { text: "This device already has a ZECKED passkey. Tap “Already have a passkey? Sign in”.", tone: "error" };
+  if (name === "SecurityError") return { text: "Passkeys don’t work on this address. Open the app from its main link.", tone: "error" };
+  return { text: errText(e, creating ? "Couldn’t create the passkey. Try again" : "Couldn’t sign in with the passkey. Try again"), tone: "error" };
 }
 
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
@@ -152,8 +175,15 @@ export default function SignIn() {
   const reason = readReason(params.get("reason"));
   const copy = REASONS[reason];
 
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>("methods");
   const [already, setAlready] = useState<Player | null>(null);
+
+  // step 0: sign-in methods
+  const [auth, setAuth] = useState<AppConfig["auth"] | null>(null);
+  const [canPasskey, setCanPasskey] = useState(true);
+  const [pkBusy, setPkBusy] = useState<"create" | "login" | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [methodNote, setMethodNote] = useState<Note | null>(null);
 
   // step 1
   const [email, setEmail] = useState("");
@@ -187,6 +217,30 @@ export default function SignIn() {
     if (hard) window.location.replace(next);
     else router.replace(next);
   };
+
+  // Which doors are open on this deployment, and back from Google (?welcome= / ?error=).
+  useEffect(() => {
+    setCanPasskey(browserSupportsWebAuthn());
+    api
+      .config()
+      .then((c) => setAuth(c.auth))
+      .catch(() => setAuth({ google: false, passkey: true, email: false }));
+    const err = params.get("error");
+    if (err) setMethodNote({ text: err, tone: "error" });
+    if (params.get("welcome")) {
+      const credited = Number(params.get("c") || 0) || 0;
+      api
+        .me()
+        .then(({ player }) => {
+          if (!player.account?.signedIn) return;
+          setDone({ player, creditedZat: credited });
+          setStep("done");
+        })
+        .catch(() => {});
+    }
+    // Runs once: the params are read on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Already signed in? Offer a quick way on (unless they've started typing).
   useEffect(() => {
@@ -237,6 +291,46 @@ export default function SignIn() {
   };
 
   /* ---------- actions ---------- */
+
+  const createPasskey = async () => {
+    if (pkBusy) return;
+    setPkBusy("create");
+    setMethodNote(null);
+    try {
+      const optionsJSON = await api.passkeyRegisterOptions();
+      const response = await startRegistration({ optionsJSON });
+      const r = await api.passkeyRegisterVerify(response);
+      setDone(r);
+      setStep("done");
+    } catch (e) {
+      setMethodNote(passkeyError(e, true));
+    } finally {
+      setPkBusy(null);
+    }
+  };
+
+  const signInPasskey = async () => {
+    if (pkBusy) return;
+    setPkBusy("login");
+    setMethodNote(null);
+    try {
+      const optionsJSON = await api.passkeyLoginOptions();
+      const response = await startAuthentication({ optionsJSON });
+      const r = await api.passkeyLoginVerify(response);
+      setDone(r);
+      setStep("done");
+    } catch (e) {
+      setMethodNote(passkeyError(e, false));
+    } finally {
+      setPkBusy(null);
+    }
+  };
+
+  const continueWithGoogle = () => {
+    if (googleBusy) return;
+    setGoogleBusy(true);
+    window.location.assign(api.googleUrl(next));
+  };
 
   const sendCode = async (resend = false) => {
     if (sending) return;
@@ -364,6 +458,11 @@ export default function SignIn() {
 
   const goBack = () => {
     if (step === "code") return differentEmail();
+    if (step === "email") {
+      setStep("methods");
+      setEmailError("");
+      return;
+    }
     if (typeof window !== "undefined" && window.history.length > 1) router.back();
     else router.replace(next);
   };
@@ -477,7 +576,7 @@ export default function SignIn() {
     codeShake > 0 ? `${codeShake % 2 ? "zk-shake-a" : "zk-shake-b"} var(--zk-dur-shake) var(--zk-ease-in-out)` : "none";
 
   let body: ReactNode;
-  if (already && step === "email") {
+  if (already && (step === "methods" || step === "email")) {
     body = (
       <>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
@@ -493,7 +592,7 @@ export default function SignIn() {
         <Button label="Continue" iconRight="arrowRight" variant="primary" size="lg" onClick={() => leave()} />
         <div style={{ display: "flex", justifyContent: "center", marginTop: "calc(-1 * var(--zk-space-8))" }}>
           <button type="button" onClick={() => setAlready(null)} style={textBtn(false)}>
-            Use a different email
+            Use a different account
           </button>
         </div>
       </>
@@ -601,12 +700,77 @@ export default function SignIn() {
         </div>
       </>
     );
-  } else {
+  } else if (step === "methods") {
+    const googleOn = !!auth?.google;
+    const emailOn = !!auth?.email;
+    const busy = !!pkBusy || googleBusy;
     body = (
       <>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
           <h1 style={{ margin: 0, font: "var(--zk-type-h1)", letterSpacing: "-.01em" }}>{copy.title}</h1>
           <p style={{ margin: 0, font: "var(--zk-type-body-lg)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>{copy.sub}</p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-12)" }}>
+          {canPasskey && (
+            <Button
+              label={pkBusy === "create" ? "Creating your passkey…" : "Sign up with a passkey"}
+              icon="passkey"
+              variant="primary"
+              size="lg"
+              disabled={busy}
+              onClick={() => void createPasskey()}
+            />
+          )}
+          {googleOn && (
+            <Button variant="light" size="lg" disabled={busy} onClick={continueWithGoogle} ariaLabel="Continue with Google">
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
+                <GoogleG /> {googleBusy ? "Opening Google…" : "Continue with Google"}
+              </span>
+            </Button>
+          )}
+        </div>
+        {canPasskey && (
+          <p style={{ margin: "calc(-1 * var(--zk-space-6)) 0 0", font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textAlign: "center", textWrap: "pretty" }}>
+            A passkey is your Face ID, fingerprint or screen lock. Nothing to remember, nothing to leak.
+          </p>
+        )}
+        {!canPasskey && !googleOn && !emailOn && (
+          <p role="note" style={{ margin: 0, font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
+            This browser can’t sign in here yet. Open ZECKED in Safari or Chrome.
+          </p>
+        )}
+        <span
+          aria-live="polite"
+          style={{
+            minHeight: 16,
+            font: "var(--zk-type-caption)",
+            textAlign: "center",
+            color: methodNote ? noteColor[methodNote.tone] : "transparent",
+            textWrap: "pretty",
+          }}
+        >
+          {methodNote?.text || " "}
+        </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-2)", marginTop: "calc(-1 * var(--zk-space-8))" }}>
+          {canPasskey && (
+            <button type="button" onClick={() => void signInPasskey()} disabled={busy} style={textBtn(busy)}>
+              {pkBusy === "login" ? "Checking your passkey…" : "Already have a passkey? Sign in"}
+            </button>
+          )}
+          {emailOn && (
+            <button type="button" onClick={() => setStep("email")} disabled={busy} style={textBtn(busy)}>
+              Use email instead
+            </button>
+          )}
+        </div>
+      </>
+    );
+  } else {
+    body = (
+      <>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
+          <h1 style={{ margin: 0, font: "var(--zk-type-h1)", letterSpacing: "-.01em" }}>{copy.title}</h1>
+          <p style={{ margin: 0, font: "var(--zk-type-body-lg)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>We’ll send you a 6-digit code.</p>
         </div>
         <Input
           value={email}
@@ -644,7 +808,7 @@ export default function SignIn() {
   return (
     <main className="zk-screen" style={{ background: copy.bg, gap: "var(--zk-space-20)" }}>
       <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button type="button" aria-label={isCode ? "Back to email" : "Back"} onClick={goBack} style={navBtn}>
+        <button type="button" aria-label={isCode ? "Back to email" : step === "email" ? "Back to sign-in options" : "Back"} onClick={goBack} style={navBtn}>
           <Icon icon="back" size={22} stroke={2.4} />
         </button>
         <Logo variant="wordmark" size={24} />

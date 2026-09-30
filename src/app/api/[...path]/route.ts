@@ -20,8 +20,10 @@ import {
   ticker,
   toPublic,
 } from "@/lib/server/game";
-import { leaderboard, setHandle, toPublicPlayer, type PlayerRecord } from "@/lib/server/players";
+import { isAccount, leaderboard, setHandle, toPublicPlayer, type PlayerRecord } from "@/lib/server/players";
 import { createSession, destroySession, sessionPlayer, startEmailSignIn, verifyEmailSignIn } from "@/lib/server/auth";
+import { googleCallback, googleStart } from "@/lib/server/google";
+import { passkeyLoginOptions, passkeyLoginVerify, passkeyRegisterOptions, passkeyRegisterVerify, relyingParty } from "@/lib/server/passkeys";
 import { SIM_WELCOME_BONUS_ZAT, balanceOf, credit, simulateDeposit, walletInfo, withdraw } from "@/lib/server/wallet";
 import { ensureSeeded } from "@/lib/server/seed";
 import { upcomingMatches } from "@/lib/server/sports";
@@ -53,7 +55,23 @@ function json(data: unknown, init: { status?: number; sid?: string; setCookie?: 
 }
 
 async function pub(p: PlayerRecord) {
-  return toPublicPlayer(p, p.email ? await balanceOf(p.id) : 0);
+  return toPublicPlayer(p, isAccount(p) ? await balanceOf(p.id) : 0);
+}
+
+/** Same-origin app paths only (never `//host` or `javascript:`). */
+function safePath(raw: string | null | undefined) {
+  const v = (raw || "").trim();
+  return v.startsWith("/") && !v.startsWith("//") && !/[\\\u0000-\u001f]/.test(v) ? v : "/feed";
+}
+
+/** Every sign-in method ends here: first-account perks, pending wins credited, and a fresh session. */
+async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: string) {
+  if (isNew) await kv().incr("stats:accounts");
+  if (isNew && networkName() === "sim") await credit(account.id, SIM_WELCOME_BONUS_ZAT, "bonus", "Test-mode welcome bonus 🎁");
+  const creditedZat = await creditPendingClaims(account);
+  await destroySession(oldSid);
+  const sid = await createSession(account.id);
+  return { creditedZat, sid };
 }
 
 async function body<T>(req: NextRequest): Promise<T> {
@@ -96,12 +114,51 @@ async function handle(req: NextRequest, ctx: Ctx) {
     if (a === "auth" && b === "email" && c === "verify" && method === "POST") {
       const { email, code } = await body<{ email: string; code: string }>(req);
       const { player: account, isNew } = await verifyEmailSignIn(email, code, player);
-      if (isNew) await kv().incr("stats:accounts");
-      if (isNew && networkName() === "sim") await credit(account.id, SIM_WELCOME_BONUS_ZAT, "bonus", "Test-mode welcome bonus 🎁");
-      const creditedZat = await creditPendingClaims(account);
-      await destroySession(sid);
-      const nsid = await createSession(account.id);
-      return json({ player: await pub(account), creditedZat }, { sid: nsid, setCookie: true });
+      const done = await finishSignIn(account, isNew, sid);
+      return json({ player: await pub(account), creditedZat: done.creditedZat, isNew }, { sid: done.sid, setCookie: true });
+    }
+
+    // Passkeys: /auth/passkey/{register|login}/{options|verify}
+    if (a === "auth" && b === "passkey" && method === "POST") {
+      const step = path[3];
+      const rp = relyingParty(req);
+      if (c === "register" && step === "options") return out(await passkeyRegisterOptions(player, sid, rp));
+      if (c === "login" && step === "options") return out(await passkeyLoginOptions(sid, rp));
+      if ((c === "register" || c === "login") && step === "verify") {
+        const { response } = await body<{ response: never }>(req);
+        const { player: account, isNew } =
+          c === "register" ? await passkeyRegisterVerify(player, sid, rp, response) : await passkeyLoginVerify(player, sid, rp, response);
+        const done = await finishSignIn(account, isNew, sid);
+        return json({ player: await pub(account), creditedZat: done.creditedZat, isNew }, { sid: done.sid, setCookie: true });
+      }
+    }
+
+    // Google: /auth/google/start → Google → /auth/google/callback → /signin?welcome=google
+    if (a === "auth" && b === "google" && method === "GET") {
+      const withCookie = (res: NextResponse, s: string, set: boolean) => {
+        if (set) res.cookies.set(SID, s, COOKIE_OPTS);
+        return res;
+      };
+      if (c === "start") {
+        const url = await googleStart(sid, relyingParty(req).origin, safePath(req.nextUrl.searchParams.get("next")));
+        return withCookie(NextResponse.redirect(url, 302), sid, setCookie);
+      }
+      if (c === "callback") {
+        const q = req.nextUrl.searchParams;
+        const back = (params: Record<string, string>) => new URL(`/signin?${new URLSearchParams(params)}`, req.url);
+        if (q.get("error") || !q.get("code") || !q.get("state")) {
+          return withCookie(NextResponse.redirect(back({ error: "Google sign-in was cancelled" }), 302), sid, setCookie);
+        }
+        try {
+          const { player: account, isNew, next } = await googleCallback(player, sid, q.get("code")!, q.get("state")!);
+          const done = await finishSignIn(account, isNew, sid);
+          const to = back({ welcome: isNew ? "new" : "back", next, ...(done.creditedZat ? { c: String(done.creditedZat) } : {}) });
+          return withCookie(NextResponse.redirect(to, 302), done.sid, true);
+        } catch (e) {
+          const msg = e instanceof HttpError ? e.message : "Google sign-in failed. Try again";
+          return withCookie(NextResponse.redirect(back({ error: msg }), 302), sid, setCookie);
+        }
+      }
     }
     if (a === "auth" && b === "logout" && method === "POST") {
       await destroySession(sid);

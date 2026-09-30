@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
+"use client";
+import { useEffect, type ReactNode } from "react";
 import { Icon, type IconProp } from "@/components/zk/Icon";
+import { sfx, type Sound } from "@/lib/sfx";
 
 /* Port of "ZK Toast": default · success · error · gold. */
 
@@ -11,7 +13,11 @@ export interface ToastProps {
   /** Overrides the variant's default icon. */
   icon?: IconProp;
   variant?: ToastVariant;
+  /** Sound when it appears (default: by variant); false for silence. */
+  sound?: Sound | false;
 }
+
+const SOUND: Record<ToastVariant, Sound> = { default: "notify", success: "notify", error: "error", gold: "coin" };
 
 const T: Record<ToastVariant, [tileBg: string, tileFg: string, icon: IconProp]> = {
   default: ["var(--zk-purple-tint)", "var(--zk-purple-light)", "bell"],
@@ -20,7 +26,13 @@ const T: Record<ToastVariant, [tileBg: string, tileFg: string, icon: IconProp]> 
   gold: ["var(--zk-gold-tint)", "var(--zk-gold)", "coin"],
 };
 
-export function Toast({ text, meta, icon, variant = "success" }: ToastProps) {
+export function Toast({ text, meta, icon, variant = "success", sound }: ToastProps) {
+  useEffect(() => {
+    const s = sound === undefined ? SOUND[variant] : sound;
+    if (s) sfx(s);
+    // Play once per toast (each toast mounts with its own key).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const t = T[variant] || T.success;
   const hasMeta = meta !== undefined && meta !== null && meta !== "" && meta !== false;
   return (

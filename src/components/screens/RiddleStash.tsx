@@ -2,6 +2,7 @@
 // Screens 03 (riddle stash) and 04 (wrong answer), plus the extra states the design review asked for:
 // too late (zecked by someone else), you zecked it, uncrackable (expired / refunded), not funded yet,
 // and the hider's own view of a live stash.
+import { sfx } from "@/lib/sfx";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { api, formatUsd, formatZec } from "@/lib/api";
@@ -339,11 +340,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       }
       setWrong({ raw: answer, shown: v.replace(/^(a|an|the)\s+/i, "").trim() || v, verdict: res.verdict || "Nope! Try again 😏" });
       setShake((n) => n + 1);
-      try {
-        navigator.vibrate?.([40, 30, 40]);
-      } catch {
-        /* no haptics */
-      }
+      sfx("wrong");
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Something went wrong. Try again.", "error");
       void refresh();

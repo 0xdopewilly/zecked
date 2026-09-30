@@ -32,8 +32,11 @@ export interface PlayerRecord {
   pendingClaims: string[];
   shielded: boolean;
   lastPlayedDay?: string; // YYYY-MM-DD (UTC)
-  email?: string; // verified email = signed-in account
-  verifiedAt?: string;
+  email?: string; // verified email (a sign-in code, or Google's verified address)
+  verifiedAt?: string; // when this player became an account (any sign-in method)
+  googleSub?: string; // Google account id, when signed up with Google
+  passkeys?: number; // passkeys registered to this account
+  passkeyUser?: string; // WebAuthn user handle (base64url), created with the first passkey
   depositAddress?: string; // personal in-app wallet address
   depositUri?: string;
   mergedGuests?: string[];
@@ -55,7 +58,16 @@ function maskEmail(e: string) {
   return `${u.slice(0, 2)}${"*".repeat(Math.max(1, Math.min(3, u.length - 2)))}@${d}`;
 }
 
+/** A signed-in account (email, Google or passkey), as opposed to a guest who can only browse and play. */
+export function isAccount(p: PlayerRecord | null | undefined): boolean {
+  return !!p && !!(p.email || p.googleSub || (p.passkeys ?? 0) > 0);
+}
+
 export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
+  const via: ("email" | "google" | "passkey")[] = [];
+  if (p.googleSub) via.push("google");
+  if ((p.passkeys ?? 0) > 0) via.push("passkey");
+  if (p.email && !p.googleSub) via.push("email");
   const i = tierFor(p.xp);
   const next = TIERS[i + 1];
   return {
@@ -71,8 +83,8 @@ export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
     badges: p.badges,
     pendingClaims: p.pendingClaims,
     shielded: p.shielded,
-    account: { signedIn: !!p.email, email: p.email ? maskEmail(p.email) : undefined },
-    balanceZat: p.email ? balanceZat : 0,
+    account: { signedIn: isAccount(p), email: p.email ? maskEmail(p.email) : undefined, via },
+    balanceZat: isAccount(p) ? balanceZat : 0,
   };
 }
 

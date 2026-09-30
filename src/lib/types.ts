@@ -165,8 +165,9 @@ export interface Player {
   pendingClaims: string[]; // stash ids won but not yet claimed (guests) — credited to the wallet on sign-up
   shielded: boolean;
   account: {
-    signedIn: boolean; // verified email account (guests can browse and play, but must sign up to keep winnings / hide)
+    signedIn: boolean; // an account (Google, passkey or email); guests can browse and play, but must sign up to keep winnings / hide
     email?: string; // masked, e.g. "ni***@gmail.com"
+    via?: ("email" | "google" | "passkey")[]; // how this account signs in
   };
   balanceZat: number; // in-app ZECKED wallet balance (0 for guests)
 }
@@ -241,6 +242,8 @@ export interface AppConfig {
   zecUsd: number;
   maxStashUsd: number;
   minStashUsd: number;
+  /** Sign-in methods available on this deployment. */
+  auth: { google: boolean; passkey: boolean; email: boolean };
 }
 
 export const ZAT = 100_000_000;

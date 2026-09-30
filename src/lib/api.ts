@@ -1,5 +1,6 @@
 "use client";
 // Typed client for the ZECKED API. All screens talk to the server through this file.
+import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
 import type {
   AppConfig,
   AuthStartResult,
@@ -17,6 +18,8 @@ import type {
   WinPayload,
   WinnerPick,
 } from "./types";
+
+export type SignedIn = { player: Player; creditedZat: number; isNew?: boolean };
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -72,8 +75,16 @@ export const api = {
   // ---- accounts (email code sign-in) ----
   authStart: (email: string) => req<AuthStartResult>("/auth/email/start", { method: "POST", body: JSON.stringify({ email }) }),
   authVerify: (email: string, code: string) =>
-    req<{ player: Player; creditedZat: number }>("/auth/email/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
+    req<SignedIn>("/auth/email/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
   logout: () => req<{ ok: true }>("/auth/logout", { method: "POST" }),
+  passkeyRegisterOptions: () => req<PublicKeyCredentialCreationOptionsJSON>("/auth/passkey/register/options", { method: "POST" }),
+  passkeyRegisterVerify: (response: RegistrationResponseJSON) =>
+    req<SignedIn>("/auth/passkey/register/verify", { method: "POST", body: JSON.stringify({ response }) }),
+  passkeyLoginOptions: () => req<PublicKeyCredentialRequestOptionsJSON>("/auth/passkey/login/options", { method: "POST" }),
+  passkeyLoginVerify: (response: AuthenticationResponseJSON) =>
+    req<SignedIn>("/auth/passkey/login/verify", { method: "POST", body: JSON.stringify({ response }) }),
+  /** Full-page hop to Google (and back to /signin). */
+  googleUrl: (next: string) => `/api/auth/google/start?next=${encodeURIComponent(next)}`,
 
   // ---- in-app wallet ----
   wallet: () => req<WalletInfo>("/wallet"),

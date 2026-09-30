@@ -4,7 +4,7 @@
 import type { WalletInfo, WalletTx, WalletTxKind } from "@/lib/types";
 import { NETWORK_FEE_ZAT, PayoutUncertainError, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
-import { savePlayer, type PlayerRecord } from "./players";
+import { isAccount, savePlayer, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
 import { HttpError, isShieldedAddress, isTransparentAddress, newId, nowIso, shortAddr } from "./util";
 
@@ -115,7 +115,7 @@ async function reconcileWithdrawals(pid: string) {
 }
 
 export async function walletInfo(p: PlayerRecord): Promise<WalletInfo> {
-  if (!p.email) throw new HttpError(401, "Sign up to get your own ZECKED wallet");
+  if (!isAccount(p)) throw new HttpError(401, "Sign up to get your own ZECKED wallet");
   const { address, uri } = await ensureDepositAddress(p);
   if (networkName() !== "sim") await reconcileWithdrawals(p.id).catch((e) => console.error("reconcile failed", (e as Error).message));
   const pending = await syncDeposits(p);
@@ -136,7 +136,7 @@ export async function walletInfo(p: PlayerRecord): Promise<WalletInfo> {
 
 export async function simulateDeposit(p: PlayerRecord, amountZat?: number) {
   if (networkName() !== "sim") throw new HttpError(400, "Simulated deposits only work in sim mode");
-  if (!p.email) throw new HttpError(401, "Sign up first");
+  if (!isAccount(p)) throw new HttpError(401, "Sign up first");
   const amt = Math.min(50_000_000, Math.max(100_000, Math.round(amountZat || 1_000_000)));
   await ensureDepositAddress(p);
   await kv().incr(K.simDeposits(p.id), amt);
@@ -144,7 +144,7 @@ export async function simulateDeposit(p: PlayerRecord, amountZat?: number) {
 }
 
 export async function withdraw(p: PlayerRecord, rawAddress: string, amountZat: number) {
-  if (!p.email) throw new HttpError(401, "Sign up first");
+  if (!isAccount(p)) throw new HttpError(401, "Sign up first");
   const to = (rawAddress || "").trim();
   const net = networkName();
   if (!isShieldedAddress(to) && !isTransparentAddress(to)) throw new HttpError(400, "That doesn't look like a Zcash address");

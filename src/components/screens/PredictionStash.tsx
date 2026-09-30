@@ -1,6 +1,7 @@
 "use client";
 // Screens 05 (prediction stash) + 06 (live match), plus the locked, full-time, refunded,
 // called-off and awaiting-funding states. Polls the stash so every state stays in sync.
+import { sfx } from "@/lib/sfx";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Chip, Countdown, Icon, LiveBadge, TeamBadge, Toast } from "@/components/zk";
@@ -817,6 +818,7 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
     try {
       const r = await api.call(id, body);
       mutation.current++;
+      sfx("lock");
       setData((prev) => ({
         ...prev,
         myCall: r.myCall,

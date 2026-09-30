@@ -1,9 +1,9 @@
-// Sessions + email-code sign-in. No passwords: the first verified email creates the account,
-// and the guest's progress (XP, badges, pending wins) carries over.
+// Sessions + email-code sign-in (Google and passkeys live in google.ts and passkeys.ts). No passwords:
+// the first sign-in creates the account, and the guest's progress (XP, badges, pending wins) carries over.
 import type { AuthStartResult } from "@/lib/types";
 import { networkName } from "@/lib/zcash/engine";
 import { kv } from "./kv";
-import { ensurePlayer, getPlayer, savePlayer, type PlayerRecord } from "./players";
+import { ensurePlayer, getPlayer, isAccount, savePlayer, type PlayerRecord } from "./players";
 import { HttpError, newToken, nowIso, sha256 } from "./util";
 
 const SESSION_TTL = 180 * 86400; // seconds
@@ -25,7 +25,7 @@ export async function sessionPlayer(sid: string | undefined, legacyPid: string |
   let resume: string | null = null;
   if (legacyPid) {
     const legacy = await getPlayer(legacyPid);
-    if (legacy && !legacy.email) resume = legacy.id;
+    if (legacy && !isAccount(legacy)) resume = legacy.id;
   }
   const { player } = await ensurePlayer(resume);
   const nsid = await createSession(player.id);
@@ -60,6 +60,11 @@ async function rateLimit(key: string, max: number, windowSec: number) {
   if (n > max) throw new HttpError(429, "Slow down a sec. Too many codes. Try again in a few minutes");
 }
 
+/** Email codes need a real sender (Resend + a verified domain). Local sim mode shows the code instead. */
+export function emailSignInAvailable() {
+  return !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM) || networkName() === "sim";
+}
+
 async function sendEmail(to: string, code: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM; // e.g. "ZECKED <hello@zecked.com>"
@@ -84,6 +89,7 @@ async function sendEmail(to: string, code: string): Promise<boolean> {
 }
 
 export async function startEmailSignIn(rawEmail: string, ip: string): Promise<AuthStartResult> {
+  if (!emailSignInAvailable()) throw new HttpError(503, "Email sign-in is coming soon. Use Google or a passkey for now");
   const email = normalizeEmail(rawEmail);
   await rateLimit(`code:${email}`, 5, 3600);
   await rateLimit(`ip:${ip}`, 25, 3600);
@@ -91,10 +97,8 @@ export async function startEmailSignIn(rawEmail: string, ip: string): Promise<Au
   const expiresAt = new Date(Date.now() + CODE_TTL * 1000).toISOString();
   await kv().set(`code:${email}`, { hash: sha256(`${SECRET}:${email}:${code}`), attempts: 0, expiresAt }, { exSeconds: CODE_TTL });
   const sent = await sendEmail(email, code);
-  if (!sent) {
-    if (networkName() === "mainnet") throw new HttpError(503, "Email sign-in isn't set up yet");
-    return { sentTo: maskEmail(email), expiresAt, devCode: code };
-  }
+  // Only local sim mode may show the code on screen: on a real deployment that would let anyone into any account.
+  if (!sent) return { sentTo: maskEmail(email), expiresAt, devCode: code };
   return { sentTo: maskEmail(email), expiresAt };
 }
 
@@ -115,7 +119,7 @@ export async function verifyEmailSignIn(rawEmail: string, code: string, guest: P
   if (existingId && existingId !== guest.id) {
     const account = await getPlayer(existingId);
     if (account) {
-      if (!guest.email) mergeGuestInto(account, guest);
+      adoptGuest(account, guest);
       await savePlayer(account);
       return { player: account, isNew: false };
     }
@@ -129,12 +133,18 @@ export async function verifyEmailSignIn(rawEmail: string, code: string, guest: P
     await savePlayer(player);
     return { player, isNew: true };
   }
-  const isNew = !guest.email;
+  // A guest becomes an account; a passkey-only account just gains an email.
+  const isNew = !isAccount(guest);
   guest.email = email;
   guest.verifiedAt = guest.verifiedAt || nowIso();
   await kv().set(`email:${email}`, guest.id);
   await savePlayer(guest);
   return { player: guest, isNew };
+}
+
+/** Signing into an existing account from a guest session: the guest's XP, badges and pending wins come along. */
+export function adoptGuest(account: PlayerRecord, guest: PlayerRecord) {
+  if (account.id !== guest.id && !isAccount(guest)) mergeGuestInto(account, guest);
 }
 
 function mergeGuestInto(account: PlayerRecord, guest: PlayerRecord) {

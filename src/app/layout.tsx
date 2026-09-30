@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 import "@/styles/site.css";
 import { surface } from "@/lib/surface";
 import { SmoothScroll } from "@/components/site/SmoothScroll";
+import { Sfx } from "@/components/zk/Sfx";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.vercel.app";
 
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {process.env.ZECKED_NETWORK === "testnet" ? "Testnet · test ZEC, not real money" : "Sim mode · play ZEC, not real money"}
               </div>
             )}
+            <Sfx />
             <div className="zk-app">{children}</div>
           </>
         )}

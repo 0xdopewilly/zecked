@@ -8,6 +8,8 @@ import { api, formatUsd, formatZec } from "@/lib/api";
 import type { BadgeId, Player, PublicStash } from "@/lib/types";
 import { ZAT } from "@/lib/types";
 import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar } from "@/components/zk";
+import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
+import { isMuted, setMuted } from "@/lib/sfx";
 
 const ALL_BADGES: BadgeId[] = [
   "first-crack",
@@ -351,6 +353,8 @@ function AccountCard({ player }: { player: Player }) {
             <>
               Signed in as <span style={{ color: "var(--zk-text)", fontWeight: "var(--zk-fw-bold)" }}>{player.account.email}</span>
             </>
+          ) : player.account.via?.includes("passkey") ? (
+            "Signed in with a passkey"
           ) : (
             "Signed in"
           )}
@@ -396,6 +400,132 @@ function AccountCard({ player }: { player: Player }) {
       {error && (
         <span role="alert" style={{ font: "var(--zk-type-caption)", color: "var(--zk-red)" }}>
           {error}
+        </span>
+      )}
+    </section>
+  );
+}
+
+/* ---------- settings ---------- */
+
+const settingRow: CSSProperties = { display: "flex", alignItems: "center", gap: "var(--zk-space-12)", minHeight: 52 };
+
+function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      style={{
+        width: 52,
+        height: 32,
+        flex: "none",
+        borderRadius: 999,
+        border: 0,
+        padding: 3,
+        cursor: "pointer",
+        background: on ? "var(--zk-mint)" : "var(--zk-surface-raised)",
+        boxShadow: on ? "inset 0 -2px 0 var(--zk-mint-deep)" : "inset 0 0 0 1.5px var(--zk-border-strong)",
+        transition: "background var(--zk-dur-fast) var(--zk-ease-out)",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      <span
+        style={{
+          display: "block",
+          width: 26,
+          height: 26,
+          borderRadius: "50%",
+          background: "#fff",
+          boxShadow: "0 2px 4px rgb(0 0 0 / .3)",
+          transform: on ? "translateX(20px)" : "none",
+          transition: "transform var(--zk-dur-fast) var(--zk-ease-spring)",
+        }}
+      />
+    </button>
+  );
+}
+
+function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player) => void }) {
+  const [soundOn, setSoundOn] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  const [canPasskey, setCanPasskey] = useState(false);
+  useEffect(() => {
+    setSoundOn(!isMuted());
+    setCanPasskey(browserSupportsWebAuthn());
+  }, []);
+  const via = player.account?.via || [];
+  const signedIn = !!player.account?.signedIn;
+  const methods = via.map((v) => (v === "google" ? "Google" : v === "passkey" ? "Passkey" : "Email")).join(" · ");
+
+  const addPasskey = async () => {
+    if (adding) return;
+    setAdding(true);
+    setNote(null);
+    try {
+      const optionsJSON = await api.passkeyRegisterOptions();
+      const response = await startRegistration({ optionsJSON });
+      const r = await api.passkeyRegisterVerify(response);
+      onSaved(r.player);
+      setNote({ text: "Passkey added. Next time, just use Face ID or your fingerprint.", ok: true });
+    } catch (e) {
+      const name = e instanceof Error ? e.name : "";
+      setNote({
+        text: name === "NotAllowedError" || name === "AbortError" ? "No passkey added." : e instanceof Error && e.message ? e.message : "Couldn’t add the passkey.",
+        ok: false,
+      });
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <section aria-label="Settings" style={{ ...accountCard, gap: 0 }}>
+      {sectionHead("Settings")}
+      <div style={{ ...settingRow, marginTop: "var(--zk-space-6)" }}>
+        <div style={tile("var(--zk-sky-tint)", "var(--zk-sky)", 36)}>
+          <Icon icon="bell" size={18} stroke={2.4} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: "var(--zk-type-h4)" }}>Sounds</div>
+          <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>Pops, confetti and wins</div>
+        </div>
+        <Switch
+          label="Sounds"
+          on={soundOn}
+          onChange={(v) => {
+            setSoundOn(v);
+            setMuted(!v);
+          }}
+        />
+      </div>
+      {signedIn && (
+        <div style={{ ...settingRow, borderTop: "1px solid var(--zk-border)" }}>
+          <div style={tile("var(--zk-mint-tint)", "var(--zk-mint)", 36)}>
+            <Icon icon="passkey" size={18} stroke={2.4} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "var(--zk-type-h4)" }}>Sign-in</div>
+            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>{methods || "Signed in"}</div>
+          </div>
+          {canPasskey && (
+            <Button
+              label={adding ? "Adding…" : via.includes("passkey") ? "Add another" : "Add a passkey"}
+              variant="ghost"
+              size="sm"
+              full={false}
+              disabled={adding}
+              onClick={() => void addPasskey()}
+            />
+          )}
+        </div>
+      )}
+      {note && (
+        <span role="status" style={{ font: "var(--zk-type-caption)", color: note.ok ? "var(--zk-mint)" : "var(--zk-text-muted)", paddingBottom: "var(--zk-space-4)" }}>
+          {note.text}
         </span>
       )}
     </section>
@@ -737,6 +867,7 @@ export default function Profile() {
             <Stats player={player} />
             <Badges player={player} />
             <MyStashes />
+            <SettingsCard player={player} onSaved={setPlayer} />
           </>
         ) : error ? (
           <div
