@@ -3,7 +3,7 @@
 // sound ("your stash got ZECKED", "your ZEC came back", "ZEC landed"). Tap opens the stash or wallet.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, clearApiCache } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import type { Notice } from "@/lib/types";
 import { HiderToast } from "@/components/screens/HiderToast";
@@ -42,6 +42,7 @@ export function LiveNotices() {
       }
       if (!items.length) return;
       writeSeen(items[0].at);
+      clearApiCache(); // balances/stats just changed: next reads go to the server
       setQueue((q) => [...q, ...[...items].reverse()]);
     } catch {
       /* offline or signed out: try again next tick */

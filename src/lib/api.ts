@@ -45,10 +45,10 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 const TTL: [RegExp, number][] = [
   [/^\/config$/, 300_000],
   [/^\/matches/, 60_000],
-  [/^\/leaderboard/, 15_000],
-  [/^\/players\//, 15_000],
-  [/^\/me$/, 4_000],
-  [/^\/me\/stashes$/, 4_000],
+  [/^\/leaderboard/, 60_000],
+  [/^\/players\//, 20_000],
+  [/^\/me$/, 20_000],
+  [/^\/me\/stashes$/, 20_000],
 ];
 const reads = new Map<string, { at: number; p: Promise<unknown> }>();
 
@@ -88,8 +88,11 @@ export type FeedFilter = "all" | "riddles" | "predictions" | "ending" | "biggest
 export const api = {
   config: () => req<AppConfig>("/config"),
   feed: (filter: FeedFilter = "all") => req<{ stashes: PublicStash[]; house?: { nextDropAt: string | null; liveId: string | null } | null }>(`/stashes?filter=${filter}`),
-  stash: (id: string) =>
-    req<{ stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload; myReactions?: Reaction[] }>(`/stashes/${id}`),
+  /** `peek`: a background warm-up read that doesn't count as viewing the stash. */
+  stash: (id: string, peek = false) =>
+    req<{ stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload; myReactions?: Reaction[] }>(
+      `/stashes/${id}${peek ? "?peek=1" : ""}`,
+    ),
   /** Toggle one emoji reaction on a stash. */
   react: (id: string, emoji: Reaction) =>
     req<{ reactions: Partial<Record<Reaction, number>>; mine: Reaction[] }>(`/stashes/${id}/react`, { method: "POST", body: JSON.stringify({ emoji }) }),

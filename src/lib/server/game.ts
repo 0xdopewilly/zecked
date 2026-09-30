@@ -703,14 +703,15 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
   return out;
 }
 
-export async function stashDetail(id: string, viewer: PlayerRecord) {
+/** `peek`: a background warm-up read (the feed pre-loading a card): doesn't count as viewing it. */
+export async function stashDetail(id: string, viewer: PlayerRecord, opts: { peek?: boolean } = {}) {
   let s = await getStash(id);
   if (!s) throw new HttpError(404, "Stash not found");
   s = await tickStash(s); // returns the (possibly updated) record: no second read needed
   const live = s.status === "live" || s.status === "locked";
   // The view ping, the public card and the viewer's own bits, all at once.
   const [, stash, mineRx, t, c] = await Promise.all([
-    live ? recordView(s, viewer.id) : Promise.resolve(),
+    live && !opts.peek ? recordView(s, viewer.id) : Promise.resolve(),
     toPublic(s, viewer.id),
     myReactions(s.id, viewer.id),
     s.type === "riddle" ? kv().get<{ used: number; windowStart: number }>(K.myTries(s.id, viewer.id)) : Promise.resolve(null),

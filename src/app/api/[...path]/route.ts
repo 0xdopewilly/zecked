@@ -262,7 +262,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
       }
     }
     if (a === "stashes" && b) {
-      if (!c && method === "GET") return out(await stashDetail(b, player));
+      if (!c && method === "GET") return out(await stashDetail(b, player, { peek: req.nextUrl.searchParams.get("peek") === "1" }));
       const s = await loadStash(b);
       if (c === "guess" && method === "POST") {
         const { answer } = await body<{ answer: string }>(req);

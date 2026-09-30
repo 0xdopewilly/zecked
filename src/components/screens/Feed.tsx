@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { api, formatZec, type FeedFilter } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
+import { warmStash } from "@/lib/stashCache";
 import type { Player, PublicStash, TickerItem } from "@/lib/types";
 import { Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
 
@@ -1241,6 +1242,15 @@ export default function Feed() {
   const heldSet = new Set(held);
   const freshSet = new Set(fresh);
   const shown = list?.filter((s) => !heldSet.has(s.id));
+
+  // Warm the top few live stashes in the background (a "peek" that doesn't count as viewing them),
+  // so tapping one opens instantly. Re-warmed as the list changes; the cache drops stale reads.
+  const warmKey = (shown || []).filter((s) => s.status === "live" || s.status === "locked").slice(0, 4).map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!warmKey) return;
+    const t = window.setTimeout(() => warmKey.split(",").forEach((id) => warmStash(id)), 900);
+    return () => window.clearTimeout(t);
+  }, [warmKey]);
   const waiting = list ? list.filter((s) => heldSet.has(s.id)).length : 0;
   // The whole feed is empty (not just this filter): the teaser, with its own single primary button.
   const feedEmpty = !!list && list.length === 0 && (filter === "all" || lists.all?.length === 0);

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { api } from "@/lib/api";
 import { Icon, type IconName } from "@/components/zk/Icon";
 
 /* Port of "ZK Tab Bar": Home · Leaderboard · Hide · Profile, fixed to the bottom of the app column. */
@@ -20,7 +22,30 @@ const TABS: [id: TabId, label: string, icon: IconName, href: string][] = [
   ["profile", "Profile", "user", "/me"],
 ];
 
+/** Once the screen is idle, warm the data the other tabs open with, so the first tap on a tab is instant. */
+function useWarmTabs(active: TabId) {
+  useEffect(() => {
+    const warm = () => {
+      if (active !== "leaderboard") void api.leaderboard("crackers", "week").catch(() => {});
+      if (active !== "profile") {
+        void api
+          .me()
+          .then(({ player }) => (player.account?.signedIn ? api.myStashes() : null))
+          .catch(() => {});
+      }
+    };
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+    const id = w.requestIdleCallback ? w.requestIdleCallback(warm, { timeout: 2500 }) : window.setTimeout(warm, 1500);
+    return () => {
+      const c = window as Window & { cancelIdleCallback?: (id: number) => void };
+      if (c.cancelIdleCallback) c.cancelIdleCallback(id);
+      else window.clearTimeout(id);
+    };
+  }, [active]);
+}
+
 export function TabBar({ active = "home", onSelect }: TabBarProps) {
+  useWarmTabs(active);
   return (
     <nav
       aria-label="Main"
