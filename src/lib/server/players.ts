@@ -37,6 +37,7 @@ export interface PlayerRecord {
   googleSub?: string; // Google account id, when signed up with Google
   passkeys?: number; // passkeys registered to this account
   passkeyUser?: string; // WebAuthn user handle (base64url), created with the first passkey
+  house?: boolean; // the ZECKED house account (welcome gifts, house drops)
   depositAddress?: string; // personal in-app wallet address
   depositUri?: string;
   mergedGuests?: string[];
@@ -58,9 +59,17 @@ function maskEmail(e: string) {
   return `${u.slice(0, 2)}${"*".repeat(Math.max(1, Math.min(3, u.length - 2)))}@${d}`;
 }
 
+/** The streak as it stands today: it only resets on the next play, so a lapsed one (last played before
+ *  yesterday) shows as 0 instead of a stale number. */
+function liveStreak(p: PlayerRecord) {
+  if (!p.lastPlayedDay || !p.stats.streak) return 0;
+  const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+  return p.lastPlayedDay >= yesterday ? p.stats.streak : 0;
+}
+
 /** A signed-in account (email, Google or passkey), as opposed to a guest who can only browse and play. */
 export function isAccount(p: PlayerRecord | null | undefined): boolean {
-  return !!p && !!(p.email || p.googleSub || (p.passkeys ?? 0) > 0);
+  return !!p && !!(p.house || p.email || p.googleSub || (p.passkeys ?? 0) > 0);
 }
 
 export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
@@ -79,7 +88,7 @@ export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
     nextTier: next?.id,
     xpForNext: next?.xp,
     xpTierStart: TIERS[i].xp,
-    stats: p.stats,
+    stats: { ...p.stats, streak: liveStreak(p) },
     badges: p.badges,
     pendingClaims: p.pendingClaims,
     shielded: p.shielded,
@@ -100,16 +109,28 @@ export async function savePlayer(p: PlayerRecord) {
   await kv().set(`player:${p.id}`, p);
 }
 
-async function claimHandle(handle: string, id: string) {
+/** Change a few fields on the LATEST copy of a player (a request's copy may be stale: saving it whole
+ *  would undo XP/stats written meanwhile, e.g. by going live). Mirrors the change onto `local` too. */
+export async function patchPlayer(local: PlayerRecord, fn: (p: PlayerRecord) => void): Promise<PlayerRecord> {
+  const fresh = (await getPlayer(local.id)) || local;
+  fn(fresh);
+  fn(local);
+  await savePlayer(fresh);
+  return fresh;
+}
+
+export async function claimHandle(handle: string, id: string) {
   return kv().set(`handle:${handle.toLowerCase()}`, id, { nx: true });
 }
 
-export async function ensurePlayer(id?: string | null): Promise<{ player: PlayerRecord; created: boolean }> {
+export const newPlayerId = () => `p_${newId()}${newId()}`; // always server-generated
+
+export async function ensurePlayer(id?: string | null, newPid?: string): Promise<{ player: PlayerRecord; created: boolean }> {
   if (id) {
     const p = await getPlayer(id);
     if (p) return { player: p, created: false };
   }
-  const pid = `p_${newId()}${newId()}`; // always server-generated
+  const pid = newPid || newPlayerId();
   let handle = "";
   for (let i = 0; i < 6; i++) {
     const r = () => Math.floor(Math.random() * 15);

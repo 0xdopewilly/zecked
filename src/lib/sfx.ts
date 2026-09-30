@@ -52,7 +52,8 @@ export function setMuted(m: boolean) {
   if (!m) sfx("pop");
 }
 
-/** Browsers only allow audio after a gesture: call this from the first pointerdown/keydown. */
+/** Browsers only allow audio after a gesture: <Sfx /> calls this from pointerdown/keydown. Until the
+ *  first gesture, sfx() stays silent (no AudioContext is created, so Chrome has nothing to warn about). */
 export function unlockAudio() {
   if (!enabled || typeof window === "undefined") return;
   try {
@@ -204,11 +205,10 @@ export function sfx(name: Sound) {
   const now = performance.now();
   if (now - (last[name] ?? -1e9) < (GAP[name] ?? 60)) return;
   last[name] = now;
+  const c = ctx;
+  if (!c || !master) return; // no gesture yet
   const h = HAPTIC[name];
   if (h) vibrate(h);
-  unlockAudio();
-  const c = ctx;
-  if (!c || !master) return;
   const play = () => {
     try {
       RECIPES[name](c.currentTime + 0.005);

@@ -1,11 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Bricolage_Grotesque, Inter, Space_Mono } from "next/font/google";
 import "@/styles/globals.css";
-import "@/styles/site.css";
 import { surface } from "@/lib/surface";
 import { SmoothScroll } from "@/components/site/SmoothScroll";
 import { Sfx } from "@/components/zk/Sfx";
+import { LiveNotices } from "@/components/zk/LiveNotices";
+import { NavTracker } from "@/lib/nav";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.vercel.app";
+
+// Self-hosted by Next (no render-blocking request to Google). The tokens read these CSS variables.
+const display = Bricolage_Grotesque({ subsets: ["latin"], axes: ["opsz"], variable: "--zk-ff-display", display: "swap" });
+const body = Inter({ subsets: ["latin"], variable: "--zk-ff-body", display: "swap" });
+const mono = Space_Mono({ subsets: ["latin"], weight: ["400", "700"], variable: "--zk-ff-mono", display: "swap" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -15,7 +22,7 @@ export const metadata: Metadata = {
   applicationName: "ZECKED",
   openGraph: {
     title: "ZECKED · Hide it. Crack it. Get Zecked.",
-    description: "Riddles and match calls with real ZEC inside. First one to crack it keeps it.",
+    description: "Riddles and match calls with ZEC inside. First one to crack it keeps it.",
     siteName: "ZECKED",
     type: "website",
   },
@@ -35,16 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const isSite = surface() === "site";
   const testMode = !isSite && (process.env.ZECKED_NETWORK || "sim") !== "mainnet";
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <body>
         {isSite ? (
           <SmoothScroll>{children}</SmoothScroll>
@@ -56,6 +54,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             )}
             <Sfx />
+            <NavTracker />
+            <LiveNotices />
             <div className="zk-app">{children}</div>
           </>
         )}

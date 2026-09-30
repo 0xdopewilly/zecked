@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import type { Match, PublicStash, StashStatus, Team } from "@/lib/types";
 import { formatUsd, formatZec } from "@/lib/api";
+import { prefetchStash } from "@/lib/stashCache";
 import { Chip } from "@/components/zk/Chip";
 import { Countdown } from "@/components/zk/Countdown";
 import { Icon } from "@/components/zk/Icon";
@@ -15,12 +16,19 @@ export interface StashCardProps {
   /** Wraps the card in a Next.js <Link>. */
   href?: string;
   onClick?: () => void;
+  /** Mark the viewer's own stashes with a "YOURS" sticker (the feed; pointless on your own profile). */
+  markMine?: boolean;
 }
 
 const ENDED: readonly StashStatus[] = ["zecked", "expired", "refunded", "void"];
+
+// On the narrowest cards (320px phones) the status pill uses its short label so "PREDICTION" still fits
+// beside it. A container query, so it follows the card's width wherever the card is used.
+const CARD_CSS =
+  ".zk-sc{container-type:inline-size}.zk-sc-short{display:none}" +
+  "@container (max-width:279px){.zk-sc-short{display:contents}.zk-sc-long{display:none}}";
 const URGENT_MS = 30 * 60 * 1000;
 const TEASER_MAX = 70;
-const TEAM_NAME_MAX = 10;
 
 /** Ticks every `ms` so time-left text and the progress bar stay current. */
 function useNow(ms = 30_000): number {
@@ -31,6 +39,66 @@ function useNow(ms = 30_000): number {
     return () => clearInterval(t);
   }, [ms]);
   return now;
+}
+
+function reducedMotion(): boolean {
+  try {
+    return !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+/** A number that glides to its new value (tries, calls, cracking now) instead of jumping. The unit follows
+ *  the number on screen ("1 try" → "2 tries"), not the target. */
+function Num({ value, unit }: { value: number; unit?: [one: string, many: string] }) {
+  const [shown, setShown] = useState(value);
+  const cur = useRef(value);
+  useEffect(() => {
+    const from = cur.current;
+    if (from === value) return;
+    if (reducedMotion()) {
+      cur.current = value;
+      setShown(value);
+      return;
+    }
+    const t0 = performance.now();
+    const dur = Math.min(900, 350 + Math.abs(value - from) * 60);
+    let raf = requestAnimationFrame(function step(t) {
+      const p = Math.min(1, (t - t0) / dur);
+      const v = Math.round(from + (value - from) * (1 - Math.pow(1 - p, 3)));
+      cur.current = v;
+      setShown(v);
+      if (p < 1) raf = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return (
+    <span>
+      <span style={{ fontVariantNumeric: "tabular-nums" }}>{shown.toLocaleString("en-US")}</span>
+      {unit ? ` ${shown === 1 ? unit[0] : unit[1]}` : null}
+    </span>
+  );
+}
+
+/** Gives its child a little bump whenever `value` goes up. */
+function Bump({ value, children }: { value: number; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const prev = useRef(value);
+  useEffect(() => {
+    const up = value > prev.current;
+    prev.current = value;
+    if (!up || !ref.current?.animate || reducedMotion()) return;
+    ref.current.animate([{ transform: "scale(1)" }, { transform: "scale(1.12)" }, { transform: "scale(1)" }], {
+      duration: 380,
+      easing: "cubic-bezier(.3,1.6,.5,1)",
+    });
+  }, [value]);
+  return (
+    <span ref={ref} style={{ display: "inline-flex", flex: "none" }}>
+      {children}
+    </span>
+  );
 }
 
 function toTeaser(text: string): string {
@@ -63,19 +131,39 @@ function formatDuration(sec: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
-const teamLabel = (t: Team) => (t.name.length > TEAM_NAME_MAX ? t.code : t.name);
 const scoreOf = (m: Match) =>
   m.homeScore != null && m.awayScore != null ? `${m.homeScore}–${m.awayScore}` : undefined;
 
-const TEAM_NAME_STYLE: CSSProperties = {
-  font: "var(--zk-type-small)",
-  fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  minWidth: 0,
-};
+/** Crest over the full team name (up to two lines, a size smaller for long names): never a code twice. */
+function TeamSide({ team }: { team: Team }) {
+  const n = team.name.trim() || team.code;
+  const fs = n.length > 16 ? "var(--zk-fs-11)" : n.length > 11 ? "var(--zk-fs-12)" : "var(--zk-fs-13)";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-6)", minWidth: 0 }}>
+      <TeamBadge code={team.code} color={team.color} ink={team.ink} logo={team.logo} name={team.name} size={38} />
+      <span
+        lang="en"
+        title={n}
+        style={
+          {
+            font: `var(--zk-fw-bold) ${fs}/1.2 var(--zk-font-body)`,
+            textAlign: "center",
+            maxWidth: "100%",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            overflowWrap: "break-word",
+            hyphens: "auto",
+            textWrap: "balance",
+          } as CSSProperties
+        }
+      >
+        {n}
+      </span>
+    </div>
+  );
+}
 
 const CENTER_LABEL_STYLE: CSSProperties = {
   font: "var(--zk-fw-black) var(--zk-fs-10)/1 var(--zk-font-body)",
@@ -83,16 +171,21 @@ const CENTER_LABEL_STYLE: CSSProperties = {
   color: "var(--zk-text-muted)",
 };
 
-export function StashCard({ stash, href, onClick }: StashCardProps) {
+export function StashCard({ stash, href, onClick, markMine = false }: StashCardProps) {
   const [hover, setHover] = useState(false);
   const [press, setPress] = useState(false);
   const now = useNow();
+  const warmT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(warmT.current), []);
 
   const riddle = stash.type === "riddle";
   const status = stash.status;
   const cracked = ENDED.includes(status);
-  const isLive = status === "live" || status === "locked";
-  const interactive = !!href || !!onClick;
+  const mine = stash.isMine;
+  // Your own stash that still needs its ZEC: the whole card leads back to the funding step.
+  const needsFunding = mine && status === "awaiting_funding";
+  const link = href ? (needsFunding ? `/hide?resume=${encodeURIComponent(stash.id)}` : href) : undefined;
+  const interactive = !!link || !!onClick;
   const st: "default" | "hover" | "pressed" | "cracked" = cracked
     ? "cracked"
     : press
@@ -108,22 +201,23 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
   const pred = stash.prediction;
   const match = pred?.match;
   const sub = riddle
-    ? `by ${handle}`
+    ? `by ${mine ? "you" : handle}`
     : `${pred?.kind === "winner" ? "Winner" : "Exact score"} · ${match?.leagueName ?? ""}`;
   const tileBg = riddle ? "var(--zk-grad-tile-purple)" : "var(--zk-grad-tile-sky)";
   const tileEdge = riddle ? "var(--zk-purple-shade)" : "var(--zk-sky-shade)";
   const tileIcon = riddle ? "lock" : "ball";
 
-  const liveState = isLive ? "live" : "ended";
-  const liveLabel = isLive
-    ? "Live · verified"
-    : status === "zecked"
-      ? "Cracked"
-      : status === "void"
-        ? "Called off"
-        : status === "awaiting_funding"
-          ? "Not live yet"
-          : "Ended";
+  // Status pill. Ended stashes get the stamp instead (ZECKED, UNCRACKABLE…), never a "Cracked" pill.
+  // Predictions: "Calls open" until kickoff, then "Calls locked" until it's settled; the LIVE badge (with
+  // the minute) shows in the match strip only while the match is actually in play.
+  const callsOpen = status === "live" && match?.status === "scheduled" && Date.parse(match.kickoff) > now;
+  let badge: { state: "live" | "ended"; label: string; short: string } | null = null;
+  if (status === "awaiting_funding") badge = { state: "ended", label: "Not live yet", short: "Not live" };
+  else if (!cracked && riddle) badge = { state: "live", label: "Live · verified", short: "Live" };
+  else if (!cracked)
+    badge = callsOpen
+      ? { state: "live", label: "Calls open", short: "Open" }
+      : { state: "ended", label: "Calls locked", short: "Locked" };
 
   // ---------- Riddle time bar ----------
   const startMs = Date.parse(stash.liveAt ?? stash.createdAt);
@@ -131,7 +225,6 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
   const totalMs = Math.max(1, endMs - startMs);
   let refMs = now;
   if (status === "zecked" && stash.result?.zeckedAt) refMs = Date.parse(stash.result.zeckedAt);
-  if (status === "awaiting_funding") refMs = startMs;
   const remainingMs = status === "expired" || status === "refunded" ? 0 : Math.max(0, endMs - refMs);
   const pct = Math.max(0, Math.min(100, (remainingMs / totalMs) * 100));
   const urgent = status === "live" && remainingMs > 0 && remainingMs < URGENT_MS;
@@ -148,14 +241,14 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
         : "Cracked"
       : status === "void"
         ? "Called off"
-        : status === "awaiting_funding"
-          ? "Not live yet"
-          : formatLeft(remainingMs);
+        : formatLeft(remainingMs);
+  const crackingNow = status === "live" ? (stash.riddle?.crackingNow ?? 0) : 0;
 
   // ---------- Prize + meta ----------
   const zec = formatZec(stash.amountZat);
   const usd = formatUsd(stash.usd);
-  const meta = riddle ? plural(stash.riddle?.tries ?? 0, "try", "tries") : plural(pred?.calls ?? 0, "call", "calls");
+  const metaN = riddle ? (stash.riddle?.tries ?? 0) : (pred?.calls ?? 0);
+  const metaUnit: [string, string] = riddle ? ["try", "tries"] : ["call", "calls"];
   const metaIcon = riddle ? "key" : "orb";
 
   // ---------- Stamp ----------
@@ -164,7 +257,7 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
       ? { icon: "unlock" as const, text: "ZECKED" }
       : status === "void"
         ? { icon: "close" as const, text: "CALLED OFF" }
-        : { icon: "shield" as const, text: "UNCRACKABLE" };
+        : { icon: "shield" as const, text: riddle ? "UNCRACKABLE" : "NO WINNER" };
 
   // ---------- Card chrome ----------
   const bd = stash.whale
@@ -180,7 +273,7 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
     if (onClick && !cracked) onClick();
   };
   const handleKey = (e: KeyboardEvent<HTMLElement>) => {
-    if (href || !onClick) return;
+    if (link || !onClick) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       handleClick();
@@ -198,8 +291,23 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
   };
   const onUp = () => setPress(false);
 
+  // Instant opening: start loading the stash as the finger lands (the stash screen picks the request up).
+  // A touch that turns into a scroll gets a pointercancel within a few frames, so wait that long first:
+  // opening a stash counts you as "cracking now", and scrolling past shouldn't.
+  const prefetchable = !!link && link.startsWith("/s/");
+  const warm = () => {
+    clearTimeout(warmT.current);
+    if (prefetchable) prefetchStash(stash.id);
+  };
+  const warmSoon = (ms: number) => {
+    clearTimeout(warmT.current);
+    if (prefetchable) warmT.current = setTimeout(warm, ms);
+  };
+  const cool = () => clearTimeout(warmT.current);
+
   const card = (
     <article
+      className="zk-sc"
       onClick={handleClick}
       onKeyDown={handleKey}
       onPointerEnter={onEnter}
@@ -207,8 +315,8 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
       onPointerDown={onDown}
       onPointerUp={onUp}
       onPointerCancel={onUp}
-      role={!href && onClick ? "button" : undefined}
-      tabIndex={!href && onClick ? 0 : undefined}
+      role={!link && onClick ? "button" : undefined}
+      tabIndex={!link && onClick ? 0 : undefined}
       style={{
         flex: "none",
         position: "relative",
@@ -226,6 +334,35 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
         WebkitTapHighlightColor: "transparent",
       }}
     >
+      <style href="zk-stash-card" precedence="zk-components">
+        {CARD_CSS}
+      </style>
+      {/* Your own stash: a gold sticker on the top edge (left, so it never meets WHALE STASH on the right). */}
+      {mine && markMine && (
+        <div
+          style={{
+            position: "absolute",
+            left: "var(--zk-space-14)",
+            top: -11,
+            transform: "rotate(-4deg)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--zk-space-4)",
+            padding: "var(--zk-space-4) var(--zk-space-10)",
+            borderRadius: "var(--zk-radius-md)",
+            background: "var(--zk-gold)",
+            color: "var(--zk-gold-ink)",
+            font: "var(--zk-type-btn-sm)",
+            fontSize: "var(--zk-fs-12)",
+            boxShadow: "0 4px 0 var(--zk-gold-deep)",
+            zIndex: 2,
+            pointerEvents: "none",
+          }}
+        >
+          <Icon icon="user" size={13} stroke={2.6} />
+          YOURS
+        </div>
+      )}
       {stash.whale && (
         <div
           style={{
@@ -252,7 +389,7 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)", opacity: cracked ? 0.45 : 1 }}>
-        {/* Header: tile, kind + sub, live badge */}
+        {/* Header: tile, kind + sub, status pill */}
         <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
           <div
             style={{
@@ -286,7 +423,16 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
               {sub}
             </div>
           </div>
-          <LiveBadge state={liveState} label={liveLabel} />
+          {badge && (
+            <>
+              <span className="zk-sc-long" style={{ flex: "none" }}>
+                <LiveBadge state={badge.state} label={badge.label} />
+              </span>
+              <span className="zk-sc-short" style={{ flex: "none" }}>
+                <LiveBadge state={badge.state} label={badge.short} />
+              </span>
+            </>
+          )}
         </div>
 
         {/* Riddle teaser */}
@@ -296,66 +442,87 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
           </div>
         )}
 
-        {/* Prediction match strip */}
+        {/* Prediction match strip: crest over the full name on each side, kickoff / live / result in the middle */}
         {!riddle && match && (
           <div
             style={{
               background: "var(--zk-surface-raised)",
               borderRadius: "var(--zk-radius-xl)",
-              padding: "var(--zk-space-12) var(--zk-space-14)",
+              padding: "var(--zk-space-12) var(--zk-space-10)",
               display: "grid",
-              gridTemplateColumns: "1fr auto 1fr",
-              alignItems: "center",
+              gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)",
+              // Crests line up even when one name takes two lines; the centre sits level with them.
+              alignItems: "start",
+              columnGap: "var(--zk-space-4)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-8)", minWidth: 0 }}>
-              <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} logo={match.home.logo} name={match.home.name} size={40} />
-              <span style={TEAM_NAME_STYLE} title={match.home.name}>
-                {teamLabel(match.home)}
-              </span>
-            </div>
+            <TeamSide team={match.home} />
             <div
               style={{
                 textAlign: "center",
-                padding: "0 var(--zk-space-6)",
+                minHeight: 38,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
+                justifyContent: "center",
                 gap: "var(--zk-space-2)",
               }}
             >
               <MatchCenter match={match} finalScore={stash.result?.finalScore} now={now} />
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--zk-space-8)",
-                justifyContent: "flex-end",
-                minWidth: 0,
-              }}
-            >
-              <span style={TEAM_NAME_STYLE} title={match.away.name}>
-                {teamLabel(match.away)}
-              </span>
-              <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} logo={match.away.logo} name={match.away.name} size={40} />
-            </div>
+            <TeamSide team={match.away} />
           </div>
         )}
 
         {/* Prize + meta chip */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "var(--zk-space-8)" }}>
           <div>
             <div style={{ font: "var(--zk-type-mono-lg)", color: "var(--zk-gold)" }}>{zec} ZEC</div>
             <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>
               ~{usd}
             </div>
           </div>
-          <Chip variant="info" icon={metaIcon} label={meta} />
+          {!needsFunding && (
+            <Bump value={metaN}>
+              <Chip
+                variant="info"
+                icon={metaIcon}
+                label={<Num value={metaN} unit={metaUnit} />}
+              />
+            </Bump>
+          )}
         </div>
 
+        {/* Your unfunded stash: one clear next step */}
+        {needsFunding && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--zk-space-10)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)", font: "var(--zk-type-small)", color: "var(--zk-text-muted)", minWidth: 0 }}>
+              <Icon icon="hourglass" size={14} stroke={2.4} />
+              <span>Add the ZEC to go live</span>
+            </div>
+            <span
+              style={{
+                flex: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--zk-space-6)",
+                height: "var(--zk-h-btn-sm)",
+                padding: "0 var(--zk-space-16)",
+                borderRadius: "var(--zk-radius-lg)",
+                background: "var(--zk-grad-gold)",
+                color: "var(--zk-gold-ink)",
+                font: "var(--zk-type-btn-sm)",
+                boxShadow: st === "pressed" ? "var(--zk-shadow-btn-gold-pressed)" : "0 4px 0 var(--zk-gold-deep)",
+              }}
+            >
+              <Icon icon="coin" size={16} stroke={2.4} />
+              Fund it
+            </span>
+          </div>
+        )}
+
         {/* Riddle time-left bar */}
-        {riddle && (
+        {riddle && !needsFunding && status !== "awaiting_funding" && (
           <div>
             <div
               style={{
@@ -382,42 +549,86 @@ export function StashCard({ stash, href, onClick }: StashCardProps) {
             >
               <Icon icon="hourglass" size={12} stroke={2.4} />
               <span suppressHydrationWarning>{timeLeft}</span>
+              {crackingNow > 0 && (
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "var(--zk-space-6)",
+                    font: "var(--zk-type-caption)",
+                    color: "var(--zk-pink)",
+                  }}
+                >
+                  <span aria-hidden="true" style={{ position: "relative", width: 7, height: 7, flex: "none" }}>
+                    <span
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        borderRadius: "50%",
+                        background: "var(--zk-pink)",
+                        opacity: 0.7,
+                        animation: "zk-ping var(--zk-dur-pulse) ease-out infinite",
+                      }}
+                    />
+                    <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "var(--zk-pink)" }} />
+                  </span>
+                  <span>
+                    <Num value={crackingNow} /> cracking now
+                  </span>
+                </span>
+              )}
             </div>
+          </div>
+        )}
+        {riddle && status === "awaiting_funding" && !needsFunding && (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-4)", font: "var(--zk-type-mono-xs)", color: "var(--zk-text-muted)" }}>
+            <Icon icon="hourglass" size={12} stroke={2.4} />
+            <span>Not live yet</span>
           </div>
         )}
       </div>
 
+      {/* Ended: the stamp sits where the status pill was, clear of the crests and the score. */}
       {cracked && (
         <div
           style={{
             position: "absolute",
-            right: "var(--zk-space-18)",
-            top: "50%",
-            marginTop: -26,
-            transform: "rotate(-8deg)",
+            right: "var(--zk-space-12)",
+            top: "var(--zk-space-18)",
+            transform: "rotate(-7deg)",
             display: "flex",
             alignItems: "center",
-            gap: "var(--zk-space-8)",
-            padding: "var(--zk-space-8) var(--zk-space-14)",
+            gap: "var(--zk-space-6)",
+            padding: "var(--zk-space-6) var(--zk-space-10)",
             borderRadius: "var(--zk-radius-md)",
             border: "3px solid var(--zk-pink)",
-            background: "rgb(var(--zk-bg-rgb) / .85)",
+            background: "rgb(var(--zk-bg-rgb) / .9)",
             color: "var(--zk-pink)",
-            font: "var(--zk-type-btn-md)",
+            font: `var(--zk-fw-black) ${stamp.text.length > 7 ? "var(--zk-fs-13)" : "var(--zk-fs-15)"}/1 var(--zk-font-display)`,
+            letterSpacing: ".02em",
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
           }}
         >
-          <Icon icon={stamp.icon} size={20} stroke={2.6} />
+          <Icon icon={stamp.icon} size={16} stroke={2.6} />
           {stamp.text}
         </div>
       )}
     </article>
   );
 
-  if (!href) return card;
+  if (!link) return card;
   return (
     <Link
-      href={href}
+      href={link}
       transitionTypes={["nav-forward"]}
+      onPointerDown={(e) => (e.pointerType === "mouse" ? warm() : warmSoon(70))}
+      onPointerUp={warm}
+      onPointerCancel={cool}
+      onMouseEnter={() => warmSoon(120)}
+      onMouseLeave={cool}
+      onFocus={warm}
       style={{
         display: "block",
         flex: "none",
@@ -459,8 +670,17 @@ function MatchCenter({ match, finalScore, now }: { match: Match; finalScore?: st
       </>
     );
   }
-  // Under a day: ticking HH:MM:SS (turns urgent under 30 min). Further out: "2d 4h".
+  // Under a day: ticking HH:MM:SS (turns urgent under 30 min). Further out: "2d 4h". Past kickoff while the
+  // score feed catches up: "Kicking off".
   const secondsToKickoff = Math.floor((Date.parse(match.kickoff) - now) / 1000);
+  if (secondsToKickoff <= 0) {
+    return (
+      <>
+        <span style={CENTER_LABEL_STYLE}>KICKING OFF</span>
+        <Countdown text="0–0" live={false} size="md" tone="muted" />
+      </>
+    );
+  }
   const farText =
     secondsToKickoff >= 86_400
       ? `${Math.floor(secondsToKickoff / 86_400)}d ${Math.floor((secondsToKickoff % 86_400) / 3600)}h`

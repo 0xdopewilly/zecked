@@ -4,7 +4,8 @@
 import type { WalletInfo, WalletTx, WalletTxKind } from "@/lib/types";
 import { NETWORK_FEE_ZAT, PayoutUncertainError, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
-import { isAccount, savePlayer, type PlayerRecord } from "./players";
+import { notify } from "./notify";
+import { isAccount, patchPlayer, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
 import { HttpError, isShieldedAddress, isTransparentAddress, newId, nowIso, shortAddr } from "./util";
 
@@ -57,9 +58,10 @@ async function activity(pid: string): Promise<WalletTx[]> {
 export async function ensureDepositAddress(p: PlayerRecord) {
   if (p.depositAddress && p.depositUri) return { address: p.depositAddress, uri: p.depositUri };
   const r = await zcash().userAddress(p.id);
-  p.depositAddress = r.address;
-  p.depositUri = r.uri;
-  await savePlayer(p);
+  await patchPlayer(p, (x) => {
+    x.depositAddress = r.address;
+    x.depositUri = r.uri;
+  });
   return r;
 }
 
@@ -89,6 +91,7 @@ export async function syncDeposits(p: PlayerRecord): Promise<number> {
       if (delta > 0) {
         await kv().set(K.depCredited(p.id), confirmedZat);
         await credit(p.id, delta, "deposit", net === "sim" ? "Test deposit (simulated)" : "ZEC received");
+        await notify(p.id, { kind: "deposit", amountZat: delta, text: `+${(delta / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} ZEC landed in your wallet` });
       }
     } finally {
       await kv().del(K.depLock(p.id));
@@ -161,9 +164,10 @@ export async function withdraw(p: PlayerRecord, rawAddress: string, amountZat: n
     const { txid } = await zcash().payout(key, to, amt, "ZECKED withdrawal 🔓", { key });
     await kv().rpush(K.ledger(p.id), { ...t, status: "done", txid });
     if (isShieldedAddress(to) && !p.shielded) {
-      p.shielded = true;
-      if (!p.badges.includes("shielded")) p.badges.push("shielded");
-      await savePlayer(p);
+      await patchPlayer(p, (x) => {
+        x.shielded = true;
+        if (!x.badges.includes("shielded")) x.badges.push("shielded");
+      });
     }
     return { txid, amountZat: amt, feeZat: WITHDRAW_FEE_ZAT, to: shortAddr(to), wallet: await walletInfo(p) };
   } catch (e) {

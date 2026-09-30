@@ -9,7 +9,7 @@ export const BADGE_META: Record<BadgeId, { name: string; desc: string }> = {
   oracle: { name: "Oracle", desc: "Call 3 exact scores." },
   "speed-demon": { name: "Speed Demon", desc: "Crack a stash in under 60s." },
   "whale-hider": { name: "Whale Hider", desc: "Hide a stash over $100." },
-  shielded: { name: "Shielded", desc: "Claim to your first private wallet." },
+  shielded: { name: "Gone Private", desc: "Send your ZEC to a private wallet for the first time." },
   "birthday-og": { name: "Birthday OG", desc: "Play during Zcash’s 10th birthday week." },
 };
 

@@ -1,14 +1,15 @@
 "use client";
 // Screens 03 (riddle stash) and 04 (wrong answer), plus the extra states the design review asked for:
 // too late (zecked by someone else), you zecked it, uncrackable (expired / refunded), not funded yet,
-// and the hider's own view of a live stash.
+// out of tries, and the hider's own view of a live stash. Every ended state reveals the answer.
 import { sfx } from "@/lib/sfx";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
 import { api, formatUsd, formatZec } from "@/lib/api";
+import { useAppBack } from "@/lib/nav";
 import type { PublicStash, WinPayload } from "@/lib/types";
 import { Button, Countdown, Emblem, Icon, Input, LiveBadge, Toast } from "@/components/zk";
 import { TIER_LABEL } from "@/components/zk/Emblem";
+import { TopToast, VICTORY_EVENT, VictoryNote, WIN_CLOSED_EVENT, friendlyError, noteWinKind, shareLink, winShareText } from "@/components/screens/WinMoment";
 
 const MAX_TRIES = 3;
 const POLL_MS = 20_000;
@@ -85,23 +86,6 @@ function formatDuration(sec: number): string {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-function copyFallback(text: string): boolean {
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 /* ---------- styles ---------- */
 
 const navBtn: CSSProperties = {
@@ -137,10 +121,17 @@ const dot = (on: boolean): CSSProperties => ({
   background: on ? "var(--zk-gold)" : "rgb(var(--zk-red-rgb) / .35)",
 });
 
+/** Entrances for the answer reveal, a freshly unlocked hint and the locked panel. Instant under reduced motion. */
+const CSS = `
+@keyframes zk-rs-in { from { opacity: 0; transform: translateY(10px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes zk-rs-reveal { 0% { opacity: 0; transform: scale(.7); filter: blur(10px) } 60% { opacity: 1; transform: scale(1.06); filter: blur(0) } 100% { transform: none } }
+@keyframes zk-rs-glint { 0%, 100% { box-shadow: 0 0 0 0 rgb(var(--zk-gold-rgb) / 0) } 40% { box-shadow: 0 0 0 6px rgb(var(--zk-gold-rgb) / .28) } }
+`;
+
 /* ---------- component ---------- */
 
 export function RiddleStash({ data, onWin }: RiddleStashProps) {
-  const router = useRouter();
+  const goBack = useAppBack("/feed");
   const [stash, setStash] = useState<PublicStash>(data.stash);
   const [triesLeft, setTriesLeft] = useState(data.myTries?.left ?? MAX_TRIES);
   const [resetsAt, setResetsAt] = useState<string | undefined>(data.myTries?.resetsAt);
@@ -151,12 +142,15 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
   const [busy, setBusy] = useState(false);
   const [solved, setSolved] = useState(false);
   const [tip, setTip] = useState(false);
-  const [toast, setToast] = useState<{ text: string; variant: "success" | "error" | "default"; icon?: string } | null>(null);
+  const [hintNew, setHintNew] = useState(false);
+  const [toast, setToast] = useState<{ text: string; variant: "success" | "error" | "default"; icon?: string; n: number } | null>(null);
 
   const busyRef = useRef(false);
   const inputWrap = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const endedRef = useRef<HTMLDivElement>(null);
+  const hadHint = useRef(!!data.stash.riddle?.hint);
 
   const now = useNow(15_000);
   const id = stash.id;
@@ -172,7 +166,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
 
   const showToast = useCallback((text: string, variant: "success" | "error" | "default" = "success", icon?: string) => {
     clearTimeout(toastTimer.current);
-    setToast({ text, variant, icon });
+    setToast((t) => ({ text, variant, icon, n: (t?.n ?? 0) + 1 }));
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
@@ -211,18 +205,58 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     return () => clearTimeout(t);
   }, [hintAt, refresh]);
 
-  // Tries come back 10 minutes after the first miss.
+  // Tries come back 10 minutes after the first miss. Coming out of the locked state gets a chime.
+  const triesRef = useRef(triesLeft);
+  useEffect(() => {
+    triesRef.current = triesLeft;
+  }, [triesLeft]);
   useEffect(() => {
     if (!resetsAt) return;
     const ms = Date.parse(resetsAt) - Date.now() + 500;
     if (!Number.isFinite(ms) || ms > MAX_TIMEOUT) return;
     const t = setTimeout(() => {
+      const wasLocked = triesRef.current <= 0;
       setTriesLeft(MAX_TRIES);
       setResetsAt(undefined);
+      if (wasLocked) {
+        setWrong(null);
+        setAnswer("");
+        showToast(`${MAX_TRIES} fresh tries. Go get it.`, "success", "key");
+      }
       void refresh();
     }, Math.max(0, ms));
     return () => clearTimeout(t);
-  }, [resetsAt, refresh]);
+  }, [resetsAt, refresh, showToast]);
+
+  // The bonus hint just unlocked while you're on it: chime (the toast's), a gold glint on the card.
+  const hintText = r?.hint;
+  useEffect(() => {
+    if (hintText && !hadHint.current && !stash.isMine && stash.status === "live") {
+      showToast("Bonus hint unlocked 💡", "default", "bulb");
+      setHintNew(true);
+    }
+    hadHint.current = !!hintText;
+  }, [hintText, stash.isMine, stash.status, showToast]);
+
+  // A note saved in the win overlay lands on this screen too.
+  useEffect(() => {
+    const onVictory = (e: Event) => {
+      const d = (e as CustomEvent<{ stashId: string; message: string }>).detail;
+      if (d?.stashId !== id) return;
+      setStash((s) => (s.result ? { ...s, result: { ...s.result, victoryMessage: d.message || undefined } } : s));
+    };
+    // Closing the win overlay hands focus to the zecked stash behind it.
+    const onClosed = (e: Event) => {
+      if ((e as CustomEvent<{ stashId: string }>).detail?.stashId !== id) return;
+      requestAnimationFrame(() => endedRef.current?.focus({ preventScroll: true }));
+    };
+    window.addEventListener(VICTORY_EVENT, onVictory);
+    window.addEventListener(WIN_CLOSED_EVENT, onClosed);
+    return () => {
+      window.removeEventListener(VICTORY_EVENT, onVictory);
+      window.removeEventListener(WIN_CLOSED_EVENT, onClosed);
+    };
+  }, [id]);
 
   // Tooltip closes on outside tap or Escape.
   useEffect(() => {
@@ -259,12 +293,21 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             : "play";
 
   const zec = formatZec(stash.amountZat);
-  const usd = formatUsd(stash.usd);
+  // The size the hider picked: "$5", not "$5.00".
+  const usd = Number.isInteger(stash.usd) ? `$${stash.usd}` : formatUsd(stash.usd);
   const outOfTries = triesLeft <= 0;
   const strike = !!wrong && answer === wrong.raw;
   const timeLeft = Number.isFinite(expiresMs) ? formatLeft(expiresMs - now) : "";
   const tries = r?.tries ?? 0;
+  // Other people on it right now (the server never counts you, or the hider).
   const cracking = r?.crackingNow ?? 0;
+  // A signed-in win is already in the wallet; only a guest's unsettled win still needs a sign-up.
+  const needsSignup = !!myWin && !myWin.credited;
+
+  // Time ran out while open: ask the server to settle it (that also brings the answer).
+  useEffect(() => {
+    if (timedOut) void refresh();
+  }, [timedOut, refresh]);
 
   /* ---------- actions ---------- */
 
@@ -272,33 +315,17 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     requestAnimationFrame(() => inputWrap.current?.querySelector<HTMLInputElement>("input")?.focus());
   };
 
-  const goBack = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) router.back();
-    else router.push("/feed");
-  };
-
   const share = async () => {
     const url = `${window.location.origin}/s/${id}`;
     const text =
-      mode === "play" || mode === "mine"
-        ? `Crack ${stash.isMine ? "my" : "this"} riddle and ZECK ${zec} ZEC 🔐 First one wins.`
-        : `A ${zec} ZEC riddle stash on ZECKED 🔐`;
-    if (typeof navigator.share === "function") {
-      try {
-        await navigator.share({ title: "ZECKED", text, url });
-        return;
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-      }
-    }
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(url);
-      ok = true;
-    } catch {
-      ok = copyFallback(url);
-    }
-    showToast(ok ? "Link copied" : url, ok ? "success" : "default", "copy");
+      mode === "won"
+        ? winShareText(stash.amountZat, "riddle")
+        : mode === "play" || mode === "mine"
+          ? `Crack ${stash.isMine ? "my" : "this"} riddle and zeck ${zec} ZEC 🔐 First one wins.`
+          : `A ${zec} ZEC riddle on ZECKED 🔐 Can you crack the next one?`;
+    const res = await shareLink(url, text);
+    if (res === "copied") showToast("Link copied", "success", "copy");
+    else if (res === "failed") showToast(url, "default", "copy");
   };
 
   const tryAgain = () => {
@@ -327,22 +354,26 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       }
       setTriesLeft(res.triesLeft);
       setResetsAt(res.resetsAt);
+      // Count your own guess in "N tries" right away (the poll catches up with everyone else's).
+      setStash((s) => (s.riddle ? { ...s, riddle: { ...s.riddle, tries: s.riddle.tries + 1 } } : s));
       if (res.correct) {
         setSolved(true);
         setWrong(null);
         if (res.win) {
           setMyWin(res.win);
+          noteWinKind(id, "riddle");
           onWin(res.win);
-        } else {
-          void refresh();
         }
+        // Settle the screen behind the win overlay into the zecked state (with the answer).
+        void refresh();
         return;
       }
       setWrong({ raw: answer, shown: v.replace(/^(a|an|the)\s+/i, "").trim() || v, verdict: res.verdict || "Nope! Try again 😏" });
       setShake((n) => n + 1);
-      sfx("wrong");
+      // The last try locks you out: a heavier sound for the locked state.
+      sfx(res.triesLeft <= 0 ? "error" : "wrong");
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Something went wrong. Try again.", "error");
+      showToast(friendlyError(e), "error");
       void refresh();
     } finally {
       busyRef.current = false;
@@ -357,8 +388,9 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
 
   /* ---------- pieces ---------- */
 
-  const wrongLayout = mode === "play" && !!wrong;
-  const bg = wrongLayout ? "var(--zk-bg-hero-red)" : mode === "won" ? "var(--zk-bg-hero-gold)" : "var(--zk-bg-hero-purple)";
+  const lockedOut = mode === "play" && outOfTries && !solved;
+  const wrongLayout = mode === "play" && !!wrong && !lockedOut;
+  const bg = wrongLayout || lockedOut ? "var(--zk-bg-hero-red)" : mode === "won" ? "var(--zk-bg-hero-gold)" : "var(--zk-bg-hero-purple)";
 
   const nav = (
     <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -392,7 +424,8 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         </div>
       </div>
       <div style={{ textAlign: "right", flex: "none" }}>
-        <div style={{ font: "var(--zk-type-mono-lg)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>{zec} ZEC</div>
+        {/* A touch smaller on 320px phones, so the hider's name and tier keep room. */}
+        <div style={{ font: "var(--zk-type-mono-lg)", fontSize: "min(var(--zk-fs-22), 5.6vw)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>{zec} ZEC</div>
         <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>~{usd}</div>
       </div>
     </div>
@@ -415,7 +448,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       </span>
       <span style={metaItem}>
         <Icon icon="eye" size={14} />
-        {cracking} cracking now
+        {cracking > 0 ? `${plural(cracking, "other", "others")} cracking now` : "Just you right now"}
       </span>
       <span style={metaItem}>
         <Icon icon="hourglass" size={14} />
@@ -424,7 +457,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     </div>
   );
 
-  // 03: the live riddle card with the viewing-key badge and the ⓘ tooltip.
+  // 03: the live riddle card with the "Prize verified" badge and its ⓘ explainer.
   const liveCard = (withMeta: boolean) => (
     <section
       aria-label="Riddle"
@@ -439,20 +472,22 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         gap: "var(--zk-space-14)",
       }}
     >
-      <div ref={tipRef} style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-8)", position: "relative" }}>
-        <LiveBadge label="Live · verified by viewing key" />
+      <div ref={tipRef} style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-2)", position: "relative" }}>
+        <LiveBadge label="Live · Prize verified" />
+        {/* A 44px tap target around the small ⓘ; the negative margin keeps the row as tall as the badge. */}
         <button
           type="button"
-          aria-label="What’s this?"
+          aria-label="What does Prize verified mean?"
           aria-expanded={tip}
           aria-controls={`zk-tip-${id}`}
           onClick={() => setTip((t) => !t)}
+          data-sfx="tap"
           style={{
-            width: 24,
-            height: 24,
-            borderRadius: "50%",
-            background: "var(--zk-surface-raised)",
-            color: "var(--zk-text-muted)",
+            width: "var(--zk-tap-min)",
+            height: "var(--zk-tap-min)",
+            margin: "-11px 0",
+            background: "transparent",
+            color: tip ? "var(--zk-text)" : "var(--zk-text-muted)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -462,7 +497,19 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             flex: "none",
           }}
         >
-          <Icon icon="info" size={16} />
+          <span
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: tip ? "var(--zk-purple)" : "var(--zk-surface-raised)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon icon="info" size={16} />
+          </span>
         </button>
         {tip && (
           <div
@@ -470,9 +517,9 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             role="tooltip"
             style={{
               position: "absolute",
-              left: "clamp(0px, calc(100% - 200px), 110px)",
-              top: 34,
-              width: 200,
+              left: "clamp(0px, calc(100% - 248px), 96px)",
+              top: 30,
+              width: "min(248px, 100%)",
               padding: "var(--zk-space-12) var(--zk-space-14)",
               borderRadius: "var(--zk-radius-lg)",
               background: "var(--zk-text)",
@@ -480,6 +527,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
               font: "var(--zk-type-small)",
               boxShadow: "var(--zk-shadow-float)",
               zIndex: 5,
+              animation: "zk-rs-in 160ms var(--zk-ease-out) both",
             }}
           >
             <div
@@ -489,9 +537,9 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
                 marginBottom: "var(--zk-space-4)",
               }}
             >
-              What’s this?
+              Prize verified
             </div>
-            Anyone can check this stash is real. Nobody can touch it.
+            Anyone can check the ZEC is really in there, using the stash’s viewing key. It can look, but it can’t touch.
           </div>
         )}
       </div>
@@ -500,7 +548,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     </section>
   );
 
-  // Zecked / expired / not funded: the card dimmed, with an ended badge (and the ZECKED stamp once cracked).
+  // Zecked / expired / not funded: the card dimmed, with an ended badge (and the ZECKED stamp once zecked).
   const endedCard = (badge: string, stamp: boolean) => (
     <section
       aria-label="Riddle"
@@ -545,6 +593,55 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     </section>
   );
 
+  // Every ended riddle shows its answer (the server only sends it once the stash is over).
+  const answerReveal = r?.answer ? (
+    <section
+      aria-label="The answer"
+      style={{
+        background: "var(--zk-surface)",
+        border: "1.5px solid rgb(var(--zk-gold-rgb) / .45)",
+        borderRadius: "var(--zk-radius-2xl)",
+        padding: "var(--zk-space-14) var(--zk-space-16)",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-14)",
+        animation: "zk-rs-in 380ms var(--zk-ease-out) both, zk-rs-glint 1.2s var(--zk-ease-out) 700ms both",
+      }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: "var(--zk-radius-lg)",
+          background: "var(--zk-grad-tile-gold)",
+          boxShadow: "0 3px 0 var(--zk-gold-deep)",
+          color: "var(--zk-gold-ink)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flex: "none",
+        }}
+      >
+        <Icon icon="key" size={22} stroke={2.4} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-gold)" }}>THE ANSWER WAS</div>
+        <div
+          style={{
+            font: "var(--zk-type-h2)",
+            color: "var(--zk-text)",
+            marginTop: "var(--zk-space-4)",
+            overflowWrap: "anywhere",
+            transformOrigin: "left center",
+            animation: "zk-rs-reveal 700ms var(--zk-ease-out) 250ms both",
+          }}
+        >
+          {r.answer}
+        </div>
+      </div>
+    </section>
+  ) : null;
+
   const triesRow = (withVerdict: boolean) => {
     const verdict = withVerdict && solved ? "Cracked! The vault is open." : "";
     return (
@@ -562,22 +659,13 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             <span key={i} aria-hidden="true" style={dot(i < triesLeft)} />
           ))}
           <span style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginLeft: "var(--zk-space-4)" }}>
-            {outOfTries ? (
+            {resetsAt && triesLeft < MAX_TRIES ? (
               <>
-                Out of tries.
-                {resetsAt && (
-                  <>
-                    {" "}
-                    Resets in <Countdown to={resetsAt} format="ms" size="sm" tone="gold" />
-                  </>
-                )}
-              </>
-            ) : resetsAt && triesLeft < MAX_TRIES ? (
-              <>
-                {plural(triesLeft, "try", "tries")} left (resets in <Countdown to={resetsAt} format="ms" size="sm" tone="gold" />)
+                {plural(triesLeft, "try", "tries")} left · resets in <Countdown to={resetsAt} format="ms" size="sm" tone="gold" />
               </>
             ) : (
-              <>{plural(triesLeft, "try", "tries")} left (resets in 10 min)</>
+              // Nothing used yet: the rule, not a timer.
+              <>{MAX_TRIES} tries every 10 minutes</>
             )}
           </span>
         </div>
@@ -601,6 +689,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
           display: "flex",
           alignItems: "center",
           gap: "var(--zk-space-12)",
+          animation: hintNew ? "zk-rs-in 380ms var(--zk-ease-spring) both, zk-rs-glint 1.2s var(--zk-ease-out) 300ms 2 both" : undefined,
         }}
       >
         <div
@@ -680,6 +769,10 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
 
   const shareGhost = <Button label="Share this stash" icon="share" variant="ghost" size="md" onClick={() => void share()} />;
 
+  const privacyNote = wrong ? (
+    <Toast variant="default" icon="eyeOff" sound={false} text={`Wrong guesses are private. Only you know you said “${wrong.shown}”.`} />
+  ) : null;
+
   const answerBox = (
     <>
       <div ref={inputWrap}>
@@ -708,10 +801,63 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     </>
   );
 
-  const endedButton = (label: string, href: string, variant: "primary" | "ghost" = "primary") => (
-    <div style={{ marginTop: "auto", paddingTop: "var(--zk-space-8)" }}>
-      <Button label={label} iconRight={variant === "primary" ? "arrowRight" : undefined} variant={variant} size="lg" href={href} />
+  // Out of tries: a clear locked state with the countdown to fresh tries.
+  const lockedPanel = (
+    <div
+      role="status"
+      style={{
+        background: "var(--zk-surface)",
+        border: "1.5px solid rgb(var(--zk-red-rgb) / .5)",
+        borderRadius: "var(--zk-radius-2xl)",
+        padding: "var(--zk-space-16)",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-14)",
+        animation: "zk-rs-in 320ms var(--zk-ease-spring) both",
+      }}
+    >
+      <div
+        style={{
+          width: 52,
+          height: 52,
+          borderRadius: "var(--zk-radius-lg)",
+          background: "var(--zk-red-tint)",
+          border: "1.5px solid rgb(var(--zk-red-rgb) / .4)",
+          color: "var(--zk-red)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flex: "none",
+        }}
+      >
+        <Icon icon="lock" size={26} stroke={2.4} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--zk-space-4)" }}>
+        <div style={{ font: "var(--zk-type-h3)" }}>Out of tries</div>
+        <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
+          {resetsAt ? (
+            <>
+              {MAX_TRIES} fresh tries in <Countdown to={resetsAt} format="ms" size="sm" tone="gold" />. Keep thinking.
+            </>
+          ) : (
+            "Fresh tries in a few minutes. Keep thinking."
+          )}
+        </div>
+        <div style={{ display: "flex", gap: "var(--zk-space-6)", marginTop: "var(--zk-space-2)" }} aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <span key={i} style={dot(false)} />
+          ))}
+        </div>
+      </div>
     </div>
+  );
+
+  const endedButton = (label: string, href: string, variant: "primary" | "ghost" = "primary", icon?: string) => (
+    <Button label={label} icon={icon} iconRight={variant === "primary" && !icon ? "arrowRight" : undefined} variant={variant} size="lg" href={href} />
+  );
+
+  const bottom = (children: ReactNode) => (
+    <div style={{ marginTop: "auto", paddingTop: "var(--zk-space-8)", display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>{children}</div>
   );
 
   const victoryQuote = stash.result?.victoryMessage ? (
@@ -728,7 +874,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       }}
     >
       <figcaption style={{ font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-gold)" }}>
-        VICTORY MESSAGE
+        {stash.isMine ? "THE WINNER SAYS" : "VICTORY MESSAGE"}
       </figcaption>
       <blockquote style={{ margin: 0, font: "var(--zk-type-body-lg)", fontWeight: "var(--zk-fw-semibold)", overflowWrap: "anywhere" }}>
         “{stash.result.victoryMessage}”
@@ -745,6 +891,8 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
 
   const statusBlock = (title: ReactNode, sub?: ReactNode, color = "var(--zk-text)") => (
     <div
+      ref={endedRef}
+      tabIndex={-1}
       role="status"
       style={{
         display: "flex",
@@ -753,6 +901,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         gap: "var(--zk-space-6)",
         padding: "var(--zk-space-10) 0 var(--zk-space-4)",
         textAlign: "center",
+        outline: "none",
       }}
     >
       <div style={{ font: "var(--zk-type-h2)", color, textWrap: "balance" }}>{title}</div>
@@ -763,8 +912,19 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
   /* ---------- body per mode ---------- */
 
   let body: ReactNode;
-  if (mode === "play" && wrong) {
-    // 04: wrong answer.
+  if (lockedOut) {
+    // Out of tries: the riddle stays up (keep thinking), the hint and Share stay in reach.
+    body = (
+      <>
+        {liveCard(true)}
+        {lockedPanel}
+        {hintRow}
+        {privacyNote}
+        {bottom(shareGhost)}
+      </>
+    );
+  } else if (wrongLayout && wrong) {
+    // 04: wrong answer. The hint (it helps most right now) and Share stay on screen.
     body = (
       <>
         <div style={{ background: "var(--zk-surface)", borderRadius: "var(--zk-radius-3xl)", padding: "var(--zk-space-20)", opacity: 0.75 }}>
@@ -796,9 +956,13 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
         </div>
         {answerBox}
         {triesRow(false)}
-        <div style={{ marginTop: "auto", paddingTop: "var(--zk-space-8)" }}>
-          <Toast variant="default" icon="eyeOff" text={`Wrong guesses are private. Only you know you said “${wrong.shown}”.`} />
-        </div>
+        {hintRow}
+        {bottom(
+          <>
+            {privacyNote}
+            {shareGhost}
+          </>,
+        )}
       </>
     );
   } else if (mode === "play") {
@@ -813,6 +977,12 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       </>
     );
   } else if (mode === "mine") {
+    const stats = [
+      { v: String(tries), l: "tries so far", icon: "key" },
+      // Nobody else on it right now: leave the tile out rather than show a sad "0".
+      ...(cracking > 0 ? [{ v: String(cracking), l: "cracking now", icon: "eye" }] : []),
+      { v: timeLeft, l: "time left", icon: "hourglass" },
+    ];
     body = (
       <>
         {liveCard(false)}
@@ -848,16 +1018,12 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: "var(--zk-type-h4)", fontSize: "var(--zk-fs-18)" }}>This is your stash</div>
               <div style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-medium)", color: "var(--zk-text-muted)" }}>
-                Share it. First one to crack it wins.
+                {cracking > 0 ? "People are on it. First one to crack it wins." : "Share it. First one to crack it wins."}
               </div>
             </div>
           </div>
-          <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "var(--zk-space-8)" }}>
-            {[
-              { v: String(tries), l: "tries so far", icon: "key" },
-              { v: String(cracking), l: "cracking now", icon: "eye" },
-              { v: timeLeft, l: "time left", icon: "hourglass" },
-            ].map((s) => (
+          <dl style={{ margin: 0, display: "grid", gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))`, gap: "var(--zk-space-8)" }}>
+            {stats.map((s) => (
               <div
                 key={s.l}
                 style={{
@@ -888,35 +1054,53 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
     const ago = formatAgo(stash.result?.zeckedAt, now);
     body = (
       <>
-        {endedCard("Cracked", true)}
+        {endedCard("Ended", true)}
         {statusBlock(
-          <>
-            Zecked {ago ? `${ago} ` : ""}by {stash.result?.winnerLabel || "a mystery cracker"}
-          </>,
+          stash.isMine ? (
+            <>Your riddle got zecked{ago ? ` ${ago}` : ""}</>
+          ) : (
+            <>
+              Zecked {ago ? `${ago} ` : ""}by {stash.result?.winnerLabel || "a mystery cracker"}
+            </>
+          ),
           crackStats || undefined,
           "var(--zk-pink)",
         )}
+        {answerReveal}
         {victoryQuote}
-        {stash.isMine ? endedButton("Hide another stash", "/hide") : endedButton("Find another stash", "/feed")}
+        {bottom(stash.isMine ? endedButton("Hide another stash", "/hide") : endedButton("Find another stash", "/feed"))}
       </>
     );
   } else if (mode === "won") {
     const ago = formatAgo(stash.result?.zeckedAt, now);
     body = (
       <>
-        {endedCard("Cracked", true)}
+        {endedCard("Ended", true)}
         {statusBlock("You zecked this!", [ago ? `Zecked ${ago}` : "", crackStats].filter(Boolean).join(" · ") || undefined, "var(--zk-gold)")}
-        {victoryQuote}
-        {myWin ? endedButton("Sign up to keep my ZEC", `/s/${id}/claim`) : endedButton("Find another stash", "/feed")}
+        {answerReveal}
+        <VictoryNote id={id} initial={stash.result?.victoryMessage ?? ""} />
+        {bottom(
+          <>
+            <Button label="Share my win" icon="share" variant="secondary" size="md" onClick={() => void share()} />
+            {needsSignup
+              ? endedButton("Sign up to keep my ZEC", `/signin?next=${encodeURIComponent(`/s/${id}`)}&reason=win`)
+              : endedButton("It’s in your wallet", "/wallet", "primary", "wallet")}
+          </>,
+        )}
       </>
     );
   } else if (mode === "expired") {
     body = (
       <>
         {endedCard("Ended", false)}
-        {statusBlock("Uncrackable. Respect.", "Nobody cracked it. The ZEC went back to the hider.", "var(--zk-purple-light)")}
+        {statusBlock(
+          "Uncrackable. Respect.",
+          stash.isMine ? "Nobody cracked it. The ZEC went back to you." : "Nobody cracked it. The ZEC went back to the hider.",
+          "var(--zk-purple-light)",
+        )}
+        {answerReveal}
         {r?.hint && hintRow}
-        {endedButton("Find another stash", "/feed")}
+        {bottom(stash.isMine ? endedButton("Hide another stash", "/hide") : endedButton("Find another stash", "/feed"))}
       </>
     );
   } else {
@@ -955,35 +1139,19 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             This stash isn’t live yet. The hider still needs to fund it.
           </div>
         </div>
-        {stash.isMine ? endedButton("Fund it", `/hide?resume=${encodeURIComponent(id)}`) : endedButton("Find another stash", "/feed", "ghost")}
+        {bottom(stash.isMine ? endedButton("Fund it", `/hide?resume=${encodeURIComponent(id)}`) : endedButton("Find another stash", "/feed", "ghost"))}
       </>
     );
   }
 
   return (
     <main className="zk-screen" style={{ background: bg, gap: "var(--zk-space-14)" }}>
+      <style>{CSS}</style>
       {nav}
       {hiderRow}
       {body}
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            left: 0,
-            right: 0,
-            bottom: "calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18))",
-            zIndex: 60,
-            display: "flex",
-            justifyContent: "center",
-            padding: "0 var(--zk-screen-pad)",
-            pointerEvents: "none",
-          }}
-        >
-          <div style={{ width: "100%", maxWidth: "calc(430px - 2 * var(--zk-screen-pad))" }}>
-            <Toast text={toast.text} variant={toast.variant} icon={toast.icon} />
-          </div>
-        </div>
-      )}
+      {/* Toasts drop in from the top, clear of the buttons at the bottom. */}
+      {toast && <TopToast key={toast.n} text={toast.text} variant={toast.variant} icon={toast.icon} />}
     </main>
   );
 }

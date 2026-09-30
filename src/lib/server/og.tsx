@@ -40,6 +40,11 @@ function zec(zat: number) {
   return (zat / 1e8).toFixed(4).replace(/(\.\d{2}\d*?)0+$/, "$1");
 }
 
+/** The size the hider picked, as they picked it: "$5", "$2.50", "$250". */
+function dollars(usd: number) {
+  return Number.isInteger(usd) || usd >= 100 ? `$${Math.round(usd)}` : `$${usd.toFixed(2)}`;
+}
+
 export async function shareCard(stash: PublicStash | null, host: string) {
   const [display, body, mono] = await Promise.all([googleFont("Bricolage Grotesque", 800), googleFont("Inter", 700), googleFont("Space Mono", 700)]);
   const fonts = [
@@ -51,14 +56,22 @@ export async function shareCard(stash: PublicStash | null, host: string) {
   const isPred = stash?.type === "prediction";
   const m = stash?.prediction?.match;
   const amount = stash ? `${zec(stash.amountZat)} ZEC` : "";
-  const usd = stash ? `~$${Math.round(stash.usd)}` : "";
+  const usd = stash ? dollars(stash.usd) : "";
+  const zecked = stash?.status === "zecked";
+  const ended = zecked || stash?.status === "refunded" || stash?.status === "void" || stash?.status === "expired";
   const headline = !stash
     ? "Hide it. Crack it. Get Zecked."
     : isPred
-      ? stash.prediction!.kind === "exact"
-        ? `First to call ${m!.home.code} vs ${m!.away.code} exactly ZECKS $${Math.round(stash.usd)}`
-        : `First to call the ${m!.home.code} vs ${m!.away.code} winner ZECKS $${Math.round(stash.usd)}`
-      : `Crack my riddle and ZECK ${amount}. First one wins.`;
+      ? zecked
+        ? `Someone called ${m!.home.code} vs ${m!.away.code} and zecked ${usd}. Call the next one.`
+        : stash.prediction!.kind === "exact"
+          ? `First to call ${m!.home.code} vs ${m!.away.code} exactly zecks ${usd}`
+          : `First to call the ${m!.home.code} vs ${m!.away.code} winner zecks ${usd}`
+      : zecked
+        ? `Someone zecked ${amount}. Can you crack the next one?`
+        : `Crack my riddle and zeck ${amount}. First one wins.`;
+  // Live stashes: the prize is checkable. Ended ones say so (a zecked one gets the stamp colour).
+  const pill = !stash || stash.status === "live" ? { text: "LIVE · PRIZE VERIFIED", c: C.mint, rgb: "46,230,166" } : zecked ? { text: "ZECKED", c: C.pink, rgb: "255,77,154" } : ended ? { text: "ENDED", c: C.muted, rgb: "169,163,201" } : { text: "NOT LIVE YET", c: C.gold, rgb: "244,183,40" };
   const bgGlow = isPred
     ? `radial-gradient(circle at 100% 0%, rgba(46,230,166,.35), transparent 55%), radial-gradient(circle at 0% 100%, rgba(61,184,255,.45), transparent 55%)`
     : `radial-gradient(circle at 95% 5%, rgba(255,77,154,.5), transparent 55%), radial-gradient(circle at 0% 100%, rgba(124,92,255,.6), transparent 55%)`;
@@ -91,14 +104,21 @@ export async function shareCard(stash: PublicStash | null, host: string) {
                   ? stash.riddle.text.length > 110
                     ? stash.riddle.text.slice(0, 108) + "…"
                     : stash.riddle.text
-                  : "Riddles and match calls with real ZEC inside. First one to crack it keeps it."}
+                  : "Riddles and match calls with ZEC inside. First one to crack it keeps it."}
             </div>
+            {/* Once it's over, the answer is public: the card shows it. */}
+            {!isPred && ended && stash?.riddle?.answer ? (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 12, fontSize: 24 }}>
+                <span style={{ color: C.muted }}>The answer was</span>
+                <span style={{ fontFamily: "Display", fontSize: 30, color: C.gold }}>{stash.riddle.answer.length > 40 ? stash.riddle.answer.slice(0, 38) + "…" : stash.riddle.answer}</span>
+              </div>
+            ) : null}
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "space-between", width: 360 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", borderRadius: 999, background: "rgba(46,230,166,.14)", border: "2px solid rgba(46,230,166,.35)", color: C.mint, fontSize: 20, letterSpacing: 2 }}>
-            <div style={{ width: 12, height: 12, borderRadius: 99, background: C.mint }} />
-            LIVE · VERIFIED
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", borderRadius: 999, background: `rgba(${pill.rgb},.14)`, border: `2px solid rgba(${pill.rgb},.35)`, color: pill.c, fontSize: 20, letterSpacing: 2 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 99, background: pill.c }} />
+            {pill.text}
           </div>
           {stash && (
             <div
@@ -126,12 +146,12 @@ export async function shareCard(stash: PublicStash | null, host: string) {
                 <div style={{ display: "flex", fontSize: 80 }}>🔐</div>
               )}
               <div style={{ display: "flex", fontFamily: "Mono", fontSize: 44, marginTop: 14 }}>{amount}</div>
-              <div style={{ display: "flex", fontSize: 24, marginTop: 4 }}>{usd} inside</div>
+              <div style={{ display: "flex", fontSize: 24, marginTop: 4 }}>{zecked ? `${usd} stash · zecked` : `${usd} inside`}</div>
             </div>
           )}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
             <div style={{ display: "flex", background: "#fff", color: C.bg, fontFamily: "Mono", fontSize: 26, padding: "12px 22px", borderRadius: 18 }}>{stash ? `${host}/s/${stash.id}` : host}</div>
-            <div style={{ display: "flex", fontSize: 18, color: C.muted }}>{stash?.testMode ? "Test mode · play ZEC" : "Free to play"} · Built on Zcash</div>
+            <div style={{ display: "flex", fontSize: 18, color: C.muted }}>{stash?.testMode ? "Test ZEC · no real value" : "Free to play"} · Built on Zcash</div>
           </div>
         </div>
       </div>

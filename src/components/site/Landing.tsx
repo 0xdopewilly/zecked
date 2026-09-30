@@ -1,4 +1,5 @@
 "use client";
+import "@/styles/site.css";
 import { useEffect } from "react";
 import { CursorGlow, Grain, ScrollProgressBar } from "./fx";
 import { Nav } from "./Nav";

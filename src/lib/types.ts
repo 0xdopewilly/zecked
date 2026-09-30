@@ -73,7 +73,7 @@ export interface PublicStash {
   status: StashStatus;
   hider: PublicHider;
   amountZat: number; // 1 ZEC = 100_000_000 zat
-  usd: number; // at current rate
+  usd: number; // the size the hider picked
   createdAt: string;
   liveAt?: string;
   expiresAt: string;
@@ -86,7 +86,8 @@ export interface PublicStash {
     hasHint: boolean;
     hintUnlocksAt?: string;
     tries: number; // total guesses so far
-    crackingNow: number; // viewers in the last few minutes
+    crackingNow: number; // other people on it in the last few minutes (not you, not the hider)
+    answer?: string; // revealed only once the stash has ended
   };
   prediction?: {
     match: Match;
@@ -244,6 +245,16 @@ export interface AppConfig {
   minStashUsd: number;
   /** Sign-in methods available on this deployment. */
   auth: { google: boolean; passkey: boolean; email: boolean };
+}
+
+/** A personal notice, shown as a toast wherever the player is in the app. */
+export interface Notice {
+  id: string;
+  at: string;
+  kind: "zecked" | "refunded" | "deposit" | "win";
+  text: string;
+  stashId?: string;
+  amountZat?: number;
 }
 
 export const ZAT = 100_000_000;

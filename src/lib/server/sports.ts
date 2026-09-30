@@ -161,7 +161,8 @@ export async function getMatch(id: string): Promise<Match | null> {
   if (id.startsWith("demo:")) return demoMatch(id);
   const [, league, eventId] = id.split(":");
   if (!league || !eventId) return null;
-  return cached(`m:${id}`, 20_000, async () => {
+  // Short cache so live scores feel live (each open stash page polls this).
+  return cached(`m:${id}`, 6_000, async () => {
     try {
       const r = await fetch(`${ESPN}/${league}/summary?event=${eventId}`, { signal: AbortSignal.timeout(5000), cache: "no-store" });
       if (!r.ok) return null;

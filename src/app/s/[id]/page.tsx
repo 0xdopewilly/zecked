@@ -3,9 +3,10 @@
 // opens the Win moment overlay. A win you made earlier shows a gold banner: signed in → "It's in your
 // wallet" (/wallet); guest → "Sign up to keep it" (/signin?reason=win, back here after).
 import Link from "next/link";
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { takeStash } from "@/lib/stashCache";
 import type { WinPayload } from "@/lib/types";
 import { Button, Icon } from "@/components/zk";
 import RiddleStash from "@/components/screens/RiddleStash";
@@ -43,12 +44,15 @@ export default function StashPage() {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [win, setWin] = useState<WinPayload | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  // One request per visit, even when effects run twice (dev StrictMode) and would take the cache twice.
+  const pending = useRef<ReturnType<typeof takeStash> | null>(null);
 
-  const fetchStash = useCallback(async () => {
+  const fetchStash = useCallback(async (retry = false) => {
     if (!id) return;
     setLoad({ kind: "loading" });
     try {
-      const data = await api.stash(id);
+      // The feed card started this request on touch, so it's usually already here.
+      const data = retry ? await api.stash(id) : await (pending.current ??= takeStash(id));
       setLoad({ kind: "ready", data });
     } catch (e) {
       const message = e instanceof Error ? e.message : "";
@@ -82,14 +86,32 @@ export default function StashPage() {
   const handleWin = useCallback((w: WinPayload) => setWin(w), []);
 
   if (load.kind === "loading") {
+    // Shaped like the stash screen, so the real one settles in without a jump.
+    const bar = (w: string, h: number, extra: CSSProperties = {}): CSSProperties => ({
+      width: w,
+      height: h,
+      borderRadius: "var(--zk-radius-md)",
+      background: "rgb(var(--zk-white-rgb) / .07)",
+      animation: "zk-glow 1.4s ease-in-out infinite",
+      ...extra,
+    });
     return (
-      <main className="zk-screen" style={{ background: "var(--zk-bg-hero-purple)" }} aria-busy="true">
-        <div style={center}>
-          <div style={{ ...tile, color: "var(--zk-gold)", animation: "zk-glow 1.4s ease-in-out infinite" }}>
-            <Icon icon="vault" size={34} stroke={2.2} />
-          </div>
-          <p style={{ margin: 0, font: "var(--zk-type-body-strong)", color: "var(--zk-text-muted)" }}>Loading stash…</p>
+      <main className="zk-screen" style={{ background: "var(--zk-bg-hero-purple)", gap: "var(--zk-space-18)" }} aria-busy="true" aria-label="Loading stash">
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <div style={bar("44px", 44, { borderRadius: "var(--zk-radius-lg)" })} />
+          <div style={bar("44px", 44, { borderRadius: "var(--zk-radius-lg)" })} />
         </div>
+        <div style={{ display: "flex", gap: "var(--zk-space-10)", alignItems: "center" }}>
+          <div style={bar("48px", 48, { borderRadius: "var(--zk-radius-lg)" })} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={bar("40%", 12)} />
+            <div style={bar("60%", 14)} />
+          </div>
+        </div>
+        <div style={bar("100%", 180, { borderRadius: "var(--zk-radius-2xl)" })} />
+        <div style={bar("70%", 30)} />
+        <div style={bar("100%", 60, { borderRadius: "var(--zk-radius-xl)" })} />
+        <div style={{ marginTop: "auto", ...bar("100%", 64, { borderRadius: "var(--zk-radius-2xl)" }) }} />
       </main>
     );
   }
@@ -108,7 +130,7 @@ export default function StashPage() {
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>
-          {!missing && <Button label="Try again" variant="primary" size="lg" onClick={() => void fetchStash()} />}
+          {!missing && <Button label="Try again" variant="primary" size="lg" onClick={() => void fetchStash(true)} />}
           <Button label="Find another stash" variant={missing ? "primary" : "ghost"} size={missing ? "lg" : "md"} href="/feed" />
         </div>
       </main>
@@ -119,7 +141,8 @@ export default function StashPage() {
   // `win` comes back only while a win is unsettled (a guest's); once credited, the server settles it
   // and only `result.winnerIsYou` remains.
   const wonHere = data.stash.status === "zecked" && !!data.stash.result?.winnerIsYou;
-  const banner: "wallet" | "signup" | null = win
+  // Riddles show their own won state (with Share); only prediction screens need the floating banner.
+  const banner: "wallet" | "signup" | null = win || data.stash.type === "riddle"
     ? null
     : data.win
       ? data.win.credited
@@ -133,22 +156,33 @@ export default function StashPage() {
   return (
     <>
       {banner && (
+        // A floating pill over the screen (not above it), so the screen's own buttons stay in view.
         <Link
           href={bannerHref}
           style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 112px)",
+            transform: "translateX(-50%)",
+            zIndex: 60,
             display: "flex",
             alignItems: "center",
-            gap: "var(--zk-space-10)",
-            padding: "calc(env(safe-area-inset-top, 0px) + var(--zk-space-12)) var(--zk-screen-pad) var(--zk-space-12)",
+            gap: "var(--zk-space-8)",
+            maxWidth: "calc(min(100vw, 430px) - 2 * var(--zk-screen-pad))",
+            padding: "var(--zk-space-10) var(--zk-space-16)",
+            borderRadius: 999,
             background: "var(--zk-grad-gold)",
             color: "var(--zk-gold-ink)",
             font: "var(--zk-type-body-strong)",
             fontSize: "var(--zk-fs-15)",
-            boxShadow: "0 4px 0 var(--zk-gold-deep)",
+            whiteSpace: "nowrap",
+            textDecoration: "none",
+            boxShadow: "0 4px 0 var(--zk-gold-deep), 0 16px 40px rgb(0 0 0 / .45)",
+            animation: "zk-pop var(--zk-dur-pop) var(--zk-ease-spring) both",
           }}
         >
           <Icon icon={banner === "wallet" ? "wallet" : "unlock"} size={18} stroke={2.4} />
-          <span style={{ flex: 1 }}>{banner === "wallet" ? "You zecked this! It’s in your wallet" : "You zecked this! Sign up to keep it"}</span>
+          <span>{banner === "wallet" ? "You zecked this! It’s in your wallet" : "You zecked this! Sign up to keep it"}</span>
           <Icon icon="arrowRight" size={18} stroke={2.4} />
         </Link>
       )}
@@ -157,7 +191,7 @@ export default function StashPage() {
       ) : (
         <PredictionStash key={data.stash.id} initial={data} onWin={handleWin} />
       )}
-      {win && <WinMoment win={win} />}
+      {win && <WinMoment win={win} kind={data.stash.type} />}
     </>
   );
 }

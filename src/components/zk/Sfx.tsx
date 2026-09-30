@@ -12,6 +12,7 @@ export function Sfx() {
     enableSfx();
     const unlock = () => unlockAudio();
     const onClick = (e: MouseEvent) => {
+      unlockAudio(); // iOS only unlocks audio on a completed tap (touchend/click), not on touchstart
       const el = (e.target as Element | null)?.closest?.(TAPPABLE);
       if (!el || el.matches(":disabled,[aria-disabled=true]")) return;
       const want = el.getAttribute("data-sfx");
@@ -23,10 +24,12 @@ export function Sfx() {
     };
     window.addEventListener("pointerdown", unlock, { capture: true, passive: true });
     window.addEventListener("keydown", unlock, { capture: true });
+    window.addEventListener("touchend", unlock, { capture: true, passive: true });
     document.addEventListener("click", onClick, { capture: true });
     return () => {
       window.removeEventListener("pointerdown", unlock, { capture: true });
       window.removeEventListener("keydown", unlock, { capture: true });
+      window.removeEventListener("touchend", unlock, { capture: true });
       document.removeEventListener("click", onClick, { capture: true });
     };
   }, []);

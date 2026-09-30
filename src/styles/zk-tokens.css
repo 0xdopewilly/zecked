@@ -1,4 +1,4 @@
-/* Fonts: load Bricolage Grotesque 600/800, Inter 400–800, Space Mono 400/700 (see <link> in each page head). */
+/* Fonts: Bricolage Grotesque, Inter and Space Mono, self-hosted via next/font in src/app/layout.tsx. */
 /* ZECKED design tokens — single source of truth. Every design file links this. */
 :root {
   /* ---------- Color: surfaces ---------- */
@@ -156,9 +156,9 @@
   --zk-badge-locked-hi: #3A3360; --zk-badge-locked-mid: #2A2448; --zk-badge-locked-lo: #221C3F; --zk-badge-locked-edge: #15112A; --zk-badge-locked-ray: transparent;
 
   /* ---------- Typography ---------- */
-  --zk-font-display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --zk-font-body: 'Inter', system-ui, sans-serif;
-  --zk-font-mono: 'Space Mono', ui-monospace, monospace;
+  --zk-font-display: var(--zk-ff-display, 'Bricolage Grotesque'), system-ui, sans-serif;
+  --zk-font-body: var(--zk-ff-body, 'Inter'), system-ui, sans-serif;
+  --zk-font-mono: var(--zk-ff-mono, 'Space Mono'), ui-monospace, monospace;
 
   --zk-fw-medium: 500;
   --zk-fw-semibold: 600;

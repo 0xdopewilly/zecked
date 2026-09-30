@@ -3,6 +3,7 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
 import type {
   AppConfig,
+  Notice,
   AuthStartResult,
   WalletInfo,
   ClaimResult,
@@ -40,7 +41,7 @@ export type FeedFilter = "all" | "riddles" | "predictions" | "ending" | "biggest
 
 export const api = {
   config: () => req<AppConfig>("/config"),
-  feed: (filter: FeedFilter = "all") => req<{ stashes: PublicStash[] }>(`/stashes?filter=${filter}`),
+  feed: (filter: FeedFilter = "all") => req<{ stashes: PublicStash[]; house?: { nextDropAt: string | null; liveId: string | null } | null }>(`/stashes?filter=${filter}`),
   stash: (id: string) => req<{ stash: PublicStash; myCall?: MyCall; runners?: RunnerCall[]; myTries?: { left: number; resetsAt?: string }; win?: WinPayload }>(`/stashes/${id}`),
   guess: (id: string, answer: string) =>
     req<GuessResult>(`/stashes/${id}/guess`, { method: "POST", body: JSON.stringify({ answer }) }),
@@ -77,6 +78,7 @@ export const api = {
   authVerify: (email: string, code: string) =>
     req<SignedIn>("/auth/email/verify", { method: "POST", body: JSON.stringify({ email, code }) }),
   logout: () => req<{ ok: true }>("/auth/logout", { method: "POST" }),
+  notifications: (after?: string) => req<{ items: Notice[]; now: string }>(`/notifications${after ? `?after=${encodeURIComponent(after)}` : ""}`),
   passkeyRegisterOptions: () => req<PublicKeyCredentialCreationOptionsJSON>("/auth/passkey/register/options", { method: "POST" }),
   passkeyRegisterVerify: (response: RegistrationResponseJSON) =>
     req<SignedIn>("/auth/passkey/register/verify", { method: "POST", body: JSON.stringify({ response }) }),

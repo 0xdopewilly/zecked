@@ -2,6 +2,17 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Top insets. --zk-top-inset: what a screen pads above its content; --zk-fixed-top: where fixed, top-anchored
+   things (toasts) sit. With the test-mode ribbon on top, the ribbon already covers the notch. */
+:root { --zk-ribbon-h: 20px; --zk-top-inset: env(safe-area-inset-top, 0px); --zk-fixed-top: env(safe-area-inset-top, 0px); --zk-chrome-h: 0px; }
+body:has(.zk-testmode) {
+  --zk-top-inset: 0px;
+  --zk-chrome-h: calc(env(safe-area-inset-top, 0px) + var(--zk-ribbon-h));
+  --zk-fixed-top: calc(env(safe-area-inset-top, 0px) + var(--zk-ribbon-h));
+}
+/* App feel: no grey tap flash, no long-press text selection on controls. */
+* { -webkit-tap-highlight-color: transparent; }
+button, [role="button"], [role="tab"], [role="switch"], nav a { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 html { background: var(--zk-canvas); color-scheme: dark; -webkit-text-size-adjust: 100%; }
 body { overscroll-behavior-y: none; }
 button { font: inherit; color: inherit; }
@@ -12,10 +23,11 @@ a { text-decoration: none; }
   position: relative;
   width: 100%;
   max-width: 430px;
-  min-height: 100dvh;
+  min-height: calc(100dvh - var(--zk-chrome-h));
   margin: 0 auto;
   background: var(--zk-bg);
-  overflow-x: hidden;
+  /* clip, not hidden: overflow hidden would turn the column into a scroll container and break every sticky header */
+  overflow-x: clip;
   isolation: isolate;
 }
 @media (min-width: 520px) {
@@ -26,10 +38,10 @@ a { text-decoration: none; }
 /* A screen fills the column: flex column, safe-area aware. */
 .zk-screen {
   position: relative;
-  min-height: 100dvh;
+  min-height: calc(100dvh - var(--zk-chrome-h));
   display: flex;
   flex-direction: column;
-  padding: calc(env(safe-area-inset-top, 0px) + var(--zk-space-14)) var(--zk-screen-pad) calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18));
+  padding: calc(var(--zk-top-inset) + var(--zk-space-14)) var(--zk-screen-pad) calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18));
   color: var(--zk-text);
   font-family: var(--zk-font-body);
 }
@@ -45,9 +57,10 @@ a { text-decoration: none; }
 .zk-testmode {
   position: relative; z-index: 90; display: block;
   max-width: 430px; width: 100%; margin: 0 auto;
-  padding-top: calc(env(safe-area-inset-top, 0px) + 4px) !important;
-  font: var(--zk-type-label); letter-spacing: var(--zk-track-label, .12em); text-transform: uppercase;
-  text-align: center; padding: 4px 8px calc(4px);
+  height: var(--zk-chrome-h); padding: env(safe-area-inset-top, 0px) 8px 0; overflow: hidden;
+  font: var(--zk-type-label); line-height: var(--zk-ribbon-h); letter-spacing: var(--zk-track-label, .12em); text-transform: uppercase;
+  white-space: nowrap; text-overflow: ellipsis;
+  text-align: center;
   background: repeating-linear-gradient(135deg, rgb(var(--zk-gold-rgb) / .92) 0 10px, rgb(var(--zk-gold-rgb) / .78) 10px 20px);
   color: var(--zk-gold-ink);
   pointer-events: none;
@@ -66,7 +79,6 @@ a { text-decoration: none; }
 /* ---------- Screen transitions (src/components/zk/PageTransition.tsx) ---------- */
 /* Taps during a transition reach the live page instead of the snapshot overlay. */
 ::view-transition { pointer-events: none; }
-::view-transition-group(root) { animation-duration: 0s; }
 
 /* push: opening something (a stash) */
 ::view-transition-old(.zk-vt-push) { animation: 260ms cubic-bezier(.4, 0, .2, 1) both zk-vt-out-left; }
@@ -97,3 +109,4 @@ a { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(*), ::view-transition-new(*), ::view-transition-group(*) { animation-duration: 0s !important; animation-delay: 0s !important; }
 }
+

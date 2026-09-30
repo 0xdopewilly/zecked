@@ -18,6 +18,7 @@ import type {
 import { NETWORK_FEE_ZAT, networkName, zcash } from "@/lib/zcash/engine";
 import { kv } from "./kv";
 import { emailSignInAvailable } from "./auth";
+import { notify } from "./notify";
 import { googleEnabled } from "./google";
 import { XP, bumpBoard, ensurePlayer, getPlayer, grant, isAccount, savePlayer, tierOf, toPublicPlayer, touchPlay, type PlayerRecord } from "./players";
 import { zecUsd } from "./price";
@@ -65,7 +66,8 @@ export interface StashRecord {
   expiresAt: string;
   expiryHours: number;
   network: string;
-  riddle?: { text: string; answerHashes: string[]; salt: string; hint?: string; hintUnlocksAt?: string };
+  riddle?: { text: string; answerHashes: string[]; salt: string; hint?: string; hintUnlocksAt?: string; answer?: string };
+  usdAtHide?: number; // the dollar size the hider picked (shown as-is, not re-derived from rounded zats)
   prediction?: { matchId: string; kind: PredictionKind; kickoff: string };
   refundAddress?: string;
   funding: { address: string; uri: string; amountZat: number };
@@ -131,6 +133,7 @@ async function tick_(text: string, kind: TickerItem["kind"]) {
 export async function ticker(): Promise<TickerItem[]> {
   return kv().lrange<TickerItem>(K.ticker, 0, 19);
 }
+const fmtSeconds = (sec: number) => (sec < 60 ? `${sec}s` : sec < 3600 ? `${Math.round(sec / 60)} min` : `${Math.round(sec / 3600)}h`);
 const zecStr = (zat: number) => (zat / 1e8).toFixed(4).replace(/(\.\d{2}\d*?)0+$/, "$1");
 
 // ---------- create ----------
@@ -168,7 +171,8 @@ export async function createStash(
     if (!EXPIRY_HOURS.includes(expiryHours)) expiryHours = 24;
     const salt = newToken();
     const alts = answer.split("|").map((a) => a.trim()).filter(Boolean);
-    riddle = { text, salt, hint, answerHashes: alts.map((a) => hashAnswer(a, salt)) };
+    // `answer` (as the hider typed it) is only ever revealed once the stash has ended.
+    riddle = { text, salt, hint, answerHashes: alts.map((a) => hashAnswer(a, salt)), answer: alts[0] };
     if (alts.some((a) => normalizeAnswer(a).length === 0)) throw new HttpError(400, "That answer is empty after cleanup");
     expiresAt = new Date(now + expiryHours * 3600_000).toISOString(); // reset when it goes live
   } else if (body.type === "prediction") {
@@ -196,6 +200,7 @@ export async function createStash(
   const s: StashRecord = {
     id,
     type: body.type,
+    usdAtHide: usd,
     status: "awaiting_funding",
     hiderId: hider.id,
     amountZat,
@@ -275,6 +280,12 @@ async function refund(s: StashRecord, reason: string) {
   const hider = s.seeded ? null : await getPlayer(s.hiderId);
   const wasFunded = !!s.liveAt;
   if (hider && isAccount(hider) && wasFunded) {
+    await notify(hider.id, {
+      kind: "refunded",
+      stashId: s.id,
+      amountZat: s.amountZat,
+      text: reason === "Nobody cracked it" || reason === "Nobody called it" ? `Uncrackable! Nobody got it, so your ${zecStr(s.amountZat)} ZEC came back.` : `Your stash came back: ${reason}.`,
+    });
     await credit(hider.id, s.amountZat, "refund", reason === "Nobody cracked it" || reason === "Nobody called it" ? "Uncrackable! Your stash came back" : `Stash returned · ${reason}`, { stashId: s.id });
     s.refund = { at: nowIso(), reason, internal: true };
     return;
@@ -408,7 +419,19 @@ async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinP
   } else if (!p.pendingClaims.includes(s.id)) p.pendingClaims.push(s.id);
   await savePlayer(p);
   await bumpBoard("crackers", pid, 1);
-  if (!s.seeded) await tick_(`${p.handle} just ZECKED ${zecStr(s.amountZat)} ZEC`, "zecked");
+  // Winners stay anonymous, in the ticker too.
+  if (!s.seeded) await tick_(`Someone just zecked ${zecStr(s.amountZat)} ZEC 🔓`, "zecked");
+  if (!s.seeded && s.hiderId !== pid) {
+    await notify(s.hiderId, {
+      kind: "zecked",
+      stashId: s.id,
+      amountZat: s.amountZat,
+      text:
+        kind === "riddle"
+          ? `Your riddle got ZECKED${s.crackSeconds ? ` in ${fmtSeconds(s.crackSeconds)}` : ""}! Someone cracked it.`
+          : "Your prediction stash got ZECKED! Someone called it.",
+    });
+  }
   return winPayload(s, p, xp, badges);
 }
 
@@ -471,7 +494,7 @@ async function winPayload(s: StashRecord, p: PlayerRecord, xpGained: number, bad
   return {
     stashId: s.id,
     amountZat: s.amountZat,
-    usd: Math.round((s.amountZat / 1e8) * rate * 100) / 100,
+    usd: s.usdAtHide ?? Math.round((s.amountZat / 1e8) * rate * 100) / 100,
     xpGained,
     badgesUnlocked: badges,
     player: toPublicPlayer(p, isAccount(p) ? await balanceOf(p.id) : 0),
@@ -601,7 +624,8 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
   const r = rate ?? (await zecUsd());
   const hider = await getPlayer(s.hiderId);
   const isMine = viewerId === s.hiderId;
-  const usd = Math.round((s.amountZat / 1e8) * r * 100) / 100;
+  const usd = s.usdAtHide ?? Math.round((s.amountZat / 1e8) * r * 100) / 100;
+  const ended = s.status === "zecked" || s.status === "refunded" || s.status === "void";
   const out: PublicStash = {
     id: s.id,
     type: s.type,
@@ -627,7 +651,9 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
       hint: unlocked || isMine || s.status !== "live" ? s.riddle.hint : undefined,
       hintUnlocksAt: s.riddle.hintUnlocksAt,
       tries,
-      crackingNow: Object.values(viewers).filter((t) => t >= cutoff).length,
+      // Other people on it right now (never counts you, or the hider watching their own stash).
+      crackingNow: Object.entries(viewers).filter(([pid, t]) => t >= cutoff && pid !== viewerId && pid !== s.hiderId).length,
+      answer: ended ? s.riddle.answer : undefined,
     };
   }
   if (s.prediction) {
@@ -652,7 +678,7 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     out.result = {
       zeckedAt: s.zeckedAt || s.refund?.at || s.expiresAt,
       winnerIsYou: !!viewerId && s.winnerId === viewerId,
-      winnerLabel: "a mystery cracker",
+      winnerLabel: s.type === "prediction" ? "a mystery caller" : "a mystery cracker",
       victoryMessage: s.victoryMessage,
       crackSeconds: s.crackSeconds,
       finalScore: s.finalScore,
@@ -698,13 +724,15 @@ async function runners(s: StashRecord, m: Match, viewerId: string): Promise<Runn
     c.kind === "exact" ? `${c.home}–${c.away}` : c.pick === "draw" ? "Draw" : `${c.pick === "home" ? m.home.code : m.away.code} win`;
   // "Still in the running": exact calls that haven't been exceeded by the live score, or winner calls (always).
   const alive = calls.filter((c) => (c.kind === "exact" ? (c.home ?? 0) >= h && (c.away ?? 0) >= a : true));
+  // Calls are private: other callers show as "Caller N" (their place in the queue), never a handle.
+  const order = new Map(calls.map((c, i) => [c, i + 1]));
   const ordered = [...alive.filter((c) => c.pid === viewerId), ...alive.filter((c) => c.pid !== viewerId)].slice(0, 8);
-  const out: RunnerCall[] = [];
-  for (const c of ordered) {
-    const p = await getPlayer(c.pid);
-    out.push({ handle: c.pid === viewerId ? "You" : p?.handle || "@anon", label: label(c), isYou: c.pid === viewerId, matchesNow: callCorrect(c, m) });
-  }
-  return out;
+  return ordered.map((c) => ({
+    handle: c.pid === viewerId ? "You" : `Caller ${order.get(c)}`,
+    label: label(c),
+    isYou: c.pid === viewerId,
+    matchesNow: callCorrect(c, m),
+  }));
 }
 
 // ---------- feed ----------

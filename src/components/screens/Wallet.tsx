@@ -1,14 +1,17 @@
 "use client";
-// Wallet · the in-app ZECKED wallet. Balance hero, "Add ZEC" (your personal address + QR), "Withdraw"
-// (send to any Zcash wallet, shielded by default) and the activity list. Guests get a sign-up card.
+// Wallet · the in-app ZECKED wallet. Balance hero, "Add ZEC" (a step-by-step guide: copy your address,
+// grab free test ZEC from a faucet, then a live "waiting for your test ZEC" state), "Withdraw" (send to
+// any Zcash wallet, private by default) and the activity list. Guests get a sign-up card.
 // `?action=add` / `?action=withdraw` opens that panel on load.
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api, formatUsd, formatZec } from "@/lib/api";
+import { useAppBack } from "@/lib/nav";
+import { sfx } from "@/lib/sfx";
 import { ZAT } from "@/lib/types";
 import type { WalletInfo, WalletTx, WalletTxKind } from "@/lib/types";
-import { Button, Chip, CountUp, Icon, Input, Logo, TabBar, Toast } from "@/components/zk";
+import { Button, Chip, Confetti, CountUp, Icon, Input, Logo, TabBar, Toast } from "@/components/zk";
 import type { IconName, ToastVariant } from "@/components/zk";
 
 /* ───────────────────────── constants ───────────────────────── */
@@ -19,6 +22,8 @@ type Network = WalletInfo["network"];
 /** Poll fast while ZEC may be on its way (Add panel open, deposit or send pending), slowly otherwise. */
 const FAST_MS = 10_000;
 const SLOW_MS = 30_000;
+/** How long the hero's "+0.05 ZEC" sticker (and its confetti) stays up after ZEC lands. */
+const LANDED_POP_MS = 4_200;
 
 const SIM_AMOUNTS = [
   { label: "0.01 ZEC", zat: 1_000_000 },
@@ -33,19 +38,29 @@ const FAUCETS = [
 
 const SIGNUP_HREF = "/signin?next=/wallet&reason=wallet";
 
+const FEE_EXPLAINER = "A tiny fee the Zcash network charges";
+
 /* ───────────────────────── helpers ───────────────────────── */
 
 const errStatus = (e: unknown) => (e as { status?: number } | null)?.status;
-const errMsg = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
+const errText = (e: unknown) => (e instanceof Error ? e.message : "");
+const withStop = (m: string) => (/[.!?]$/.test(m) ? m : `${m}.`);
+
+/** Friendly copy for a failed request: never the raw browser text ("Failed to fetch", "Request failed (500)"). */
+function friendlyErr(e: unknown, fallback = "Something went wrong. Try again."): string {
+  const status = errStatus(e);
+  if (status == null) return "Can’t reach ZECKED. Check your connection and try again.";
+  if (status >= 500) return fallback;
+  const m = errText(e);
+  return m && !/^Request failed/i.test(m) ? withStop(m) : fallback;
+}
+
 const shortAddr = (a: string, head = 6, tail = 5) => (a.length > head + tail + 1 ? `${a.slice(0, head)}…${a.slice(-tail)}` : a);
 
-/** Exact zat → "0.0497" (no float maths, trailing zeros trimmed). */
-function zecStr(zat: number): string {
-  const z = Math.max(0, Math.round(zat));
-  const whole = Math.floor(z / ZAT);
-  const frac = String(z % ZAT).padStart(8, "0").replace(/0+$/, "");
-  return frac ? `${whole}.${frac}` : String(whole);
-}
+/** One ZEC format everywhere: exact to the zat, trailing zeros trimmed, at least 2 decimals ("0.05", "0.0632"). */
+const zec = (zat: number) => formatZec(Math.max(0, Math.round(zat)), 8);
+/** Decimals `zec()` prints for this amount, so the counting hero lands on the same text. */
+const decimalsOf = (zat: number) => zec(zat).split(".")[1]?.length ?? 2;
 
 /** "0.05" → 5_000_000 zat, exactly. null when it isn't a ZEC amount. */
 function parseZecToZat(s: string): number | null {
@@ -122,14 +137,14 @@ function checkAddress(raw: string, network: Network, own?: string): AddrCheck {
   if (!shielded && !transparent) {
     const lower = a.toLowerCase();
     const plausible = /^[0-9a-z]+$/i.test(a) && PREFIXES.some((p) => p.startsWith(lower) || lower.startsWith(p));
-    return plausible && a.length < 30 ? { kind: "typing" } : { kind: "error", msg: "That doesn’t look like a Zcash address." };
+    return plausible && a.length < 30 ? { kind: "typing" } : { kind: "error", msg: "That doesn’t look like a Zcash wallet address." };
   }
   if (own && a === own) return { kind: "error", msg: "That’s your own ZECKED address. Send it to an outside wallet." };
   const testnetAddr = TESTNET_RE.test(a);
   if (network === "testnet" && !testnetAddr) {
-    return { kind: "error", msg: "Test mode sends on Zcash testnet. Use a testnet address (utest1…)." };
+    return { kind: "error", msg: "This is the test version of ZECKED, so use a Zcash testnet address (it starts with utest1)." };
   }
-  if (network === "mainnet" && testnetAddr) return { kind: "error", msg: "That’s a testnet address." };
+  if (network === "mainnet" && testnetAddr) return { kind: "error", msg: "That’s a testnet address. Use a regular Zcash address." };
   return { kind: shielded ? "shielded" : "transparent" };
 }
 
@@ -165,9 +180,16 @@ function useQr(uri?: string) {
 
 /* ───────────────────────── shared styles ───────────────────────── */
 
+/** Scoped rules inline styles can't express: plain-text placeholders (so an empty box never looks filled in) and the step indent on very narrow phones. */
+const SCOPED_CSS = `
+.zkw-ph input::placeholder{font:var(--zk-fw-semibold) var(--zk-fs-15)/1.2 var(--zk-font-body);color:var(--zk-text-faint);opacity:1}
+.zkw-step-body{padding-left:38px}
+@media (max-width:359px){.zkw-step-body{padding-left:0}}
+`;
+
 const ICON_BTN: CSSProperties = {
-  width: 40,
-  height: 40,
+  width: 44,
+  height: 44,
   flex: "none",
   borderRadius: "var(--zk-radius-md)",
   background: "var(--zk-surface)",
@@ -181,10 +203,12 @@ const ICON_BTN: CSSProperties = {
   WebkitTapHighlightColor: "transparent",
 };
 
-const SMALL_LABEL: CSSProperties = {
+const SMALL_TEXT: CSSProperties = {
+  margin: 0,
   font: "var(--zk-type-small)",
-  fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
+  fontWeight: "var(--zk-fw-medium)" as CSSProperties["fontWeight"],
   color: "var(--zk-text-muted)",
+  textWrap: "pretty",
 };
 
 const LABEL: CSSProperties = {
@@ -195,9 +219,10 @@ const LABEL: CSSProperties = {
 
 const receiptRow = (last: boolean): CSSProperties => ({
   display: "flex",
+  flexWrap: "wrap",
   justifyContent: "space-between",
   alignItems: "center",
-  gap: "var(--zk-space-12)",
+  gap: "var(--zk-space-4) var(--zk-space-12)",
   padding: "var(--zk-space-10) 0",
   borderBottom: last ? "none" : "1px solid var(--zk-border)",
   font: "var(--zk-type-body)",
@@ -232,52 +257,90 @@ function Spinner({ size = 18, tone = "gold" }: { size?: number; tone?: "gold" | 
   );
 }
 
-function Note({ icon, color = "var(--zk-purple-light)", children }: { icon: IconName; color?: string; children: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: "var(--zk-space-10)",
-        alignItems: "flex-start",
-        padding: "var(--zk-space-12) var(--zk-space-14)",
-        borderRadius: "var(--zk-radius-lg)",
-        background: "var(--zk-surface-raised)",
-        font: "var(--zk-type-small)",
-        fontWeight: "var(--zk-fw-medium)" as CSSProperties["fontWeight"],
-        color: "var(--zk-text-muted)",
-      }}
-    >
-      <span style={{ color, display: "flex", flex: "none", marginTop: 1 }}>
-        <Icon icon={icon} size={18} />
-      </span>
-      <span style={{ minWidth: 0, textWrap: "pretty" }}>{children}</span>
-    </div>
-  );
-}
-
-function CopyIconButton({ label, onClick }: { label: string; onClick: () => void }) {
+/**
+ * A small action that still has a 44×44 tap area: a transparent hit box around a visible pill
+ * (so it fits inside a 54px input or a receipt row).
+ */
+function PillButton({
+  label,
+  icon,
+  tone = "purple",
+  active,
+  ariaLabel,
+  onClick,
+}: {
+  label: string;
+  icon?: IconName;
+  tone?: "purple" | "raised" | "mint";
+  active?: boolean;
+  ariaLabel?: string;
+  onClick: () => void;
+}) {
+  const bg = tone === "mint" ? "var(--zk-mint-tint)" : tone === "raised" ? "var(--zk-surface-raised)" : active ? "var(--zk-gold)" : "var(--zk-purple)";
+  const fg = tone === "mint" ? "var(--zk-mint)" : tone === "raised" ? "var(--zk-text)" : active ? "var(--zk-gold-ink)" : "var(--zk-text)";
+  const edge = tone === "purple" ? (active ? "0 3px 0 var(--zk-gold-deep)" : "0 3px 0 var(--zk-purple-deep)") : "none";
   return (
     <button
       type="button"
-      aria-label={label}
+      aria-label={ariaLabel}
+      aria-pressed={active}
       onClick={onClick}
       style={{
-        width: 28,
-        height: 28,
+        minWidth: 44,
+        height: 44,
         flex: "none",
-        borderRadius: "var(--zk-radius-sm)",
-        border: "none",
         padding: 0,
-        background: "var(--zk-surface-raised)",
-        color: "var(--zk-text-muted)",
+        border: 0,
+        background: "transparent",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
+        WebkitTapHighlightColor: "transparent",
       }}
     >
-      <Icon icon="copy" size={14} />
+      <span
+        style={{
+          height: 34,
+          padding: "0 var(--zk-space-12)",
+          borderRadius: "var(--zk-radius-md)",
+          background: bg,
+          color: fg,
+          boxShadow: edge,
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--zk-space-6)",
+          font: "var(--zk-type-btn-sm)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {icon ? <Icon icon={icon} size={15} stroke={2.6} /> : null}
+        {label}
+      </span>
     </button>
+  );
+}
+
+/** "Copy" that flips to "Copied" for a moment. The screen shows the toast. */
+function CopyButton({ ariaLabel, onCopy, tone = "raised" }: { ariaLabel: string; onCopy: () => Promise<boolean>; tone?: "purple" | "raised" }) {
+  const [done, setDone] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return (
+    <PillButton
+      label={done ? "Copied" : "Copy"}
+      icon={done ? "check" : "copy"}
+      tone={done ? "mint" : tone}
+      ariaLabel={ariaLabel}
+      onClick={() =>
+        void onCopy().then((ok) => {
+          if (!ok) return;
+          setDone(true);
+          clearTimeout(timer.current);
+          timer.current = setTimeout(() => setDone(false), 2000);
+        })
+      }
+    />
   );
 }
 
@@ -290,17 +353,23 @@ function Header({ onBack }: { onBack: () => void }) {
         <Icon icon="back" size={20} stroke={2.6} />
       </button>
       <h1 style={{ margin: 0, font: "var(--zk-type-mono-sm)", letterSpacing: ".12em", color: "var(--zk-text-muted)" }}>WALLET</h1>
-      <div style={{ width: 40 }} aria-hidden="true" />
+      <div style={{ width: 44 }} aria-hidden="true" />
     </div>
   );
 }
 
 /* ───────────────────────── hero ───────────────────────── */
 
-function Hero({ wallet, count }: { wallet: WalletInfo; count: { from: number; to: number; run: number } }) {
+interface Landed {
+  zat: number;
+  run: number;
+}
+
+function Hero({ wallet, count, pop }: { wallet: WalletInfo; count: { from: number; to: number; run: number }; pop: Landed | null }) {
   const net = wallet.network;
   const pending = wallet.pendingDepositZat;
-  const digits = (wallet.balanceZat / ZAT).toFixed(4).length;
+  const decimals = Math.max(decimalsOf(count.from), decimalsOf(count.to));
+  const digits = zec(wallet.balanceZat).length;
   return (
     <section
       aria-label="Your ZEC"
@@ -344,6 +413,7 @@ function Hero({ wallet, count }: { wallet: WalletInfo; count: { from: number; to
           animation: "zk-glow 3.2s ease-in-out infinite",
         }}
       />
+      {pop ? <Confetti key={pop.run} count={36} size="sm" seed={pop.run * 13 + 5} run={pop.run} sound={false} /> : null}
 
       <div
         style={{
@@ -355,21 +425,21 @@ function Hero({ wallet, count }: { wallet: WalletInfo; count: { from: number; to
           minHeight: 30,
         }}
       >
-        <span style={LABEL}>YOUR ZEC</span>
+        <span style={{ ...LABEL, whiteSpace: "nowrap", flex: "none" }}>YOUR ZEC</span>
         {net !== "mainnet" ? (
           <Chip
             variant="info"
             icon="flag"
             iconColor="var(--zk-gold)"
-            label={net === "testnet" ? "Testnet ZEC" : "Test mode · play ZEC"}
-            style={{ background: "var(--zk-gold-tint)", color: "var(--zk-gold)", padding: "var(--zk-space-6) var(--zk-space-10)" }}
+            label={net === "testnet" ? "Test ZEC" : "Test mode"}
+            style={{ background: "var(--zk-gold-tint)", color: "var(--zk-gold)", padding: "var(--zk-space-6) var(--zk-space-10)", minWidth: 0 }}
           />
         ) : null}
       </div>
 
       <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", marginTop: "var(--zk-space-14)" }}>
         <span className="zk-sr-only" aria-live="polite">
-          {`${(wallet.balanceZat / ZAT).toFixed(4)} ZEC, about ${formatUsd(wallet.usd)}`}
+          {`${zec(wallet.balanceZat)} ZEC, about ${formatUsd(wallet.usd)}`}
         </span>
         <div aria-hidden="true" style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-8)" }}>
           <span
@@ -380,12 +450,32 @@ function Hero({ wallet, count }: { wallet: WalletInfo; count: { from: number; to
               textShadow: "var(--zk-text-shadow-gold)",
             }}
           >
-            <CountUp from={count.from / ZAT} to={count.to / ZAT} decimals={4} duration={1200} run={count.run} />
+            <CountUp from={count.from / ZAT} to={count.to / ZAT} decimals={decimals} duration={1200} run={count.run} />
           </span>
           <span style={{ font: "var(--zk-type-mono)", fontSize: "var(--zk-fs-18)", color: "var(--zk-gold-light)" }}>ZEC</span>
         </div>
-        <div aria-hidden="true" style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-12)" }}>
-          ~{formatUsd(wallet.usd)}
+        <div aria-hidden="true" style={{ position: "relative", marginTop: "var(--zk-space-12)", minHeight: 22, display: "flex", alignItems: "center" }}>
+          {pop ? (
+            <span
+              key={pop.run}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--zk-space-4)",
+                padding: "var(--zk-space-4) var(--zk-space-10)",
+                borderRadius: "var(--zk-radius-pill)",
+                background: "var(--zk-mint)",
+                color: "var(--zk-mint-ink)",
+                boxShadow: "var(--zk-shadow-sticker-mint)",
+                font: "var(--zk-type-mono-sm)",
+                animation: "zk-pop var(--zk-dur-pop) var(--zk-ease-spring) both",
+              }}
+            >
+              <Icon icon="coin" size={14} stroke={2.6} />+{zec(pop.zat)} ZEC landed
+            </span>
+          ) : (
+            <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(wallet.usd)}</span>
+          )}
         </div>
       </div>
 
@@ -407,8 +497,8 @@ function Hero({ wallet, count }: { wallet: WalletInfo; count: { from: number; to
         >
           <Spinner tone="mint" />
           <span>
-            <b style={{ color: "var(--zk-mint)" }}>+{formatZec(pending, 8)} ZEC</b> arriving…{" "}
-            <span style={{ color: "var(--zk-text-muted)" }}>(waiting for confirmation)</span>
+            <b style={{ color: "var(--zk-mint)" }}>+{zec(pending)} ZEC</b> on its way…{" "}
+            <span style={{ color: "var(--zk-text-muted)" }}>(the network is confirming it)</span>
           </span>
         </div>
       ) : null}
@@ -471,7 +561,7 @@ function PanelShell({
           type="button"
           aria-label={`Close ${title}`}
           onClick={onClose}
-          style={{ ...ICON_BTN, width: 34, height: 34, background: "var(--zk-surface-raised)", color: "var(--zk-text-muted)" }}
+          style={{ ...ICON_BTN, background: "var(--zk-surface-raised)", color: "var(--zk-text-muted)" }}
         >
           <Icon icon="close" size={16} stroke={2.6} />
         </button>
@@ -481,148 +571,351 @@ function PanelShell({
   );
 }
 
-/* ── Add ZEC ── */
+/* ── Add ZEC: a numbered, friendly guide ── */
+
+function Step({ n, title, done, last, children }: { n: number; title: string; done?: boolean; last?: boolean; children?: ReactNode }) {
+  return (
+    <li
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--zk-space-10)",
+        paddingBottom: last ? 0 : "var(--zk-space-16)",
+        borderBottom: last ? "none" : "1px solid var(--zk-border)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 28,
+            height: 28,
+            flex: "none",
+            borderRadius: "50%",
+            background: done ? "var(--zk-mint)" : "var(--zk-purple-tint)",
+            color: done ? "var(--zk-mint-ink)" : "var(--zk-purple-light)",
+            boxShadow: done ? "0 2px 0 var(--zk-mint-deep)" : "inset 0 0 0 1.5px rgb(var(--zk-purple-rgb) / .45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            font: "var(--zk-fw-black) var(--zk-fs-14)/1 var(--zk-font-display)",
+            transition: "background var(--zk-dur-fast) var(--zk-ease-out)",
+          }}
+        >
+          {done ? <Icon icon="check" size={15} stroke={3} /> : n}
+        </span>
+        <h3 style={{ margin: 0, font: "var(--zk-type-h4)", minWidth: 0, textWrap: "balance" }}>
+          <span className="zk-sr-only">{`Step ${n}${done ? " (done)" : ""}: `}</span>
+          {title}
+        </h3>
+      </div>
+      {children ? (
+        <div className="zkw-step-body" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>
+          {children}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function QrBox({ uri }: { uri?: string }) {
+  const qr = useQr(uri);
+  return (
+    <div
+      role="img"
+      aria-label="QR code of your ZECKED wallet address"
+      style={{
+        alignSelf: "center",
+        flex: "none",
+        width: 188,
+        height: 188,
+        borderRadius: "var(--zk-radius-2xl)",
+        background: "var(--zk-text)",
+        padding: "var(--zk-space-12)",
+        boxSizing: "border-box",
+        position: "relative",
+        boxShadow: "0 0 0 5px rgb(var(--zk-purple-rgb) / .3),var(--zk-shadow-float)",
+      }}
+    >
+      {qr.src ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qr.src} alt="" width={164} height={164} style={{ display: "block", width: 164, height: 164 }} />
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%,-50%)",
+              padding: 3,
+              background: "var(--zk-text)",
+              borderRadius: "var(--zk-radius-sm)",
+              display: "flex",
+              lineHeight: 0,
+            }}
+          >
+            <Logo variant="icon" size={24} />
+          </div>
+        </>
+      ) : (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--zk-space-10)",
+            font: "var(--zk-type-caption)",
+            color: "var(--zk-bg)",
+            textAlign: "center",
+          }}
+        >
+          {qr.failed ? "Couldn’t draw the QR code. Use the Copy button instead." : <Spinner size={24} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EXTERNAL_LINK: CSSProperties = {
+  minHeight: 52,
+  padding: "var(--zk-space-10) var(--zk-space-14)",
+  borderRadius: "var(--zk-radius-xl)",
+  border: "1.5px solid var(--zk-border-strong)",
+  background: "var(--zk-surface-raised)",
+  color: "var(--zk-text)",
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--zk-space-10)",
+  textDecoration: "none",
+  WebkitTapHighlightColor: "transparent",
+};
+
+/** Step 4's live line: waiting → seen on the network → landed. */
+function Arrival({ pending, landed, test }: { pending: number; landed: Landed | null; test: boolean }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const run = landed?.run;
+  // ZEC landed while you were further up the guide: bring the good news into view.
+  useEffect(() => {
+    if (!run) return;
+    const id = requestAnimationFrame(() => boxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    return () => cancelAnimationFrame(id);
+  }, [run]);
+  if (landed) {
+    return (
+      <div
+        ref={boxRef}
+        role="status"
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--zk-space-12)",
+          padding: "var(--zk-space-14)",
+          borderRadius: "var(--zk-radius-xl)",
+          background: "var(--zk-mint-tint)",
+          border: "1.5px solid rgb(var(--zk-mint-rgb) / .45)",
+        }}
+      >
+        <Confetti key={landed.run} count={28} size="sm" seed={landed.run * 7 + 3} run={landed.run} sound={false} />
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "var(--zk-space-12)" }}>
+          <span
+            key={landed.run}
+            aria-hidden="true"
+            style={{
+              width: 40,
+              height: 40,
+              flex: "none",
+              borderRadius: "50%",
+              background: "var(--zk-mint)",
+              color: "var(--zk-mint-ink)",
+              boxShadow: "var(--zk-shadow-sticker-mint)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              animation: "zk-pop var(--zk-dur-pop) var(--zk-ease-spring) both",
+            }}
+          >
+            <Icon icon="check" size={22} stroke={3} />
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ font: "var(--zk-type-h4)" }}>+{zec(landed.zat)} ZEC landed!</div>
+            <div style={{ ...SMALL_TEXT, marginTop: "var(--zk-space-2)" }}>You’re ready. Crack a riddle or call a match.</div>
+          </div>
+        </div>
+        <div style={{ position: "relative" }}>
+          <Button label="Crack a stash" icon="key" variant="primary" size="md" href="/feed" />
+        </div>
+      </div>
+    );
+  }
+  const seen = pending > 0;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-12)",
+        padding: "var(--zk-space-12) var(--zk-space-14)",
+        borderRadius: "var(--zk-radius-xl)",
+        background: seen ? "var(--zk-mint-tint)" : "var(--zk-surface-raised)",
+        border: `1.5px dashed ${seen ? "rgb(var(--zk-mint-rgb) / .45)" : "rgb(var(--zk-gold-rgb) / .35)"}`,
+      }}
+    >
+      <Spinner size={22} tone={seen ? "mint" : "gold"} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ font: "var(--zk-type-body-strong)" }}>
+          {seen ? `+${zec(pending)} ZEC spotted on the network…` : `Waiting for your ${test ? "test " : ""}ZEC…`}
+        </div>
+        <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)", textWrap: "pretty" }}>
+          {seen
+            ? "Almost there: it’s being confirmed."
+            : "We check every few seconds. You can leave this page: we’ll tell you when it lands."}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AddPanel({
   wallet,
   simulating,
+  landed,
   onCopyAddress,
   onSimulate,
   onClose,
 }: {
   wallet: WalletInfo;
   simulating: number | null;
-  onCopyAddress: (address: string) => void;
+  landed: Landed | null;
+  onCopyAddress: (address: string) => Promise<boolean>;
   onSimulate: (zat: number) => void;
   onClose: () => void;
 }) {
   const address = wallet.depositAddress;
   const uri = wallet.depositUri;
-  const qr = useQr(uri);
+  const test = wallet.network !== "mainnet";
+  const [copied, setCopied] = useState(false);
+  const [copyFlash, setCopyFlash] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
 
-  return (
-    <PanelShell title="Add ZEC" icon="plus" tone="purple" onClose={onClose}>
-      <div style={SMALL_LABEL}>Your personal ZECKED address</div>
-      <div
-        role="img"
-        aria-label="QR code of your ZECKED address"
-        style={{
-          alignSelf: "center",
-          flex: "none",
-          width: 250,
-          height: 250,
-          borderRadius: "var(--zk-radius-3xl)",
-          background: "var(--zk-text)",
-          padding: "var(--zk-space-18)",
-          boxSizing: "border-box",
-          position: "relative",
-          boxShadow: "0 0 0 6px rgb(var(--zk-purple-rgb) / .3),var(--zk-shadow-float)",
-        }}
-      >
-        {qr.src ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr.src} alt="" width={214} height={214} style={{ display: "block", width: 214, height: 214 }} />
-            <div
-              style={{
-                position: "absolute",
-                left: "50%",
-                top: "50%",
-                transform: "translate(-50%,-50%)",
-                padding: 4,
-                background: "var(--zk-text)",
-                borderRadius: "var(--zk-radius-md)",
-                display: "flex",
-                lineHeight: 0,
-              }}
-            >
-              <Logo variant="icon" size={30} />
-            </div>
-          </>
-        ) : (
+  const copy = async () => {
+    if (!address || !(await onCopyAddress(address))) return;
+    setCopied(true);
+    setCopyFlash(true);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setCopyFlash(false), 2200);
+  };
+
+  const step1 = (
+    <Step n={1} title="Copy your ZECKED wallet address" done={copied}>
+      {address ? (
+        <>
           <div
+            title={address}
             style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "var(--zk-space-10)",
-              font: "var(--zk-type-caption)",
-              color: "var(--zk-bg)",
+              padding: "var(--zk-space-12) var(--zk-space-14)",
+              borderRadius: "var(--zk-radius-lg)",
+              background: "var(--zk-surface-raised)",
+              font: "var(--zk-fw-medium) var(--zk-fs-14)/1 var(--zk-font-mono)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
               textAlign: "center",
             }}
           >
-            {qr.failed ? (
-              "Couldn’t draw the QR. Copy the address below."
-            ) : (
-              <>
-                <Spinner size={24} />
-                {!uri ? "Setting up your address…" : null}
-              </>
-            )}
+            <span className="zk-sr-only">Your address: </span>
+            {shortAddr(address, 10, 8)}
           </div>
-        )}
-      </div>
+          <Button
+            label={copyFlash ? "Copied!" : copied ? "Copy again" : "Copy my address"}
+            icon={copyFlash ? "check" : "copy"}
+            variant={copyFlash ? "success" : "secondary"}
+            size="md"
+            sfx="none"
+            onClick={() => void copy()}
+          />
+        </>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)", ...SMALL_TEXT }}>
+          <Spinner /> Setting up your address…
+        </div>
+      )}
+      {uri ? (
+        <>
+          <QrBox uri={uri} />
+          <p style={{ ...SMALL_TEXT, font: "var(--zk-type-caption)", textAlign: "center" }}>Or scan it with a Zcash wallet app.</p>
+        </>
+      ) : null}
+    </Step>
+  );
 
-      {address ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--zk-space-10)",
-            padding: "var(--zk-space-8) var(--zk-space-8) var(--zk-space-8) var(--zk-space-16)",
-            borderRadius: "var(--zk-radius-lg)",
-            background: "var(--zk-surface-raised)",
-          }}
-        >
+  const faucetStep = (
+    <Step n={2} title="Open a free faucet" done={opened}>
+      <p style={SMALL_TEXT}>
+        A faucet is a website that hands out <b style={{ color: "var(--zk-text)" }}>free test ZEC</b>. It has no real value: it’s just for
+        playing here.
+      </p>
+      {FAUCETS.map((f) => (
+        <a key={f.href} href={f.href} target="_blank" rel="noopener noreferrer" onClick={() => setOpened(true)} style={EXTERNAL_LINK}>
           <span
-            title={address}
+            aria-hidden="true"
+            style={{
+              width: 32,
+              height: 32,
+              flex: "none",
+              borderRadius: "var(--zk-radius-sm)",
+              background: "var(--zk-gold-tint)",
+              color: "var(--zk-gold)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Icon icon="coin" size={17} stroke={2.4} />
+          </span>
+          <span
             style={{
               flex: 1,
               minWidth: 0,
-              font: "var(--zk-fw-medium) var(--zk-fs-14)/1 var(--zk-font-mono)",
+              font: "var(--zk-type-body-strong)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}
           >
-            {shortAddr(address)}
+            {f.label}
           </span>
-          <Button label="Copy" icon="copy" variant="secondary" size="sm" full={false} onClick={() => onCopyAddress(address)} />
-        </div>
-      ) : null}
-      {uri ? <Button label="Open in wallet" icon="wallet" variant="ghost" size="md" href={uri} /> : null}
-
-      <Note icon="info">Send ZEC from any Zcash wallet. It shows up here in about a minute.</Note>
-
-      {wallet.network === "testnet" ? (
-        <Note icon="flag" color="var(--zk-gold)">
-          <b style={{ color: "var(--zk-text)" }}>Testnet only.</b> Get free test ZEC from a faucet:{" "}
-          {FAUCETS.map((f, i) => (
-            <span key={f.href}>
-              {i > 0 ? " or " : null}
-              <a
-                href={f.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"], overflowWrap: "anywhere" }}
-              >
-                {f.label}
-              </a>
-            </span>
-          ))}
-        </Note>
-      ) : null}
-
+          <span aria-hidden="true" style={{ display: "flex", color: "var(--zk-text-muted)", transform: "rotate(45deg)" }}>
+            <Icon icon="arrowUp" size={18} stroke={2.6} />
+          </span>
+          <span className="zk-sr-only"> (opens in a new tab)</span>
+        </a>
+      ))}
+      <p style={{ ...SMALL_TEXT, font: "var(--zk-type-caption)" }}>If one is busy or empty, try the other.</p>
       {wallet.network === "sim" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
-          <div style={{ ...SMALL_LABEL, display: "flex", alignItems: "center", gap: "var(--zk-space-6)" }}>
-            <Icon icon="bolt" size={14} color="var(--zk-gold)" />
-            Simulate a deposit (test mode)
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--zk-space-6)",
+            padding: "var(--zk-space-10) var(--zk-space-12)",
+            borderRadius: "var(--zk-radius-lg)",
+            border: "1.5px dashed rgb(var(--zk-gold-rgb) / .35)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)", font: "var(--zk-type-caption)", color: "var(--zk-gold)" }}>
+            <Icon icon="bolt" size={14} />
+            Test mode shortcut: skip the faucet
           </div>
-          <div style={{ display: "flex", gap: "var(--zk-space-8)", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--zk-space-6)" }}>
             {SIM_AMOUNTS.map((a) => (
               <Chip
                 key={a.zat}
@@ -631,11 +924,43 @@ function AddPanel({
                 active={simulating === a.zat}
                 disabled={simulating != null}
                 onClick={() => onSimulate(a.zat)}
+                style={{ height: 44, padding: "0 var(--zk-space-8)", flex: "1 1 0", minWidth: 0, justifyContent: "center" }}
               />
             ))}
           </div>
         </div>
       ) : null}
+    </Step>
+  );
+
+  const pasteStep = (
+    <Step n={3} title="Paste your address and ask for test ZEC">
+      <p style={SMALL_TEXT}>On the faucet page, paste the address you copied into the box, then tap its request button.</p>
+    </Step>
+  );
+
+  const sendStep = (
+    <Step n={2} title="Send ZEC to it from any Zcash wallet">
+      {uri ? <Button label="Open my wallet app" icon="wallet" variant="ghost" size="md" href={uri} /> : null}
+    </Step>
+  );
+
+  const lastN = test ? 4 : 3;
+  const arriveStep = (
+    <Step n={lastN} title="It lands here in a few minutes" done={!!landed} last>
+      <p style={SMALL_TEXT}>The Zcash network needs a few confirmations first, so give it a few minutes.</p>
+      <Arrival pending={wallet.pendingDepositZat} landed={landed} test={test} />
+    </Step>
+  );
+
+  return (
+    <PanelShell title={test ? "Add test ZEC" : "Add ZEC"} icon="plus" tone="purple" onClose={onClose}>
+      <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--zk-space-16)" }}>
+        {step1}
+        {test ? faucetStep : sendStep}
+        {test ? pasteStep : null}
+        {arriveStep}
+      </ol>
     </PanelShell>
   );
 }
@@ -650,29 +975,6 @@ interface SentReceipt {
   shielded: boolean;
 }
 
-function PasteButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        height: 34,
-        padding: "0 var(--zk-space-12)",
-        borderRadius: "var(--zk-radius-md)",
-        border: "none",
-        background: "var(--zk-purple)",
-        color: "var(--zk-text)",
-        boxShadow: "0 3px 0 var(--zk-purple-deep)",
-        font: "var(--zk-type-btn-sm)",
-        cursor: "pointer",
-        WebkitTapHighlightColor: "transparent",
-      }}
-    >
-      Paste
-    </button>
-  );
-}
-
 function Receipt({
   r,
   network,
@@ -681,30 +983,32 @@ function Receipt({
 }: {
   r: SentReceipt;
   network: Network;
-  onCopyTxid: (txid: string) => void;
+  onCopyTxid: (txid: string) => Promise<boolean>;
   onDone: () => void;
 }) {
-  const rows: { k: string; v: ReactNode }[] = [
-    { k: "Amount", v: <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)" }}>{formatZec(r.amountZat, 8)} ZEC</span> },
-    { k: "To", v: <span style={{ font: "var(--zk-type-mono-sm)" }}>{shortAddr(r.to)}</span> },
+  const rows: { k: ReactNode; v: ReactNode; note?: string }[] = [
+    { k: "You sent", v: <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)" }}>{zec(r.amountZat)} ZEC</span> },
+    { k: "Network fee", v: <span style={{ font: "var(--zk-type-mono-sm)" }}>{zec(r.feeZat)} ZEC</span>, note: FEE_EXPLAINER },
+    { k: "Total", v: <span style={{ font: "var(--zk-type-mono-sm)" }}>{zec(r.amountZat + r.feeZat)} ZEC</span> },
+    { k: "To wallet", v: <span style={{ font: "var(--zk-type-mono-sm)" }}>{shortAddr(r.to)}</span> },
     {
-      k: "Txid",
+      k: "Receipt ID",
       v: (
-        <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)", font: "var(--zk-type-mono-sm)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-2)", font: "var(--zk-type-mono-sm)", marginLeft: "auto" }}>
           {shortAddr(r.txid, 6, 6)}
-          <CopyIconButton label="Copy transaction id" onClick={() => onCopyTxid(r.txid)} />
+          <CopyButton ariaLabel="Copy receipt ID" onCopy={() => onCopyTxid(r.txid)} />
         </span>
       ),
     },
     {
-      k: "Transfer",
+      k: "Privacy",
       v: r.shielded ? (
         <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-4)", font: "var(--zk-type-body-strong)", color: "var(--zk-mint)" }}>
-          Shielded
+          Private
           <Icon icon="check" size={16} stroke={3} />
         </span>
       ) : (
-        <span style={{ font: "var(--zk-type-body-strong)", color: "var(--zk-gold)" }}>Transparent</span>
+        <span style={{ font: "var(--zk-type-body-strong)", color: "var(--zk-gold)" }}>Public</span>
       ),
     },
   ];
@@ -730,24 +1034,29 @@ function Receipt({
           <Icon icon="check" size={24} stroke={3} />
         </span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ font: "var(--zk-type-h3)" }}>It’s on its way.</div>
-          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>
-            {r.shielded ? "Shielded. Nobody can see where it went 🥷" : "Sent to a transparent address, so this one is public."}
+          <div style={{ font: "var(--zk-type-h3)" }}>Sent! It’s on its way.</div>
+          <div style={{ ...SMALL_TEXT, marginTop: "var(--zk-space-2)" }}>
+            {r.shielded
+              ? "Private send: nobody can see where it went."
+              : "Sent to a public address, so anyone can see this one."}
           </div>
         </div>
       </div>
       <dl style={{ margin: 0, background: "var(--zk-surface-raised)", borderRadius: "var(--zk-radius-xl)", padding: "var(--zk-space-4) var(--zk-space-16)" }}>
         {rows.map((row, i) => (
-          <div key={row.k} style={receiptRow(i === rows.length - 1)}>
+          <div key={i} style={receiptRow(i === rows.length - 1)}>
             <dt style={{ color: "var(--zk-text-muted)" }}>{row.k}</dt>
-            <dd style={{ margin: 0, minWidth: 0 }}>{row.v}</dd>
+            <dd style={{ margin: 0, minWidth: 0, display: "flex", justifyContent: "flex-end", marginLeft: "auto" }}>{row.v}</dd>
+            {row.note ? (
+              <dd style={{ margin: "-2px 0 0", flexBasis: "100%", font: "var(--zk-type-caption)", color: "var(--zk-text-faint)" }}>{row.note}</dd>
+            ) : null}
           </div>
         ))}
       </dl>
-      {network === "sim" ? (
+      {network !== "mainnet" ? (
         <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)", display: "flex", alignItems: "center", gap: "var(--zk-space-6)" }}>
           <Icon icon="flag" size={14} />
-          Test mode: a pretend send with play ZEC.
+          {network === "sim" ? "Test mode: a pretend send. Nothing left ZECKED." : "Test ZEC only (no real value)."}
         </div>
       ) : null}
       <Button label="Done" variant="ghost" size="md" onClick={onDone} />
@@ -758,15 +1067,19 @@ function Receipt({
 function WithdrawPanel({
   wallet,
   onWallet,
+  onRefresh,
   onSignedOut,
   onToast,
+  onCopy,
   onAddZec,
   onClose,
 }: {
   wallet: WalletInfo;
   onWallet: (w: WalletInfo) => void;
+  onRefresh: () => void;
   onSignedOut: () => void;
   onToast: (text: string, variant?: ToastVariant, icon?: string) => void;
+  onCopy: (text: string, what: string) => Promise<boolean>;
   onAddZec: () => void;
   onClose: () => void;
 }) {
@@ -783,7 +1096,7 @@ function WithdrawPanel({
   const fee = wallet.withdrawFeeZat;
   const min = wallet.minWithdrawZat;
   const maxZat = Math.max(0, wallet.balanceZat - fee);
-  const testnet = wallet.network === "testnet";
+  const test = wallet.network !== "mainnet";
 
   const check = checkAddress(address, wallet.network, wallet.depositAddress);
   const addrOk = check.kind === "shielded" || check.kind === "transparent";
@@ -791,9 +1104,9 @@ function WithdrawPanel({
 
   const amountZat = parseZecToZat(amount);
   let amtIssue: string | null = null;
-  if (amount.trim() && amountZat == null) amtIssue = "Numbers only, like 0.05";
-  else if (amountZat != null && amountZat > maxZat) amtIssue = `You can send up to ${zecStr(maxZat)} ZEC (after the fee).`;
-  else if (amountZat != null && amountZat > 0 && amountZat < min) amtIssue = `The minimum is ${zecStr(min)} ZEC.`;
+  if (amount.trim() && amountZat == null) amtIssue = "Numbers only, like 0.01";
+  else if (amountZat != null && amountZat > maxZat) amtIssue = `You can send up to ${zec(maxZat)} ZEC (after the network fee).`;
+  else if (amountZat != null && amountZat > 0 && amountZat < min) amtIssue = `The minimum is ${zec(min)} ZEC.`;
   const amtErr = serverAmtErr ?? amtIssue;
   const amtOk = amountZat != null && amountZat >= min && amountZat <= maxZat;
   const canSend = addrOk && amtOk && !addrErr && !amtErr && !busy;
@@ -813,7 +1126,7 @@ function WithdrawPanel({
     } catch {
       /* clipboard blocked: fall through to a manual paste */
     }
-    onToast("Couldn’t read your clipboard. Long-press the field to paste.", "error");
+    onToast("Couldn’t read your clipboard. Long-press the box to paste.", "error");
     requestAnimationFrame(() => addrWrap.current?.querySelector<HTMLInputElement>("input")?.focus());
   };
 
@@ -825,41 +1138,42 @@ function WithdrawPanel({
       const res = await api.withdraw(address.trim(), amountZat);
       onWallet(res.wallet);
       setReceipt({ txid: res.txid, amountZat: res.amountZat, feeZat: res.feeZat, to: res.to, shielded });
+      sfx("success");
       setAddress("");
       setAmount("");
     } catch (e) {
       const status = errStatus(e);
-      const m = errMsg(e);
+      const m = errText(e);
       if (status === 401) {
         onSignedOut();
       } else if (status === 503) {
         onToast("The prize vault is being topped up. Your ZEC is safe here. Try again in a few minutes.", "error", "hourglass");
+      } else if (status === 502) {
+        // Outcome not known yet (the server keeps it as "pending" and settles it): show it in the activity list.
+        onToast("Your withdrawal is processing. It’ll show in your activity in a minute.", "default", "hourglass");
+        onRefresh();
+        onClose();
       } else if (status === 402) {
         setServerAmtErr("Not enough ZEC for that plus the network fee.");
         setShakeAmt((n) => n + 1);
       } else if (status === 400 && /address/i.test(m)) {
-        setServerAddrErr(/[.!?]$/.test(m) ? m : `${m}.`);
+        setServerAddrErr(friendlyErr(e, "That address didn’t work. Check it and try again."));
         setShakeAddr((n) => n + 1);
       } else if (status === 400 && /minimum|amount/i.test(m)) {
-        setServerAmtErr(/[.!?]$/.test(m) ? m : `${m}.`);
+        setServerAmtErr(friendlyErr(e, "That amount didn’t work. Try a different one."));
         setShakeAmt((n) => n + 1);
       } else {
-        onToast(m, "error");
+        onToast(friendlyErr(e, "Couldn’t send that. Your ZEC is safe here. Try again in a minute."), "error");
       }
     } finally {
       setBusy(false);
     }
   };
 
-  const copyTxid = async (txid: string) => {
-    if (await copyText(txid)) onToast("Transaction id copied", "success", "copy");
-    else onToast("Couldn’t copy. Long-press to copy instead.", "error");
-  };
-
   if (receipt) {
     return (
       <PanelShell title="Withdraw" icon="arrowUp" tone="gold" onClose={onClose}>
-        <Receipt r={receipt} network={wallet.network} onCopyTxid={(t) => void copyTxid(t)} onDone={onClose} />
+        <Receipt r={receipt} network={wallet.network} onCopyTxid={(t) => onCopy(t, "Receipt ID")} onDone={onClose} />
       </PanelShell>
     );
   }
@@ -880,11 +1194,11 @@ function WithdrawPanel({
           }}
         >
           <div style={{ font: "var(--zk-type-h4)" }}>Nothing to send yet.</div>
-          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
-            You need at least {zecStr(min + fee)} ZEC, fee included. Crack a stash or add some ZEC first.
+          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
+            You need at least {zec(min + fee)} ZEC, network fee included. Crack a stash or add some {test ? "test " : ""}ZEC first.
           </div>
           <div style={{ marginTop: "var(--zk-space-6)" }}>
-            <Button label="Add ZEC" icon="plus" variant="secondary" size="sm" full={false} onClick={onAddZec} />
+            <Button label="Add ZEC" icon="plus" variant="secondary" size="sm" full={false} onClick={onAddZec} style={{ height: 44 }} />
           </div>
         </div>
       </PanelShell>
@@ -893,99 +1207,111 @@ function WithdrawPanel({
 
   let addrMessage: ReactNode;
   if (addrErr) addrMessage = addrErr;
-  else if (check.kind === "shielded") addrMessage = "Shielded address. Private by default.";
+  else if (check.kind === "shielded") addrMessage = "Private address. Nobody can see where it goes.";
   else if (check.kind === "transparent") {
     addrMessage = (
       <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--zk-space-4)", color: "var(--zk-gold)" }}>
         <Icon icon="eye" size={13} stroke={2.4} />
-        Transparent: this payout will be public
+        Public address: anyone can see this payout
       </span>
     );
-  } else addrMessage = testnet ? "Any testnet wallet. Shielded (utest1…) keeps it private." : "Any Zcash wallet. Shielded (u1…) keeps it private.";
+  } else {
+    addrMessage = test
+      ? "Any Zcash testnet wallet. Addresses starting with utest1 keep it private."
+      : "Any Zcash wallet. Addresses starting with u1 keep it private.";
+  }
 
   return (
     <PanelShell title="Withdraw" icon="arrowUp" tone="gold" onClose={onClose}>
-      <div ref={addrWrap}>
+      <div ref={addrWrap} className="zkw-ph">
         <Input
-          label="Send to"
+          label="Send to (wallet address)"
           size="md"
           font="mono"
           value={address}
           onChange={setAddr}
-          placeholder={testnet ? "utest1…" : "u1…"}
+          placeholder="Paste an address"
           autoComplete="off"
           spellCheck={false}
-          ariaLabel="Destination Zcash address"
+          ariaLabel="Wallet address to send to"
           state={addrErr ? "error" : check.kind === "shielded" ? "success" : "default"}
           message={addrMessage}
           shake={shakeAddr}
-          trailing={<PasteButton onClick={() => void paste()} />}
+          trailing={<PillButton label="Paste" onClick={() => void paste()} />}
         />
       </div>
-      <Input
-        label="Amount"
-        size="md"
-        font="display"
-        inputMode="decimal"
-        value={amount}
-        onChange={(v) => {
-          setAmount(cleanAmount(v));
-          setServerAmtErr(null);
-        }}
-        onEnter={() => void send()}
-        placeholder="0.05"
-        autoComplete="off"
-        ariaLabel="Amount in ZEC"
-        state={amtErr ? "error" : "default"}
-        message={amtErr ?? `You can send up to ${zecStr(maxZat)} ZEC.`}
-        shake={shakeAmt}
-        trailing={
-          <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-8)" }}>
-            <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text-muted)" }}>ZEC</span>
-            <Chip
-              size="sm"
-              label="Max"
-              active={amountZat === maxZat}
-              onClick={() => {
-                setAmount(zecStr(maxZat));
-                setServerAmtErr(null);
-              }}
-            />
-          </span>
-        }
-      />
+      <div className="zkw-ph">
+        <Input
+          label="Amount"
+          size="md"
+          font="display"
+          inputMode="decimal"
+          value={amount}
+          onChange={(v) => {
+            setAmount(cleanAmount(v));
+            setServerAmtErr(null);
+          }}
+          onEnter={() => void send()}
+          placeholder="How much?"
+          autoComplete="off"
+          ariaLabel="Amount in ZEC"
+          state={amtErr ? "error" : "default"}
+          message={amtErr ?? `You have ${zec(maxZat)} ZEC to send.`}
+          shake={shakeAmt}
+          trailing={
+            <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-4)" }}>
+              <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text-muted)" }}>ZEC</span>
+              <PillButton
+                label="Max"
+                tone="purple"
+                active={amountZat === maxZat}
+                ariaLabel="Max amount"
+                onClick={() => {
+                  setAmount(zec(maxZat));
+                  setServerAmtErr(null);
+                }}
+              />
+            </span>
+          }
+        />
+      </div>
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
-          gap: "var(--zk-space-8)",
+          gap: "var(--zk-space-6) var(--zk-space-12)",
           padding: "var(--zk-space-10) var(--zk-space-12)",
           borderRadius: "var(--zk-radius-md)",
           background: "var(--zk-surface-raised)",
-          font: "var(--zk-type-caption)",
-          color: "var(--zk-text-muted)",
         }}
       >
-        <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)" }}>
-          <Icon icon="bolt" size={14} color="var(--zk-gold)" />
-          Network fee ~{formatZec(fee, 8)} ZEC
+        <span style={{ display: "flex", alignItems: "flex-start", gap: "var(--zk-space-8)", minWidth: 0 }}>
+          <span style={{ display: "flex", marginTop: 1 }}>
+            <Icon icon="bolt" size={14} color="var(--zk-gold)" />
+          </span>
+          <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text)" }}>Network fee: {zec(fee)} ZEC</span>
+            <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>{FEE_EXPLAINER}</span>
+          </span>
         </span>
         {amtOk && amountZat != null ? (
-          <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text)" }}>Total {formatZec(amountZat + fee, 8)} ZEC</span>
+          <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text)", marginLeft: "auto" }}>Total {zec(amountZat + fee)} ZEC</span>
         ) : null}
       </div>
       <Button
-        label={busy ? "Sending…" : amtOk && amountZat != null ? `Send ${zecStr(amountZat)} ZEC` : "Send ZEC"}
+        label={busy ? "Sending…" : amtOk && amountZat != null ? `Send ${zec(amountZat)} ZEC` : "Send ZEC"}
         icon={busy ? undefined : check.kind === "transparent" ? "arrowUp" : "shieldCheck"}
         variant="primary"
         size="lg"
         disabled={!canSend}
+        sfx={busy ? "none" : "whoosh"}
         onClick={() => void send()}
       />
       {wallet.network === "sim" ? (
         <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-faint)", textAlign: "center" }}>
-          Test mode: sends are pretend, play ZEC only.
+          Test mode: sends are pretend. Nothing leaves ZECKED.
         </div>
       ) : null}
     </PanelShell>
@@ -1028,18 +1354,40 @@ function StatusTag({ status }: { status: WalletTx["status"] }) {
   );
 }
 
-function TxRow({ tx, now, last }: { tx: WalletTx; now: number; last: boolean }) {
+function TxRow({
+  tx,
+  now,
+  last,
+  feeZat,
+  onCopy,
+}: {
+  tx: WalletTx;
+  now: number;
+  last: boolean;
+  feeZat: number;
+  onCopy: (text: string, what: string) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
   const look = TX_LOOK[tx.kind] ?? TX_FALLBACK;
   const credit = tx.amountZat > 0;
   const failed = tx.status === "failed";
+  // A withdrawal's line is what left your balance: the amount sent plus the network fee. Say so.
+  const sentZat = tx.kind === "withdraw" && !credit ? Math.max(0, Math.abs(tx.amountZat) - feeZat) : null;
+  const expandable = !!tx.txid && !tx.stashId;
   const rowStyle: CSSProperties = {
+    width: "100%",
     display: "flex",
     alignItems: "center",
     gap: "var(--zk-space-12)",
     padding: "var(--zk-space-12) var(--zk-space-14)",
-    borderBottom: last ? "none" : "1px solid var(--zk-border)",
+    minHeight: 64,
+    border: 0,
+    background: "transparent",
+    textAlign: "left",
+    font: "inherit",
     color: "var(--zk-text)",
     textDecoration: "none",
+    cursor: expandable || tx.stashId ? "pointer" : "default",
     WebkitTapHighlightColor: "transparent",
   };
   const content = (
@@ -1061,19 +1409,16 @@ function TxRow({ tx, now, last }: { tx: WalletTx; now: number; last: boolean }) 
         <Icon icon={look.icon} size={20} stroke={2.4} style={look.flip ? { transform: "rotate(180deg)" } : undefined} />
       </span>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--zk-space-4)" }}>
-        <span
-          style={{
-            font: "var(--zk-type-body-strong)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {tx.label}
-        </span>
+        <span style={{ font: "var(--zk-type-body-strong)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tx.label}</span>
+        {sentZat != null && !failed ? (
+          <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
+            {zec(sentZat)} ZEC + {zec(feeZat)} network fee
+          </span>
+        ) : null}
         <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)", font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
           <time dateTime={tx.at}>{ago(tx.at, now)}</time>
           <StatusTag status={tx.status} />
+          {expandable ? <span style={{ color: "var(--zk-purple-light)" }}>· {open ? "Hide receipt" : "Receipt"}</span> : null}
         </span>
       </span>
       <span
@@ -1086,20 +1431,78 @@ function TxRow({ tx, now, last }: { tx: WalletTx; now: number; last: boolean }) 
         }}
       >
         {credit ? "+" : "−"}
-        {formatZec(Math.abs(tx.amountZat), 8)}
+        {zec(Math.abs(tx.amountZat))}
       </span>
     </>
   );
-  return tx.stashId ? (
-    <Link href={`/s/${tx.stashId}`} style={rowStyle}>
-      {content}
-    </Link>
-  ) : (
-    <div style={rowStyle}>{content}</div>
+  const wrap: CSSProperties = { borderBottom: last ? "none" : "1px solid var(--zk-border)" };
+  if (tx.stashId) {
+    return (
+      <div style={wrap}>
+        <Link href={`/s/${tx.stashId}`} style={rowStyle}>
+          {content}
+        </Link>
+      </div>
+    );
+  }
+  if (!expandable) {
+    return (
+      <div style={wrap}>
+        <div style={rowStyle}>{content}</div>
+      </div>
+    );
+  }
+  return (
+    <div style={wrap}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-sfx="tap" style={rowStyle}>
+        {content}
+      </button>
+      {open ? (
+        <dl
+          style={{
+            margin: "0 var(--zk-space-14) var(--zk-space-12)",
+            padding: "var(--zk-space-2) var(--zk-space-14)",
+            borderRadius: "var(--zk-radius-lg)",
+            background: "var(--zk-surface-raised)",
+            font: "var(--zk-type-small)",
+          }}
+        >
+          {sentZat != null ? (
+            <>
+              <div style={receiptRow(false)}>
+                <dt style={{ color: "var(--zk-text-muted)" }}>You sent</dt>
+                <dd style={{ margin: 0, font: "var(--zk-type-mono-sm)" }}>{zec(sentZat)} ZEC</dd>
+              </div>
+              <div style={receiptRow(false)}>
+                <dt style={{ color: "var(--zk-text-muted)" }}>Network fee</dt>
+                <dd style={{ margin: 0, font: "var(--zk-type-mono-sm)" }}>{zec(feeZat)} ZEC</dd>
+              </div>
+            </>
+          ) : null}
+          <div style={{ ...receiptRow(true), padding: "var(--zk-space-4) 0" }}>
+            <dt style={{ color: "var(--zk-text-muted)" }}>Receipt ID</dt>
+            <dd style={{ margin: "0 0 0 auto", display: "flex", alignItems: "center", gap: "var(--zk-space-2)", font: "var(--zk-type-mono-sm)" }}>
+              {shortAddr(tx.txid!, 6, 6)}
+              <CopyButton ariaLabel="Copy receipt ID" onCopy={() => onCopy(tx.txid!, "Receipt ID")} />
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+    </div>
   );
 }
 
-function Activity({ items, now }: { items: WalletTx[]; now: number }) {
+function Activity({
+  items,
+  now,
+  feeZat,
+  onCopy,
+}: {
+  items: WalletTx[];
+  now: number;
+  feeZat: number;
+  onCopy: (text: string, what: string) => Promise<boolean>;
+}) {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-12)", marginTop: "var(--zk-space-6)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -1109,7 +1512,7 @@ function Activity({ items, now }: { items: WalletTx[]; now: number }) {
       {items.length > 0 ? (
         <div style={{ background: "var(--zk-surface)", borderRadius: "var(--zk-radius-xl)", overflow: "hidden" }}>
           {items.map((t, i) => (
-            <TxRow key={t.id} tx={t} now={now} last={i === items.length - 1} />
+            <TxRow key={t.id} tx={t} now={now} last={i === items.length - 1} feeZat={feeZat} onCopy={onCopy} />
           ))}
         </div>
       ) : (
@@ -1130,7 +1533,7 @@ function Activity({ items, now }: { items: WalletTx[]; now: number }) {
               Crack a stash and your ZEC lands here instantly.
             </div>
           </div>
-          <Button label="Crack one" icon="key" variant="primary" size="sm" full={false} href="/feed" />
+          <Button label="Crack one" icon="key" variant="primary" size="sm" full={false} href="/feed" style={{ height: 44 }} />
         </div>
       )}
     </section>
@@ -1140,7 +1543,7 @@ function Activity({ items, now }: { items: WalletTx[]; now: number }) {
 /* ───────────────────────── guest / loading / error ───────────────────────── */
 
 function GuestCard({ href }: { href: string }) {
-  const perks = ["Your own personal Zcash address", "Wins land in your balance instantly", "Send your ZEC to any wallet, any time"];
+  const perks = ["Your own Zcash wallet address", "Wins land in your balance instantly", "Send your ZEC to any wallet, any time"];
   return (
     <section
       aria-label="Get a ZECKED wallet"
@@ -1232,7 +1635,7 @@ function GuestCard({ href }: { href: string }) {
         <Button label="Sign up" variant="primary" size="lg" href={href} />
       </div>
       <div style={{ position: "relative", textAlign: "center", font: "var(--zk-type-caption)", color: "rgb(var(--zk-white-rgb) / .75)" }}>
-        Just your email. Takes about 30 seconds.
+        Free. Takes about 30 seconds.
       </div>
     </section>
   );
@@ -1243,7 +1646,7 @@ function WalletSkeleton() {
     <div aria-busy="true" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)" }}>
       <span className="zk-sr-only">Loading your wallet…</span>
       <div style={glow(206, "var(--zk-radius-3xl)")} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--zk-space-10)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "var(--zk-space-10)", marginTop: "var(--zk-space-4)" }}>
         <div style={glow("var(--zk-h-btn-md)", "var(--zk-radius-xl)")} />
         <div style={glow("var(--zk-h-btn-md)", "var(--zk-radius-xl)")} />
       </div>
@@ -1302,9 +1705,16 @@ interface ToastState {
   icon?: string;
 }
 
+/** The two big buttons under the hero: sized so both fit side by side on a 320px phone. */
+const ACTION_BTN: CSSProperties = {
+  padding: "0 var(--zk-space-10)",
+  gap: "var(--zk-space-6)",
+  font: "var(--zk-fw-black) clamp(16px, 4.6vw, 18px)/var(--zk-lh-none) var(--zk-font-display)",
+};
+
 export default function Wallet() {
-  const router = useRouter();
   const params = useSearchParams();
+  const goBack = useAppBack("/me");
   const initialAction = params.get("action");
   const [panel, setPanel] = useState<Panel | null>(
     initialAction === "add" || initialAction === "withdraw" ? initialAction : null,
@@ -1315,8 +1725,13 @@ export default function Wallet() {
   const [now, setNow] = useState(0);
   const [count, setCount] = useState({ from: 0, to: 0, run: 0 });
   const [simulating, setSimulating] = useState<number | null>(null);
+  const [landed, setLanded] = useState<Landed | null>(null);
+  const [heroPop, setHeroPop] = useState<Landed | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const popTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const landedRun = useRef(0);
+  const seenTx = useRef(new Set<string>());
   const balRef = useRef<number | null>(null);
   const pollBusy = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -1326,29 +1741,48 @@ export default function Wallet() {
     setToast({ id: Date.now(), text, variant, icon });
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
-  useEffect(() => () => clearTimeout(toastTimer.current), []);
-
-  /** Store a fresh WalletInfo. The hero counts up (or down) from the last balance it showed. */
-  const applyWallet = useCallback(
-    (w: WalletInfo, announce = false) => {
-      const prev = balRef.current;
-      balRef.current = w.balanceZat;
-      if (prev == null) setCount({ from: w.balanceZat, to: w.balanceZat, run: 0 });
-      else if (prev !== w.balanceZat) {
-        setCount((c) => ({ from: prev, to: w.balanceZat, run: c.run + 1 }));
-        if (announce && w.balanceZat > prev) showToast(`+${formatZec(w.balanceZat - prev, 8)} ZEC landed in your wallet`, "gold", "coin");
-      }
-      setWallet(w);
-      setNow(Date.now());
-      setLoad({ kind: "ready" });
+  useEffect(
+    () => () => {
+      clearTimeout(toastTimer.current);
+      clearTimeout(popTimer.current);
     },
-    [showToast],
+    [],
   );
+
+  /**
+   * Store a fresh WalletInfo. The hero counts up (or down) from the last balance it showed. With `celebrate`,
+   * a balance that went up gets the coin sound, a "+0.05 ZEC landed" sticker with confetti, and the Add panel's
+   * "landed" state. (The app-wide notice toast says "ZEC landed" too, so no toast here.)
+   */
+  const applyWallet = useCallback((w: WalletInfo, celebrate = false) => {
+    const prev = balRef.current;
+    balRef.current = w.balanceZat;
+    // Only a brand-new credit in the activity counts as "landed" (not, say, a failed send being put back).
+    const seen = seenTx.current;
+    const fresh = w.activity.some((t) => !seen.has(t.id) && t.amountZat > 0 && t.status !== "failed");
+    for (const t of w.activity) seen.add(t.id);
+    if (prev == null) setCount({ from: w.balanceZat, to: w.balanceZat, run: 0 });
+    else if (prev !== w.balanceZat) {
+      setCount((c) => ({ from: prev, to: w.balanceZat, run: c.run + 1 }));
+      if (celebrate && fresh && w.balanceZat > prev) {
+        const l = { zat: w.balanceZat - prev, run: ++landedRun.current };
+        sfx("coin");
+        setLanded(l);
+        setHeroPop(l);
+        clearTimeout(popTimer.current);
+        popTimer.current = setTimeout(() => setHeroPop(null), LANDED_POP_MS);
+      }
+    }
+    setWallet(w);
+    setNow(Date.now());
+    setLoad({ kind: "ready" });
+  }, []);
 
   const signedOut = useCallback(() => {
     setLoad({ kind: "guest" });
     setWallet(null);
     balRef.current = null;
+    seenTx.current.clear();
   }, []);
 
   // First load: the account (guests have no wallet) and the wallet itself.
@@ -1364,7 +1798,7 @@ export default function Wallet() {
       } else if (errStatus(w.reason) === 401) {
         setLoad({ kind: "guest" });
       } else {
-        setLoad({ kind: "error", message: errMsg(w.reason) });
+        setLoad({ kind: "error", message: friendlyErr(w.reason, "We couldn’t load your wallet just now. Your ZEC is safe.") });
       }
     })();
     return () => {
@@ -1407,7 +1841,7 @@ export default function Wallet() {
   // Keep ?action= in the URL in sync with the open panel, so a reload lands in the same place.
   useEffect(() => {
     const want = panel ? `?action=${panel}` : "";
-    if (window.location.search !== want) window.history.replaceState(null, "", `/wallet${want}`);
+    if (window.location.search !== want) window.history.replaceState(window.history.state, "", `/wallet${want}`);
   }, [panel]);
 
   // Bring an opened panel into view (also on load for ?action=).
@@ -1417,27 +1851,37 @@ export default function Wallet() {
     return () => cancelAnimationFrame(id);
   }, [panel, ready]);
 
-  const toggle = (p: Panel) => setPanel((cur) => (cur === p ? null : p));
-
-  const goBack = () => {
-    if (window.history.length > 1) router.back();
-    else router.push("/me");
+  const openPanel = (p: Panel | null) => {
+    setLanded(null);
+    setPanel(p);
   };
+  const toggle = (p: Panel) => openPanel(panel === p ? null : p);
+
+  const copy = useCallback(
+    async (text: string, what: string) => {
+      const ok = await copyText(text);
+      if (ok) showToast(`${what} copied`, "success", "copy");
+      else showToast("Couldn’t copy. Long-press it to copy instead.", "error");
+      return ok;
+    },
+    [showToast],
+  );
 
   const copyAddress = async (address: string) => {
-    if (await copyText(address)) showToast("Address copied", "success", "copy");
-    else showToast("Couldn’t copy. Long-press to copy instead.", "error");
+    const ok = await copyText(address);
+    if (ok) showToast(wallet?.network === "mainnet" ? "Address copied" : "Copied! Now paste it into the faucet.", "success", "copy");
+    else showToast("Couldn’t copy. Long-press the address to copy it instead.", "error");
+    return ok;
   };
 
   const simulateDeposit = async (zat: number) => {
     if (simulating != null) return;
     setSimulating(zat);
     try {
-      applyWallet(await api.simulateDeposit(zat));
-      showToast(`+${formatZec(zat, 8)} play ZEC landed in your wallet`, "gold", "coin");
+      applyWallet(await api.simulateDeposit(zat), true);
     } catch (e) {
       if (errStatus(e) === 401) signedOut();
-      else showToast(errMsg(e), "error");
+      else showToast(friendlyErr(e, "Couldn’t add that. Try again."), "error");
     } finally {
       setSimulating(null);
     }
@@ -1461,17 +1905,35 @@ export default function Wallet() {
   } else if (load.kind === "ready" && wallet) {
     body = (
       <>
-        <Hero wallet={wallet} count={count} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--zk-space-10)", marginTop: "var(--zk-space-4)" }}>
-          <Button label="Add ZEC" icon="plus" variant="secondary" size="md" onClick={() => toggle("add")} />
-          <Button label="Withdraw" icon="arrowUp" variant="primary" size="md" onClick={() => toggle("withdraw")} />
+        <Hero wallet={wallet} count={count} pop={heroPop} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "var(--zk-space-10)", marginTop: "var(--zk-space-4)" }}>
+          <Button
+            label="Add ZEC"
+            icon="plus"
+            variant="secondary"
+            size="md"
+            sfx="whoosh"
+            ariaLabel={panel === "add" ? "Close Add ZEC" : "Add ZEC"}
+            onClick={() => toggle("add")}
+            style={ACTION_BTN}
+          />
+          <Button
+            label="Withdraw"
+            icon="arrowUp"
+            variant="primary"
+            size="md"
+            sfx="whoosh"
+            ariaLabel={panel === "withdraw" ? "Close Withdraw" : "Withdraw"}
+            onClick={() => toggle("withdraw")}
+            style={ACTION_BTN}
+          />
         </div>
         {panel ? (
           <div
             ref={panelRef}
             style={{
               marginTop: "var(--zk-space-4)",
-              scrollMarginTop: "var(--zk-space-16)",
+              scrollMarginTop: "calc(var(--zk-fixed-top) + var(--zk-space-16))",
               scrollMarginBottom: "calc(var(--zk-tabbar-h) + var(--zk-space-16))",
             }}
           >
@@ -1479,23 +1941,26 @@ export default function Wallet() {
               <AddPanel
                 wallet={wallet}
                 simulating={simulating}
-                onCopyAddress={(a) => void copyAddress(a)}
+                landed={landed}
+                onCopyAddress={copyAddress}
                 onSimulate={(zat) => void simulateDeposit(zat)}
-                onClose={() => setPanel(null)}
+                onClose={() => openPanel(null)}
               />
             ) : (
               <WithdrawPanel
                 wallet={wallet}
                 onWallet={(w) => applyWallet(w)}
+                onRefresh={() => void refresh()}
                 onSignedOut={signedOut}
                 onToast={showToast}
-                onAddZec={() => setPanel("add")}
-                onClose={() => setPanel(null)}
+                onCopy={copy}
+                onAddZec={() => openPanel("add")}
+                onClose={() => openPanel(null)}
               />
             )}
           </div>
         ) : null}
-        <Activity items={wallet.activity} now={now} />
+        <Activity items={wallet.activity} now={now} feeZat={wallet.withdrawFeeZat} onCopy={copy} />
       </>
     );
   } else {
@@ -1504,6 +1969,7 @@ export default function Wallet() {
 
   return (
     <main className="zk-screen has-tabs" style={{ background: "var(--zk-bg-hero-gold)", gap: "var(--zk-space-14)" }}>
+      <style>{SCOPED_CSS}</style>
       <Header onBack={goBack} />
       {body}
       {toast ? (
@@ -1513,9 +1979,9 @@ export default function Wallet() {
             position: "fixed",
             left: "50%",
             transform: "translateX(-50%)",
-            bottom: "calc(var(--zk-tabbar-h) + env(safe-area-inset-bottom, 0px) + var(--zk-space-16))",
-            width: "min(394px, calc(100vw - 36px))",
-            zIndex: 80,
+            top: "calc(var(--zk-fixed-top) + var(--zk-space-12))",
+            width: "min(394px, calc(100vw - 24px))",
+            zIndex: 86,
             pointerEvents: "none",
           }}
         >

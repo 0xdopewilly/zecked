@@ -1,11 +1,12 @@
 "use client";
 // Screens 05 (prediction stash) + 06 (live match), plus the locked, full-time, refunded,
-// called-off and awaiting-funding states. Polls the stash so every state stays in sync.
+// called-off and awaiting-funding states. Polls the stash so every state stays in sync, and turns
+// what changed between polls into moments: kickoff, goals, full time.
 import { sfx } from "@/lib/sfx";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { Button, Chip, Countdown, Icon, LiveBadge, TeamBadge, Toast } from "@/components/zk";
+import { Button, Chip, Countdown, Emblem, Icon, LiveBadge, TeamBadge, TIER_LABEL, Toast } from "@/components/zk";
 import { api, formatUsd, formatZec } from "@/lib/api";
+import { useAppBack } from "@/lib/nav";
 import type { Match, MyCall, PublicStash, RunnerCall, Team, WinPayload, WinnerPick } from "@/lib/types";
 import {
   callMatches,
@@ -16,6 +17,7 @@ import {
   formatCall,
   formatKickoff,
   formatScore,
+  goalsAway,
   liveScore,
   matchProgress,
   parseMinute,
@@ -34,10 +36,19 @@ export interface PredictionStashProps {
 
 type Phase = "funding" | "open" | "locked" | "live" | "final" | "won" | "refunded" | "void";
 type ToastState = { id: number; text: string; variant: "default" | "success" | "error" | "gold"; icon?: string };
+type MomentKind = "goal" | "kickoff" | "fulltime";
+type MomentState = { id: number; kind: MomentKind; title: string; line: string; meta?: string; note?: { text: string; good?: boolean }; team?: Team };
 
-const FAST_POLL_MS = 15_000;
-const SLOW_POLL_MS = 60_000;
+const LIVE_POLL_MS = 5_000; // in play, about to kick off, or waiting on the result
+const OPEN_POLL_MS = 15_000; // calls open: keeps the calls count fresh
+const SLOW_POLL_MS = 60_000; // settled
+const SOON_MS = 60_000; // "about to kick off": poll fast from a minute out
 const TOAST_MS = 2600;
+const MOMENT_MS = 4200;
+const MOMENT_EXIT_MS = 320;
+const ARM_MS = 3000; // "Lock 2–1? Tap again to seal" window
+// Test-league matches play a match minute every 4 real seconds (DEMO_MINUTE_SECONDS in lib/server/sports.ts).
+const DEMO_MINUTE_MS = 4_000;
 const RESOLVED = new Set(["zecked", "refunded", "expired", "void"]);
 
 function phaseOf(s: PublicStash, kickedOff: boolean, hasWin: boolean): Phase {
@@ -50,6 +61,55 @@ function phaseOf(s: PublicStash, kickedOff: boolean, hasWin: boolean): Phase {
   if (m?.status === "live") return "live";
   if (s.status === "locked" || kickedOff) return "locked";
   return "open";
+}
+
+/* ---------- helpers ---------- */
+
+function reducedMotion(): boolean {
+  try {
+    return !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+/** A one-off Web Animation (skipped under reduced motion). */
+function play(el: Element | null, frames: Keyframe[], opts: KeyframeAnimationOptions) {
+  if (!el || typeof el.animate !== "function" || reducedMotion()) return;
+  try {
+    el.animate(frames, opts);
+  } catch {}
+}
+
+/** Error text a player can act on (never "Failed to fetch"). Server messages are already written for players. */
+function friendlyError(e: unknown, fallback: string): string {
+  if (e instanceof TypeError) return "Can’t reach ZECKED. Check your connection";
+  const msg = e instanceof Error ? e.message : "";
+  if (!msg || /^Request failed|fetch|network|load failed/i.test(msg)) return fallback;
+  return msg;
+}
+
+const lcFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** How a call reads inside a sentence: "2–1", "draw call", "ZFC win call". */
+function callNoun(call: MyCall, match: Match): string {
+  if (call.kind === "exact") return formatCall(call, match);
+  return call.pick === "draw" ? "draw call" : `${formatCall(call, match)} call`;
+}
+
+/** What a goal did to the viewer's call: "Your 2–1 is spot on right now 🔥", "Closer! Your 2–1 is one ZFC goal away"… */
+function goalNote(call: MyCall, match: Match, before: { home: number; away: number }): { text: string; good: boolean } {
+  const { home, away } = liveScore(match);
+  const noun = callNoun(call, match);
+  if (callMatchesScore(call, home, away)) return { text: `Your ${noun} is spot on right now 🔥`, good: true };
+  const was = goalsAway(call, before.home, before.away);
+  const now = goalsAway(call, home, away);
+  if (now.dead) return { text: was.dead ? `Your ${noun} is out of the running` : `Ouch. That knocks out your ${noun} 💀`, good: false };
+  const label = lcFirst(tensionLabel(call, match));
+  const phrase = label.startsWith("needs") ? label : `is ${label}`;
+  if (now.needed < was.needed) return { text: `Closer! Your ${noun} ${phrase}`, good: true };
+  return { text: `Uh oh. Your ${noun} ${phrase}`, good: false };
 }
 
 /* ---------- shared styles ---------- */
@@ -66,14 +126,25 @@ const S = {
     minWidth: 0,
   },
   caption: { font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-text-muted)" },
+  teamName: {
+    font: "var(--zk-type-body-strong)",
+    textAlign: "center",
+    overflowWrap: "break-word",
+    hyphens: "auto",
+    textWrap: "balance",
+    maxWidth: "100%",
+  },
+  muted: { margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)" },
 } satisfies Record<string, CSSProperties>;
 
 /*
  * Stepper sizing. The design's fixed 46/48/10px didn't fit a 390px screen (the right "+" hit the
- * card edge). These scale with the viewport: full design size from ~430px up, 44px tap targets
- * at 390px, and still fitting at 320px.
+ * card edge). These scale with the viewport: full design size from ~430px up, 44px at 390px, and
+ * still fitting at 320px (where the button is drawn smaller but its tap area stays 44px).
  */
 const STEP_BTN = "clamp(36px, 11.3vw, 46px)";
+const STEP_HIT = `max(var(--zk-tap-min), ${STEP_BTN})`;
+const STEP_HIT_MARGIN = `min(0px, calc((${STEP_BTN} - var(--zk-tap-min)) / 2))`;
 const STEP_NUM = "clamp(32px, 11.3vw, 48px)";
 const STEP_GAP = "clamp(var(--zk-space-4), calc(10vw - 33px), var(--zk-space-10))";
 const STEP_FS = "clamp(40px, 13.3vw, var(--zk-fs-52))";
@@ -87,6 +158,53 @@ function useLocalKickoff(iso: string | undefined): string {
     setText(iso ? formatKickoff(iso) : "");
   }, [iso]);
   return text;
+}
+
+/**
+ * The minute on the live clock. Test-league matches move a match minute every 4 real seconds, faster
+ * than we poll, so between polls the clock ticks on by itself: one minute at a time, never backwards.
+ * It runs from the kickoff time, kept inside the window each poll's (floored) minute allows, so a phone
+ * clock that's off can't drift it. Real matches show the feed's minute ("67'", "HT", "45+2'").
+ */
+function useLiveMinute(match: Match | undefined): string {
+  const raw = match?.status === "live" ? match.minute : undefined;
+  const demoMin = match?.demo && raw && /^\s*\d+\s*'?\s*$/.test(raw) ? parseMinute(raw) : null;
+  const [shown, setShown] = useState<number | null>(demoMin);
+  // Where the match clock stood at time 0, in match minutes: somewhere in [lo, hi).
+  const clock = useRef<{ lo: number; hi: number } | null>(null);
+
+  useEffect(() => {
+    if (demoMin === null) {
+      clock.current = null;
+      return;
+    }
+    const now = Date.now() / DEMO_MINUTE_MS;
+    // The feed floors the minute, shows 1' from the first whistle and holds 90' through stoppage time.
+    const lo = (demoMin <= 1 ? 0 : demoMin) - now;
+    const hi = (demoMin <= 1 ? 2 : demoMin >= 90 ? Infinity : demoMin + 1) - now;
+    const c = clock.current;
+    const both = c ? { lo: Math.max(c.lo, lo), hi: Math.min(c.hi, hi) } : null;
+    clock.current = both && both.lo < both.hi ? both : { lo, hi };
+    setShown((s) => (s === null || Math.abs(demoMin - s) > 3 ? demoMin : s));
+  }, [match, demoMin]);
+
+  const ticking = demoMin !== null;
+  const kickoffMs = match ? Date.parse(match.kickoff) : NaN;
+  useEffect(() => {
+    if (!ticking) return;
+    const t = window.setInterval(() => {
+      const c = clock.current;
+      if (!c) return;
+      const guess = Number.isFinite(kickoffMs) ? -kickoffMs / DEMO_MINUTE_MS : Number.isFinite(c.hi) ? (c.lo + c.hi) / 2 : c.lo;
+      const at = Math.min(Math.max(guess, c.lo), c.hi - 1e-3) + Date.now() / DEMO_MINUTE_MS;
+      const target = Math.max(1, Math.min(90, Math.floor(at)));
+      setShown((s) => (s === null ? target : target > s ? s + 1 : s));
+    }, 500);
+    return () => window.clearInterval(t);
+  }, [ticking, kickoffMs]);
+
+  if (demoMin !== null && shown !== null) return `${shown}’`;
+  return prettyMinute(raw);
 }
 
 function IconBtn({ icon, label, size, stroke, onClick }: { icon: string; label: string; size: number; stroke: number; onClick: () => void }) {
@@ -117,17 +235,119 @@ function IconBtn({ icon, label, size, stroke, onClick }: { icon: string; label: 
   );
 }
 
-function Nav({ center, onBack, onShare }: { center: ReactNode; onBack: () => void; onShare?: () => void }) {
+function Nav({ center, onBack, onShare }: { center: ReactNode; onBack: () => void; onShare: () => void }) {
   return (
     <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--zk-space-8)" }}>
       <IconBtn icon="back" label="Back" size={22} stroke={2.4} onClick={onBack} />
       {center}
-      {onShare ? (
-        <IconBtn icon="share" label="Share" size={20} stroke={2.2} onClick={onShare} />
-      ) : (
-        <div aria-hidden style={{ width: "var(--zk-tap-min)", flex: "none" }} />
-      )}
+      <IconBtn icon="share" label="Share" size={20} stroke={2.2} onClick={onShare} />
     </nav>
+  );
+}
+
+/** "Hidden by @handle · Rookie · 3 stashes hidden", as on the riddle screen. */
+function HiderRow({ stash }: { stash: PublicStash }) {
+  const h = stash.hider;
+  const handle = h.handle.startsWith("@") ? h.handle : `@${h.handle}`;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)", padding: "0 var(--zk-space-4)" }}>
+      <Emblem tier={h.tier} size={30} style={{ flex: "none" }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ font: "var(--zk-type-body-strong)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ color: "var(--zk-text-muted)", fontWeight: "var(--zk-fw-semibold)" }}>Hidden by </span>
+          {stash.isMine ? "you" : handle}
+        </div>
+        <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)" }}>
+          {TIER_LABEL[h.tier] ?? "Rookie"}
+          {h.stashesHidden > 0 ? ` · ${plural(h.stashesHidden, "stash", "stashes")} hidden` : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Status pill for a match that isn't in play ("Calls open", "Calls locked"): LiveBadge's shape, no pulsing dot. */
+function StatusPill({ icon, label, tone, tint, border }: { icon: string; label: string; tone: string; tint: string; border: string }) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--zk-space-6)",
+        padding: "var(--zk-space-4) var(--zk-space-10) var(--zk-space-4) var(--zk-space-8)",
+        borderRadius: "var(--zk-radius-pill)",
+        background: tint,
+        border: `1px solid ${border}`,
+        color: tone,
+        font: "var(--zk-fw-black) var(--zk-fs-10)/1 var(--zk-font-body)",
+        letterSpacing: "var(--zk-track-badge)",
+        whiteSpace: "nowrap",
+        flex: "none",
+        textTransform: "uppercase",
+      }}
+    >
+      <Icon icon={icon} size={11} stroke={2.8} />
+      {label}
+    </div>
+  );
+}
+
+const CallsOpenPill = () => <StatusPill icon="unlock" label="Calls open" tone="var(--zk-gold)" tint="var(--zk-gold-tint)" border="rgb(var(--zk-gold-rgb) / .3)" />;
+const CallsLockedPill = () => (
+  <StatusPill icon="lock" label="Calls locked" tone="var(--zk-purple-light)" tint="var(--zk-purple-tint)" border="rgb(var(--zk-purple-rgb) / .35)" />
+);
+
+/** Text that rolls up into place when it changes (the live minute). */
+function Rolling({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const prev = useRef(text);
+  useEffect(() => {
+    if (text === prev.current) return;
+    prev.current = text;
+    play(ref.current, [{ transform: "translateY(75%)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 340, easing: "cubic-bezier(.22,1,.36,1)" });
+  }, [text]);
+  return (
+    <span style={{ display: "inline-block", overflow: "hidden", verticalAlign: "bottom", lineHeight: 1.2, margin: "-0.1em 0" }}>
+      <span ref={ref} style={{ display: "inline-block", fontVariantNumeric: "tabular-nums" }}>
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/** The live nav badge (LiveBadge solid · md) with a minute that rolls over instead of jumping. */
+function LiveClock({ minute }: { minute: string }) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--zk-space-8)",
+        padding: "var(--zk-space-6) var(--zk-space-12) var(--zk-space-6) var(--zk-space-10)",
+        borderRadius: "var(--zk-radius-pill)",
+        background: "var(--zk-mint)",
+        border: "1px solid var(--zk-mint)",
+        color: "var(--zk-mint-ink)",
+        font: "var(--zk-fw-black) var(--zk-fs-12)/1 var(--zk-font-body)",
+        letterSpacing: "var(--zk-track-badge)",
+        whiteSpace: "nowrap",
+        flex: "none",
+        textTransform: "uppercase",
+      }}
+    >
+      <span aria-hidden style={{ position: "relative", width: 8, height: 8, flex: "none" }}>
+        <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "var(--zk-mint-ink)", animation: "zk-glow 1s ease-in-out infinite" }} />
+      </span>
+      <span>
+        Live
+        {minute ? (
+          <>
+            {" · "}
+            <Rolling text={minute} />
+          </>
+        ) : null}
+      </span>
+    </div>
   );
 }
 
@@ -135,11 +355,49 @@ function DemoChip() {
   return <Chip variant="info" size="sm" icon="bolt" iconColor="var(--zk-gold)" label="TEST MATCH · plays out in minutes" />;
 }
 
+/** The pink rubber stamp a won stash gets everywhere in the app. Thumps down once (not under reduced motion). */
+function ZeckedStamp() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    play(
+      ref.current,
+      [
+        { transform: "scale(2.2) rotate(-8deg)", opacity: 0 },
+        { transform: "scale(.92) rotate(-3deg)", opacity: 1, offset: 0.6 },
+        { transform: "scale(1) rotate(-3deg)", opacity: 1 },
+      ],
+      { duration: 520, delay: 150, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" },
+    );
+  }, []);
+  return (
+    <div
+      ref={ref}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--zk-space-8)",
+        padding: "var(--zk-space-8) var(--zk-space-14)",
+        borderRadius: "var(--zk-radius-md)",
+        border: "3px solid var(--zk-pink)",
+        background: "rgb(var(--zk-bg-rgb) / .85)",
+        color: "var(--zk-pink)",
+        font: "var(--zk-type-btn-md)",
+        transform: "rotate(-3deg)",
+      }}
+    >
+      <Icon icon="unlock" size={20} stroke={2.6} />
+      ZECKED
+    </div>
+  );
+}
+
 function TeamCol({ team, size }: { team: Team; size: number }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-6)", minWidth: 0 }}>
       <TeamBadge code={team.code} color={team.color} ink={team.ink} logo={team.logo} name={team.name} size={size} />
-      <span style={{ font: "var(--zk-type-body-strong)", textAlign: "center", overflowWrap: "anywhere" }}>{team.name}</span>
+      <span lang="en" style={S.teamName}>
+        {team.name}
+      </span>
     </div>
   );
 }
@@ -158,15 +416,15 @@ function MatchCard({ match, badge, footer, children }: { match: Match; badge?: R
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--zk-space-8)" }}>
-        <span style={S.caption}>
-          {match.leagueName}
-          {kickoff ? ` · ${kickoff}` : ""}
-        </span>
+        <div style={{ ...S.caption, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--zk-space-2)" }}>
+          <span>{match.leagueName}</span>
+          {kickoff ? <span style={{ fontWeight: "var(--zk-fw-semibold)" }}>{kickoff}</span> : null}
+        </div>
         {badge}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", alignItems: "center", marginTop: "var(--zk-space-14)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", alignItems: "start", marginTop: "var(--zk-space-14)" }}>
         <TeamCol team={match.home} size={68} />
-        <div style={{ font: "var(--zk-type-h3)", color: "var(--zk-text-muted)", padding: "0 var(--zk-space-8)" }}>VS</div>
+        <div style={{ font: "var(--zk-type-h3)", color: "var(--zk-text-muted)", padding: "0 var(--zk-space-8)", height: 68, display: "flex", alignItems: "center" }}>VS</div>
         <TeamCol team={match.away} size={68} />
       </div>
       {footer ? (
@@ -179,12 +437,52 @@ function MatchCard({ match, badge, footer, children }: { match: Match; badge?: R
   );
 }
 
-/** Screen 06's score card: badges, big score, optional match-time bar and goal events. */
+/** A score digit that pops (and flashes gold) when it goes up. */
+function PopNum({ value, color }: { value: number; color: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const prev = useRef(value);
+  const [hot, setHot] = useState(false);
+  useEffect(() => {
+    const up = value > prev.current;
+    prev.current = value;
+    if (!up) return;
+    setHot(true);
+    play(
+      ref.current,
+      [
+        { transform: "scale(1)" },
+        { transform: "scale(1.5) translateY(-4%)", offset: 0.35 },
+        { transform: "scale(.94)", offset: 0.7 },
+        { transform: "scale(1)" },
+      ],
+      { duration: 700, easing: "cubic-bezier(.22,1,.36,1)" },
+    );
+    const t = window.setTimeout(() => setHot(false), 1400);
+    return () => window.clearTimeout(t);
+  }, [value]);
+  return (
+    <span
+      ref={ref}
+      aria-hidden
+      style={{
+        display: "inline-block",
+        color: hot ? "var(--zk-gold)" : color,
+        textShadow: hot ? "0 0 24px rgb(var(--zk-gold-rgb) / .7)" : "none",
+        transition: "color var(--zk-dur-meter) var(--zk-ease-out), text-shadow var(--zk-dur-meter) var(--zk-ease-out)",
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
+/** Screen 06's score card: crests + names, big score, optional match-time bar and goal events. */
 function ScoreCard({
   match,
   accent,
   top,
   bar,
+  minute,
   scoreColor,
   lastEventNote,
   children,
@@ -193,6 +491,8 @@ function ScoreCard({
   accent: string;
   top?: ReactNode;
   bar?: boolean;
+  /** The minute on the clock, when it runs ahead of the last poll (see useLiveMinute). */
+  minute?: string;
   scoreColor?: string;
   lastEventNote?: string;
   children?: ReactNode;
@@ -200,26 +500,41 @@ function ScoreCard({
   const { home, away } = liveScore(match);
   const events = sortedEvents(match.events);
   const lastGoal = lastEventNote ? events.map((e) => eventLine(e, match).goal).lastIndexOf(true) : -1;
-  const pct = matchProgress(match);
+  const shownMin = minute && match.status === "live" ? Math.min(90, parseMinute(minute)) : null;
+  const pct = shownMin !== null ? Math.round((shownMin / 90) * 100) : matchProgress(match);
   const fg = scoreColor ?? "var(--zk-text)";
+  const side = (t: Team) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-6)", minWidth: 0 }}>
+      <TeamBadge code={t.code} color={t.color} ink={t.ink} logo={t.logo} name={t.name} size={58} />
+      <span lang="en" style={{ ...S.teamName, font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)" }}>
+        {t.name}
+      </span>
+    </div>
+  );
   return (
     <div style={{ background: "var(--zk-surface)", borderRadius: "var(--zk-radius-3xl)", padding: "var(--zk-space-18)", border: `1.5px solid ${accent}` }}>
       {top ? <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--zk-space-8)", marginBottom: "var(--zk-space-14)" }}>{top}</div> : null}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", alignItems: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <TeamBadge code={match.home.code} color={match.home.color} ink={match.home.ink} logo={match.home.logo} name={match.home.name} size={58} />
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)", alignItems: "start" }}>
+        {side(match.home)}
         <div
+          role="img"
           aria-label={`${match.home.name} ${home}, ${match.away.name} ${away}`}
-          style={{ font: "var(--zk-type-score-xl)", letterSpacing: "var(--zk-track-tight)", display: "flex", gap: "var(--zk-space-12)", alignItems: "center" }}
+          style={{
+            font: "var(--zk-type-score-xl)",
+            fontSize: "clamp(48px, 16vw, var(--zk-fs-64))",
+            letterSpacing: "var(--zk-track-tight)",
+            display: "flex",
+            gap: "clamp(var(--zk-space-6), 3vw, var(--zk-space-12))",
+            alignItems: "center",
+            height: 58,
+            padding: "0 var(--zk-space-4)",
+          }}
         >
-          <span aria-hidden style={{ color: fg, transition: "color var(--zk-dur-base) var(--zk-ease-out)" }}>{home}</span>
-          <span aria-hidden style={{ color: "var(--zk-text-muted)", fontSize: "var(--zk-fs-40)" }}>–</span>
-          <span aria-hidden style={{ color: fg, transition: "color var(--zk-dur-base) var(--zk-ease-out)" }}>{away}</span>
+          <PopNum value={home} color={fg} />
+          <span aria-hidden style={{ color: "var(--zk-text-muted)", fontSize: "0.62em" }}>–</span>
+          <PopNum value={away} color={fg} />
         </div>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <TeamBadge code={match.away.code} color={match.away.color} ink={match.away.ink} logo={match.away.logo} name={match.away.name} size={58} />
-        </div>
+        {side(match.away)}
       </div>
       {bar ? (
         <div
@@ -227,8 +542,8 @@ function ScoreCard({
           aria-label="Match time"
           aria-valuemin={0}
           aria-valuemax={90}
-          aria-valuenow={Math.min(90, parseMinute(match.minute))}
-          style={{ marginTop: "var(--zk-space-12)", height: 6, borderRadius: "var(--zk-radius-xs)", background: "var(--zk-surface-raised)", overflow: "hidden" }}
+          aria-valuenow={shownMin ?? Math.min(90, parseMinute(match.minute))}
+          style={{ marginTop: "var(--zk-space-14)", height: 6, borderRadius: "var(--zk-radius-xs)", background: "var(--zk-surface-raised)", overflow: "hidden" }}
         >
           <div
             style={{
@@ -277,6 +592,7 @@ function StepBtn({ icon, label, primary, disabled, dim, onClick }: { icon: "plus
   const shadow = primary
     ? down ? "var(--zk-shadow-btn-purple-pressed)" : "var(--zk-shadow-btn-purple)"
     : down ? "0 1px 0 var(--zk-bg)" : "0 3px 0 var(--zk-bg)";
+  // The button is the 44px tap area; the drawn key inside it can be smaller on narrow phones.
   return (
     <button
       type="button"
@@ -288,27 +604,41 @@ function StepBtn({ icon, label, primary, disabled, dim, onClick }: { icon: "plus
       onPointerLeave={up}
       onPointerCancel={up}
       style={{
-        width: STEP_BTN,
-        height: STEP_BTN,
+        width: STEP_HIT,
+        height: STEP_HIT,
+        margin: STEP_HIT_MARGIN,
         flex: "none",
-        borderRadius: "var(--zk-radius-lg)",
         border: 0,
         padding: 0,
-        background: primary ? "var(--zk-purple)" : "var(--zk-surface-raised)",
+        background: "transparent",
         color: "var(--zk-text)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: shadow,
-        transform: down ? `translateY(${primary ? 4 : 2}px)` : "none",
-        opacity: dim ? 0.45 : 1,
         cursor: disabled ? "default" : "pointer",
         WebkitTapHighlightColor: "transparent",
         touchAction: "manipulation",
-        transition: "transform var(--zk-dur-fast) var(--zk-ease-out), box-shadow var(--zk-dur-fast) var(--zk-ease-out), opacity var(--zk-dur-fast) var(--zk-ease-out)",
       }}
     >
-      <Icon icon={icon} size={22} stroke={3} />
+      <span
+        aria-hidden
+        style={{
+          width: STEP_BTN,
+          height: STEP_BTN,
+          flex: "none",
+          borderRadius: "var(--zk-radius-lg)",
+          background: primary ? "var(--zk-purple)" : "var(--zk-surface-raised)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: shadow,
+          transform: down ? `translateY(${primary ? 4 : 2}px)` : "none",
+          opacity: dim ? 0.45 : 1,
+          transition: "transform var(--zk-dur-fast) var(--zk-ease-out), box-shadow var(--zk-dur-fast) var(--zk-ease-out), opacity var(--zk-dur-fast) var(--zk-ease-out)",
+        }}
+      >
+        <Icon icon={icon} size={22} stroke={3} />
+      </span>
     </button>
   );
 }
@@ -479,16 +809,13 @@ function SealedNote({ calls, tail }: { calls: number; tail?: string }) {
   );
 }
 
-function CallPrizeCards({ call, empty, stash }: { call: string; empty: string; stash: PublicStash }) {
+/** Two mini cards: something on the left (your call, or the calls on your stash) and the prize. */
+function MiniCards({ label, children, stash }: { label: string; children: ReactNode; stash: PublicStash }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: "var(--zk-space-10)" }}>
       <div style={S.miniCard}>
-        <div style={S.label}>YOUR CALL</div>
-        {call ? (
-          <div style={{ font: "var(--zk-fw-black) var(--zk-fs-30)/1.1 var(--zk-font-display)", color: "var(--zk-gold)", marginTop: "var(--zk-space-4)", whiteSpace: "nowrap" }}>{call}</div>
-        ) : (
-          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-8)" }}>{empty}</div>
-        )}
+        <div style={S.label}>{label}</div>
+        {children}
       </div>
       <div style={S.miniCard}>
         <div style={S.label}>PRIZE</div>
@@ -498,6 +825,33 @@ function CallPrizeCards({ call, empty, stash }: { call: string; empty: string; s
         <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>~{formatUsd(stash.usd)}</div>
       </div>
     </div>
+  );
+}
+
+const bigValue: CSSProperties = {
+  font: "var(--zk-fw-black) clamp(22px, 7.4vw, var(--zk-fs-30))/1.1 var(--zk-font-display)",
+  color: "var(--zk-gold)",
+  marginTop: "var(--zk-space-4)",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+function CallPrizeCards({ call, empty, stash }: { call: string; empty: string; stash: PublicStash }) {
+  return (
+    <MiniCards label="YOUR CALL" stash={stash}>
+      {call ? <div style={bigValue}>{call}</div> : <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-8)" }}>{empty}</div>}
+    </MiniCards>
+  );
+}
+
+/** The hider's version: how many calls their stash drew, and the prize. */
+function OwnStashCards({ calls, stash }: { calls: number; stash: PublicStash }) {
+  return (
+    <MiniCards label="CALLS ON IT" stash={stash}>
+      <div style={bigValue}>{calls}</div>
+      <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>{calls === 1 ? "call sealed" : "calls sealed"}</div>
+    </MiniCards>
   );
 }
 
@@ -568,7 +922,8 @@ const RUNNER_COLORS = ["var(--zk-sky)", "var(--zk-pink)", "var(--zk-mint)", "var
 const RUNNERS_SHOWN = 5;
 
 function Runners({ runners, total }: { runners: RunnerCall[]; total: number }) {
-  // "You" first, then the server's order.
+  // "You" first, then the server's order. Everyone else comes back as "Caller N" (their place in
+  // the queue): calls stay anonymous.
   const sorted = [...runners.filter((r) => r.isYou), ...runners.filter((r) => !r.isYou)];
   const shown = sorted.slice(0, RUNNERS_SHOWN);
   const more = sorted.length - shown.length;
@@ -581,13 +936,14 @@ function Runners({ runners, total }: { runners: RunnerCall[]; total: number }) {
           {runners.length} / {Math.max(total, runners.length)}
         </span>
       </div>
+      <div style={{ ...S.caption, fontWeight: "var(--zk-fw-semibold)", marginTop: "var(--zk-space-2)" }}>Other callers stay anonymous</div>
       <div style={{ marginTop: "var(--zk-space-12)", display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
         {shown.length === 0 ? (
           <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>Nobody’s still in the running.</div>
         ) : (
           shown.map((r, i) => {
             const color = r.isYou ? "var(--zk-gold)" : RUNNER_COLORS[other++ % RUNNER_COLORS.length];
-            const initial = r.isYou ? "★" : (r.handle.replace(/^@/, "")[0] || "?").toUpperCase();
+            const name = r.isYou ? "You" : r.handle.replace(/^@/, "");
             return (
               <div
                 key={`${r.handle}-${i}`}
@@ -615,11 +971,14 @@ function Runners({ runners, total }: { runners: RunnerCall[]; total: number }) {
                     color: "var(--zk-bg)",
                   }}
                 >
-                  {initial}
+                  {r.isYou ? "★" : <Icon icon="mask" size={17} stroke={2.4} />}
                 </span>
                 <span style={{ flex: 1, minWidth: 0, font: "var(--zk-type-body-strong)", fontWeight: "var(--zk-fw-semibold)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {r.isYou ? "You" : r.handle}
+                  {name}
                 </span>
+                {r.matchesNow ? (
+                  <span style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-mint)", whiteSpace: "nowrap" }}>spot on</span>
+                ) : null}
                 <span style={{ font: "var(--zk-type-h4)", color: r.matchesNow ? "var(--zk-mint)" : "var(--zk-text)", whiteSpace: "nowrap" }}>{r.label}</span>
               </div>
             );
@@ -650,7 +1009,7 @@ function StateCard({ icon, tone, tint, title, children, border }: { icon: string
         <div style={{ width: 40, height: 40, flex: "none", borderRadius: "var(--zk-radius-md)", background: tint, color: tone, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Icon icon={icon} size={20} stroke={2.4} />
         </div>
-        <div style={{ font: "var(--zk-type-h3)", minWidth: 0 }}>{title}</div>
+        <div style={{ font: "var(--zk-type-h3)", minWidth: 0, textWrap: "balance" }}>{title}</div>
       </div>
       {children}
     </div>
@@ -675,10 +1034,118 @@ function EndedTop({ match, label }: { match: Match; label: string }) {
   );
 }
 
+/* ---------- moments: kickoff, goal, full time ---------- */
+
+const MOMENT_LOOK: Record<MomentKind, { fg: string; rgb: string; icon: string }> = {
+  goal: { fg: "var(--zk-mint)", rgb: "var(--zk-mint-rgb)", icon: "ball" },
+  kickoff: { fg: "var(--zk-sky)", rgb: "var(--zk-sky-rgb)", icon: "ball" },
+  fulltime: { fg: "var(--zk-gold)", rgb: "var(--zk-gold-rgb)", icon: "flag" },
+};
+
+/** A banner that springs down from the top of the screen for a big match moment, then slides away. Tap to dismiss. */
+function MomentBanner({ m, onDone }: { m: MomentState; onDone: () => void }) {
+  const [shown, setShown] = useState(false);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(onDone);
+  const exit = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    doneRef.current = onDone;
+  });
+  const close = useCallback(() => {
+    if (exit.current !== undefined) return;
+    setShown(false);
+    exit.current = window.setTimeout(() => doneRef.current(), MOMENT_EXIT_MS);
+  }, []);
+  useEffect(() => {
+    // Two frames so the off-screen position paints before the slide-in starts.
+    let r2 = 0;
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => setShown(true));
+    });
+    play(
+      titleRef.current,
+      [
+        { transform: "scale(.4)", opacity: 0 },
+        { transform: "scale(1.2)", opacity: 1, offset: 0.55 },
+        { transform: "scale(1)", opacity: 1 },
+      ],
+      { duration: 620, delay: 140, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" },
+    );
+    const t = window.setTimeout(close, MOMENT_MS);
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+      window.clearTimeout(t);
+      window.clearTimeout(exit.current);
+    };
+  }, [close]);
+  const look = MOMENT_LOOK[m.kind];
+  return (
+    <div
+      role="alert"
+      onClick={close}
+      style={{
+        pointerEvents: "auto",
+        cursor: "pointer",
+        transform: shown ? "none" : "translateY(calc(-100% - 80px))",
+        opacity: shown ? 1 : 0,
+        transition: shown
+          ? "transform 480ms var(--zk-ease-spring), opacity var(--zk-dur-base) var(--zk-ease-out)"
+          : `transform ${MOMENT_EXIT_MS}ms var(--zk-ease-in-out), opacity ${MOMENT_EXIT_MS}ms var(--zk-ease-in-out)`,
+        background: `linear-gradient(135deg, rgb(${look.rgb} / .22), rgb(${look.rgb} / .05) 70%), var(--zk-surface-raised)`,
+        border: `1.5px solid rgb(${look.rgb} / .55)`,
+        borderRadius: "var(--zk-radius-2xl)",
+        boxShadow: `var(--zk-shadow-float), 0 0 36px rgb(${look.rgb} / .3)`,
+        padding: "var(--zk-space-14)",
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-12)",
+        color: "var(--zk-text)",
+        fontFamily: "var(--zk-font-body)",
+      }}
+    >
+      <div style={{ flex: "none" }}>
+        {m.team ? (
+          <TeamBadge code={m.team.code} color={m.team.color} ink={m.team.ink} logo={m.team.logo} name={m.team.name} size={48} />
+        ) : (
+          <div style={{ width: 48, height: 48, borderRadius: "var(--zk-radius-lg)", background: `rgb(${look.rgb} / .16)`, color: look.fg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Icon icon={look.icon} size={26} stroke={2.4} />
+          </div>
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--zk-space-2)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--zk-space-8)" }}>
+          <div
+            ref={titleRef}
+            style={{ font: "var(--zk-fw-black) var(--zk-fs-30)/1 var(--zk-font-display)", letterSpacing: "var(--zk-track-tight)", color: look.fg, transformOrigin: "left center" }}
+          >
+            {m.title}
+          </div>
+          {m.meta ? <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-text-muted)", flex: "none" }}>{m.meta}</span> : null}
+        </div>
+        <div style={{ font: "var(--zk-type-body-strong)", overflowWrap: "break-word" }}>{m.line}</div>
+        {m.note ? (
+          <div style={{ font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)", color: m.note.good === undefined ? "var(--zk-text-muted)" : m.note.good ? "var(--zk-mint)" : "var(--zk-pink)" }}>
+            {m.note.text}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Drops a toast in from above. */
+function DropIn({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    play(ref.current, [{ transform: "translateY(-16px)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 280, easing: "cubic-bezier(.22,1,.36,1)" });
+  }, []);
+  return <div ref={ref}>{children}</div>;
+}
+
 /* ---------- the screen ---------- */
 
 export function PredictionStash({ initial, onWin }: PredictionStashProps) {
-  const router = useRouter();
   const [data, setData] = useState<StashData>(initial);
 
   // A different stash in the same instance: start over from the new initial data.
@@ -692,21 +1159,25 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
   const id = stash.id;
   const pred = stash.prediction;
   const match = pred?.match;
+  const mine = stash.isMine;
 
   /* --- kickoff clock (client only, so SSR and hydration agree) --- */
   const locksAt = pred?.locksAt;
   const [kickedOff, setKickedOff] = useState(false);
+  const [soon, setSoon] = useState(false);
   useEffect(() => {
     const at = locksAt ? Date.parse(locksAt) : NaN;
     if (!Number.isFinite(at)) return;
-    const ms = at - Date.now();
-    if (ms <= 0) {
-      setKickedOff(true);
-      return;
-    }
+    const timers: number[] = [];
+    const after = (ms: number, fn: () => void) => {
+      if (ms <= 0) fn();
+      else timers.push(window.setTimeout(fn, Math.min(ms, 2_147_000_000)));
+    };
     setKickedOff(false);
-    const t = window.setTimeout(() => setKickedOff(true), Math.min(ms, 2_147_000_000));
-    return () => window.clearTimeout(t);
+    setSoon(false);
+    after(at - SOON_MS - Date.now(), () => setSoon(true));
+    after(at - Date.now(), () => setKickedOff(true));
+    return () => timers.forEach((t) => window.clearTimeout(t));
   }, [locksAt]);
 
   /* --- polling --- */
@@ -733,22 +1204,40 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
   }, [id]);
 
   const phase = phaseOf(stash, kickedOff, !!win);
-  const fast =
-    !!match && (match.status === "scheduled" || match.status === "live" || (match.status === "final" && !RESOLVED.has(stash.status)));
+  const settled = RESOLVED.has(stash.status);
+  // Fast while the match is on (or about to be), slower while calls are open, slow once it's settled.
+  const pollMs =
+    !match || settled
+      ? SLOW_POLL_MS
+      : match.status === "live" || match.status === "final" || phase === "locked" || soon
+        ? LIVE_POLL_MS
+        : match.status === "scheduled"
+          ? OPEN_POLL_MS
+          : SLOW_POLL_MS;
 
   useEffect(() => {
-    const t = window.setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, fast ? FAST_POLL_MS : SLOW_POLL_MS);
-    const onVisible = () => {
-      if (!document.hidden) void refresh();
+    // Paused while the tab is hidden; catches up the moment it's visible again.
+    let t: number | undefined;
+    const start = () => {
+      window.clearInterval(t);
+      t = window.setInterval(() => void refresh(), pollMs);
     };
+    const onVisible = () => {
+      if (document.hidden) {
+        window.clearInterval(t);
+        t = undefined;
+      } else {
+        void refresh();
+        start();
+      }
+    };
+    if (!document.hidden) start();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(t);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [fast, refresh]);
+  }, [pollMs, refresh]);
 
   /* --- win: hand off once --- */
   const onWinRef = useRef(onWin);
@@ -773,18 +1262,81 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  /* --- moments: kickoff, goals, full time (only for changes seen while this screen is open) --- */
+  const [moment, setMoment] = useState<MomentState | null>(null);
+  const seen = useRef<{ phase: Phase; home: number; away: number } | null>(null);
+  useEffect(() => {
+    if (!match) return;
+    const home = match.homeScore ?? 0;
+    const away = match.awayScore ?? 0;
+    const prev = seen.current;
+    seen.current = { phase, home, away };
+    if (!prev) return;
+    const scoreLine = `${match.home.name} ${formatScore(home, away)} ${match.away.name}`;
+    const show = (m: Omit<MomentState, "id">) => setMoment({ ...m, id: Date.now() });
+    const scored = home > prev.home || away > prev.away;
+
+    // Kickoff: straight from "calls open/locked" into play (not when we've been away for half the match).
+    if ((prev.phase === "open" || prev.phase === "locked") && phase === "live" && !scored && parseMinute(match.minute) <= 5) {
+      sfx("whoosh");
+      show({
+        kind: "kickoff",
+        title: "Kickoff!",
+        line: "Calls are locked 🔒",
+        note: mine ? { text: "Your stash is in play. Nobody can call it now." } : myCall ? { text: `Your ${callNoun(myCall, match)} is sealed. Come on!`, good: true } : { text: "Watch it play out right here" },
+      });
+      return;
+    }
+
+    // Full time (a win gets the big win screen instead).
+    if (prev.phase === "live" && (phase === "final" || phase === "refunded")) {
+      const right = callMatchesScore(myCall, home, away);
+      sfx(right ? "success" : "select");
+      show({
+        kind: "fulltime",
+        title: "Full time!",
+        line: scoreLine,
+        note: myCall ? (right ? { text: `Your ${callNoun(myCall, match)} was spot on 🔥`, good: true } : { text: `Your ${callNoun(myCall, match)} missed this time`, good: false }) : undefined,
+      });
+      return;
+    }
+
+    // Goal(s).
+    if (scored && (match.status === "live" || match.status === "final")) {
+      const both = home > prev.home && away > prev.away;
+      const many = home - prev.home + (away - prev.away) > 1;
+      const team = both ? undefined : home > prev.home ? match.home : match.away;
+      const last = sortedEvents(match.events).filter((e) => eventLine(e, match).goal).pop();
+      let note: MomentState["note"];
+      if (mine) {
+        const spot = (runners ?? []).filter((r) => r.matchesNow).length;
+        note = spot
+          ? { text: `${spot === 1 ? "1 caller is" : `${spot} callers are`} spot on right now 😬`, good: false }
+          : { text: "Nobody’s spot on right now. Your stash is safe 😌", good: true };
+      } else if (myCall) {
+        note = goalNote(myCall, match, prev);
+      }
+      sfx("notify");
+      show({
+        kind: "goal",
+        title: many ? "GOALS!" : "GOAL!",
+        meta: !many && last ? prettyMinute(last.minute) : undefined,
+        line: team && !many ? `${team.name} scores · ${formatScore(home, away)}` : scoreLine,
+        note,
+        team,
+      });
+    }
+  }, [data, phase, match, mine, myCall, runners]);
+
   /* --- nav + share --- */
-  const back = useCallback(() => {
-    if (window.history.length > 1) router.back();
-    else router.push("/feed");
-  }, [router]);
+  const back = useAppBack("/feed");
 
   const share = useCallback(async () => {
     const url = window.location.href;
     const text = match
       ? pred?.kind === "winner"
-        ? `First to call the ${match.home.code} vs ${match.away.code} winner ZECKS ${formatUsd(stash.usd)} ⚽`
-        : `First to call ${match.home.code} vs ${match.away.code} exactly ZECKS ${formatUsd(stash.usd)} ⚽`
+        ? `First to call the ${match.home.name} vs ${match.away.name} winner ZECKS ${formatUsd(stash.usd)} ⚽`
+        : `First to call ${match.home.name} vs ${match.away.name} exactly ZECKS ${formatUsd(stash.usd)} ⚽`
       : "ZECKED";
     if (typeof navigator.share === "function") {
       try {
@@ -808,9 +1360,30 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
   const [away, setAway] = useState(0);
   const [pick, setPick] = useState<WinnerPick | null>(null);
   const [busy, setBusy] = useState(false);
+  // Sealing is final, so it takes two taps: "Lock 2–1?" then "Tap again to seal".
+  const [armed, setArmed] = useState(false);
+  const armBar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!armed) return;
+    play(armBar.current, [{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }], { duration: ARM_MS, easing: "linear", fill: "forwards" });
+    const t = window.setTimeout(() => setArmed(false), ARM_MS);
+    return () => window.clearTimeout(t);
+  }, [armed]);
+  const editHome = (v: number) => {
+    setHome(v);
+    setArmed(false);
+  };
+  const editAway = (v: number) => {
+    setAway(v);
+    setArmed(false);
+  };
+  const editPick = (p: WinnerPick) => {
+    setPick(p);
+    setArmed(false);
+  };
 
   const lockCall = useCallback(async () => {
-    if (busy || myCall || stash.isMine || !pred) return;
+    if (busy || myCall || mine || !pred) return;
     const body = pred.kind === "exact" ? { home, away } : pick ? { pick } : null;
     if (!body) return;
     setBusy(true);
@@ -826,52 +1399,82 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
       }));
     } catch (e) {
       mutation.current++;
-      showToast({ text: e instanceof Error ? e.message : "Couldn’t lock your call. Try again.", variant: "error" });
+      showToast({ text: friendlyError(e, "Couldn’t lock your call. Try again."), variant: "error" });
       void refresh();
     } finally {
       setBusy(false);
     }
-  }, [busy, myCall, stash.isMine, pred, home, away, pick, id, showToast, refresh]);
+  }, [busy, myCall, mine, pred, home, away, pick, id, showToast, refresh]);
+
+  const onLockTap = () => {
+    if (!armed) {
+      setArmed(true);
+      return;
+    }
+    setArmed(false);
+    void lockCall();
+  };
 
   const onLockDone = useCallback(() => {
     setKickedOff(true);
+    setArmed(false);
     void refresh();
   }, [refresh]);
 
+  const liveMinute = useLiveMinute(match);
+
   /* --- render --- */
-  const toastEl = toast ? (
-    <div
-      style={{
-        position: "fixed",
-        left: "50%",
-        bottom: "calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-24))",
-        transform: "translateX(-50%)",
-        width: "min(394px, calc(100% - 2 * var(--zk-screen-pad)))",
-        zIndex: 80,
-        pointerEvents: "none",
-      }}
-    >
-      <Toast key={toast.id} text={toast.text} variant={toast.variant} icon={toast.icon} />
-    </div>
-  ) : null;
+  const topLayer =
+    moment || toast ? (
+      <div
+        style={{
+          position: "fixed",
+          top: "calc(var(--zk-fixed-top) + var(--zk-space-10))",
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "calc(min(100vw, 430px) - 2 * var(--zk-space-12))",
+          zIndex: 80,
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--zk-space-8)",
+          pointerEvents: "none",
+        }}
+      >
+        {moment ? <MomentBanner key={moment.id} m={moment} onDone={() => setMoment(null)} /> : null}
+        {toast ? (
+          <DropIn key={toast.id}>
+            <Toast text={toast.text} variant={toast.variant} icon={toast.icon} />
+          </DropIn>
+        ) : null}
+      </div>
+    ) : null;
 
   const screen = (bg: string, children: ReactNode) => (
     <main className="zk-screen" style={{ background: bg, gap: "var(--zk-space-12)" }}>
       {children}
-      {toastEl}
+      {topLayer}
     </main>
   );
 
   const title = <span style={S.navLabel}>PREDICTION STASH</span>;
+  const nav = (center: ReactNode = title) => <Nav center={center} onBack={back} onShare={() => void share()} />;
   const findAnother = (variant: "primary" | "ghost" = "primary", pinned = true) => (
     <Button label="Find another stash" variant={variant} size="lg" href="/feed" style={pinned ? { marginTop: "auto" } : undefined} />
   );
+  // The hider's way out of a finished stash: hide another, or check the wallet the ZEC came back to.
+  const hiderEnd = (withWallet: boolean) => (
+    <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "var(--zk-space-12)" }}>
+      <Button label="Hide another stash" variant="primary" size="lg" icon="plus" href="/hide" />
+      {withWallet ? <Button label="Open your wallet" variant="ghost" size="lg" icon="wallet" href="/wallet" /> : null}
+    </div>
+  );
+  const ownNote = <Line icon="info">It’s your stash, so you can’t call it. Enjoy the match 🍿</Line>;
 
   if (!pred || !match) {
     return screen(
       "var(--zk-bg-hero-sky)",
       <>
-        <Nav center={title} onBack={back} />
+        {nav()}
         <StateCard icon="info" tone="var(--zk-sky)" tint="var(--zk-sky-tint)" title="This stash isn’t a match call." />
         {findAnother()}
       </>,
@@ -879,17 +1482,21 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
   }
 
   const callText = formatCall(myCall, match);
-  const noCallText = stash.isMine ? "This is your stash." : "You didn’t call this one";
+  const noCallText = "You didn’t call this one";
+  const zec = formatZec(stash.amountZat);
 
   /* 5 · awaiting funding */
   if (phase === "funding") {
     return screen(
       "var(--zk-bg-hero-sky)",
       <>
-        <Nav center={title} onBack={back} />
+        {nav()}
+        <HiderRow stash={stash} />
         <MatchCard match={match} />
-        <StateCard icon="hourglass" tone="var(--zk-gold)" tint="var(--zk-gold-tint)" title="This stash isn’t live yet." />
-        {stash.isMine ? <Button label="Fund it" variant="primary" size="lg" iconRight="arrowRight" href={`/hide?resume=${encodeURIComponent(id)}`} style={{ marginTop: "auto" }} /> : findAnother()}
+        <StateCard icon="hourglass" tone="var(--zk-gold)" tint="var(--zk-gold-tint)" title={mine ? "Your stash isn’t live yet." : "This stash isn’t live yet."}>
+          <p style={S.muted}>{mine ? "Add the prize and it opens for calls." : "The hider hasn’t added the prize yet. Check back soon."}</p>
+        </StateCard>
+        {mine ? <Button label="Fund it" variant="primary" size="lg" iconRight="arrowRight" href={`/hide?resume=${encodeURIComponent(id)}`} style={{ marginTop: "auto" }} /> : findAnother()}
       </>,
     );
   }
@@ -899,13 +1506,14 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
     return screen(
       "var(--zk-bg-hero-sky)",
       <>
-        <Nav center={title} onBack={back} />
+        {nav()}
+        <HiderRow stash={stash} />
         <MatchCard match={match} badge={<LiveBadge state="ended" label={match.status === "postponed" ? "Postponed" : "Called off"} />} />
-        <StateCard icon="flag" tone="var(--zk-text-muted)" tint="var(--zk-surface-raised)" title="Match called off.">
-          <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>The ZEC went back to the hider.</p>
+        <StateCard icon="flag" tone="var(--zk-text-muted)" tint="var(--zk-surface-raised)" title={mine ? "Match called off: your ZEC came back" : "Match called off."}>
+          <p style={S.muted}>{mine ? `Your ${zec} ZEC is back in your ZECKED wallet.` : "The ZEC went back to the hider."}</p>
         </StateCard>
-        {myCall ? <CallPrizeCards call={callText} empty={noCallText} stash={stash} /> : null}
-        {findAnother()}
+        {mine ? <OwnStashCards calls={pred.calls} stash={stash} /> : myCall ? <CallPrizeCards call={callText} empty={noCallText} stash={stash} /> : null}
+        {mine ? hiderEnd(true) : findAnother()}
       </>,
     );
   }
@@ -916,17 +1524,18 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
     return screen(
       "var(--zk-bg-hero-sky)",
       <>
-        <Nav center={title} onBack={back} />
+        {nav()}
+        <HiderRow stash={stash} />
         {played ? (
           <ScoreCard match={match} accent="var(--zk-border-strong)" top={<EndedTop match={match} label="Full time" />} />
         ) : (
           <MatchCard match={match} badge={<LiveBadge state="ended" label="Ended" />} />
         )}
-        <StateCard icon="unlock" tone="var(--zk-purple-light)" tint="var(--zk-purple-tint)" title="Nobody called it.">
-          <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>The ZEC went back to the hider.</p>
+        <StateCard icon="unlock" tone="var(--zk-purple-light)" tint="var(--zk-purple-tint)" title={mine ? "Nobody called it: your ZEC came back" : "Nobody called it."}>
+          <p style={S.muted}>{mine ? `Your ${zec} ZEC is back in your ZECKED wallet. Uncrackable 🛡️` : "The ZEC went back to the hider."}</p>
         </StateCard>
-        {myCall ? <CallPrizeCards call={callText} empty={noCallText} stash={stash} /> : null}
-        {findAnother()}
+        {mine ? <OwnStashCards calls={pred.calls} stash={stash} /> : myCall ? <CallPrizeCards call={callText} empty={noCallText} stash={stash} /> : null}
+        {mine ? hiderEnd(true) : findAnother()}
       </>,
     );
   }
@@ -935,21 +1544,25 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
   if (phase === "won" || phase === "final") {
     const fs = finalScore(match, stash.result?.finalScore);
     const scoreText = fs ? formatScore(fs.home, fs.away) : stash.result?.finalScore ?? "";
-    const headline = `Full time: ${match.home.code} ${scoreText} ${match.away.code}`;
+    const headline = `Full time: ${match.home.name} ${scoreText} ${match.away.name}`;
     const resolved = stash.status === "zecked";
     const result = stash.result;
     const youRight = fs ? callMatchesScore(myCall, fs.home, fs.away) : false;
     const correct = result?.correctCalls;
+    const correctLine = typeof correct === "number" ? <Line icon="target">{plural(correct, "correct call", "correct calls")}</Line> : null;
 
     if (phase === "won" && win) {
       return screen(
         "var(--zk-bg-hero-gold)",
         <>
-          <Nav center={title} onBack={back} onShare={share} />
-          <ScoreCard match={match} accent="rgb(var(--zk-gold-rgb) / .45)" top={<EndedTop match={match} label="Full time" />} scoreColor="var(--zk-gold)" />
+          {nav()}
+          <HiderRow stash={stash} />
+          <ScoreCard match={match} accent="rgb(var(--zk-gold-rgb) / .45)" top={<EndedTop match={match} label="Full time" />} scoreColor="var(--zk-gold)">
+            <ZeckedStamp />
+          </ScoreCard>
           <StateCard icon="trophy" tone="var(--zk-gold)" tint="var(--zk-gold-tint)" border="rgb(var(--zk-gold-rgb) / .35)" title={headline}>
             <Line icon="medal" color="var(--zk-gold)">Called it first: you</Line>
-            {typeof correct === "number" ? <Line icon="target">{correct} correct {correct === 1 ? "call" : "calls"}</Line> : null}
+            {correctLine}
           </StateCard>
           <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
           <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "var(--zk-space-12)" }}>
@@ -960,18 +1573,51 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
       );
     }
 
+    // Winners stay anonymous: "a mystery caller" (the server's label is written for riddles).
+    const firstBy = result?.winnerIsYou ? "you" : "a mystery caller";
+
+    if (mine) {
+      return screen(
+        "var(--zk-bg-hero-sky)",
+        <>
+          {nav()}
+          <HiderRow stash={stash} />
+          <ScoreCard match={match} accent="var(--zk-border-strong)" top={<EndedTop match={match} label="Full time" />}>
+            {resolved ? <ZeckedStamp /> : null}
+          </ScoreCard>
+          {resolved ? (
+            <StateCard icon="unlock" tone="var(--zk-pink)" tint="rgb(var(--zk-pink-rgb) / .14)" border="rgb(var(--zk-pink-rgb) / .35)" title="Someone called it: your stash got ZECKED">
+              <Line icon="medal">Called it first: a mystery caller</Line>
+              {correctLine}
+            </StateCard>
+          ) : (
+            <StateCard icon="hourglass" tone="var(--zk-gold)" tint="var(--zk-gold-tint)" title={headline}>
+              <Line icon="clock">Checking the calls…</Line>
+            </StateCard>
+          )}
+          <OwnStashCards calls={pred.calls} stash={stash} />
+          {resolved ? hiderEnd(false) : null}
+        </>,
+      );
+    }
+
     return screen(
       "var(--zk-bg-hero-sky)",
       <>
-        <Nav center={title} onBack={back} onShare={share} />
-        <ScoreCard match={match} accent="var(--zk-border-strong)" top={<EndedTop match={match} label="Full time" />} scoreColor={youRight ? "var(--zk-mint)" : undefined} />
+        {nav()}
+        <HiderRow stash={stash} />
+        <ScoreCard match={match} accent="var(--zk-border-strong)" top={<EndedTop match={match} label="Full time" />} scoreColor={youRight ? "var(--zk-mint)" : undefined}>
+          {resolved ? <ZeckedStamp /> : null}
+        </ScoreCard>
         <StateCard icon={resolved ? "trophy" : "hourglass"} tone="var(--zk-gold)" tint="var(--zk-gold-tint)" title={headline}>
           {resolved && result ? (
             <>
-              <Line icon="medal">Called it first: {result.winnerIsYou ? "you" : result.winnerLabel}</Line>
-              {typeof correct === "number" ? <Line icon="target">{correct} correct {correct === 1 ? "call" : "calls"}</Line> : null}
+              <Line icon="medal">Called it first: {firstBy}</Line>
+              {correctLine}
               {youRight && !result.winnerIsYou ? <Line icon="flame" color="var(--zk-pink)">You called it too, just not first 😤</Line> : null}
             </>
+          ) : youRight ? (
+            <Line icon="flame" color="var(--zk-mint)">Your call is right! Checking who called it first…</Line>
           ) : (
             <Line icon="clock">Checking the calls…</Line>
           )}
@@ -984,49 +1630,73 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
 
   /* 3 · live (screen 06) */
   if (phase === "live") {
-    const minute = prettyMinute(match.minute);
     const spotOn = callMatches(myCall, match);
     const value = closeness(myCall, match);
     return screen(
       "var(--zk-bg-hero-mint)",
       <>
-        <Nav center={<LiveBadge variant="solid" size="md" label={minute ? `Live · ${minute}` : "Live"} />} onBack={back} />
+        {nav(<LiveClock minute={liveMinute} />)}
+        <HiderRow stash={stash} />
         <ScoreCard
           match={match}
           accent="rgb(var(--zk-mint-rgb) / .3)"
           bar
+          minute={liveMinute}
           scoreColor={spotOn ? "var(--zk-mint)" : undefined}
           lastEventNote={spotOn ? "You’re calling it!" : undefined}
         >
           {match.demo ? <DemoChip /> : null}
         </ScoreCard>
-        <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
+        {mine ? (
+          <>
+            <OwnStashCards calls={pred.calls} stash={stash} />
+            {ownNote}
+          </>
+        ) : (
+          <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
+        )}
         {myCall ? <TensionMeter value={value} label={tensionLabel(myCall, match)} /> : null}
         {runners ? <Runners runners={runners} total={pred.calls} /> : null}
       </>,
     );
   }
 
-  /* 2 · locked, kickoff any second */
+  /* 2 · locked: kicked off, waiting for the feed to show the match in play */
   if (phase === "locked") {
+    const future = !!locksAt && Date.parse(locksAt) > Date.now();
     return screen(
       "var(--zk-bg-hero-sky)",
       <>
-        <Nav center={title} onBack={back} onShare={share} />
+        {nav()}
+        <HiderRow stash={stash} />
         <MatchCard
           match={match}
-          badge={<LiveBadge label="Live" />}
+          badge={<CallsLockedPill />}
           footer={
-            <>
-              <Icon icon="lock" size={16} stroke={2.4} color="var(--zk-gold)" />
-              <span style={{ font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-text-muted)" }}>Calls are locked. Kickoff any second…</span>
-            </>
+            future ? (
+              <>
+                <span style={{ font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-text-muted)" }}>Calls locked · kicks off in</span>
+                <Countdown to={pred.locksAt} format="hms" variant="pill" size="md" tone="auto" />
+              </>
+            ) : (
+              <>
+                <Icon icon="lock" size={16} stroke={2.4} color="var(--zk-gold)" />
+                <span style={{ font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-text-muted)" }}>Calls are locked. Kickoff any second…</span>
+              </>
+            )
           }
         >
           {match.demo ? <DemoChip /> : null}
         </MatchCard>
-        <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
-        <SealedNote calls={pred.calls} tail="Revealed at kickoff." />
+        {mine ? (
+          <>
+            <OwnStashCards calls={pred.calls} stash={stash} />
+            {ownNote}
+          </>
+        ) : (
+          <CallPrizeCards call={callText} empty={noCallText} stash={stash} />
+        )}
+        {runners ? <Runners runners={runners} total={pred.calls} /> : <SealedNote calls={pred.calls} tail="Revealed at kickoff." />}
       </>,
     );
   }
@@ -1037,14 +1707,30 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
   const shownAway = sealed && myCall?.kind === "exact" ? myCall.away ?? 0 : away;
   const shownPick = sealed && myCall?.kind === "winner" ? myCall.pick ?? null : pick;
   const exact = pred.kind === "exact";
+  const draft = exact ? formatScore(home, away) : pick ? formatCall({ kind: "winner", pick }, match) : "";
+  const isArmed = armed && !sealed && !busy;
+
+  const lockLabel: ReactNode = sealed ? (
+    `CALL SEALED ${callText.toUpperCase()}`
+  ) : busy ? (
+    "SEALING…"
+  ) : isArmed ? (
+    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-4)", lineHeight: 1 }}>
+      <span>LOCK {draft.toUpperCase()}?</span>
+      <span style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-bold)", opacity: 0.9 }}>Tap again to seal. No changes after.</span>
+    </span>
+  ) : (
+    "LOCK MY CALL"
+  );
 
   return screen(
     "var(--zk-bg-hero-sky)",
     <>
-      <Nav center={title} onBack={back} onShare={share} />
+      {nav()}
+      <HiderRow stash={stash} />
       <MatchCard
         match={match}
-        badge={<LiveBadge label="Live" />}
+        badge={<CallsOpenPill />}
         footer={
           <>
             <span style={{ font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-text-muted)" }}>Calls lock in</span>
@@ -1055,34 +1741,44 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
         {match.demo ? <DemoChip /> : null}
       </MatchCard>
       <PrizeRow title={exact ? "Call the exact score" : "Call the winner"} stash={stash} />
-      {stash.isMine ? (
-        <div style={{ ...S.card, padding: "var(--zk-space-18)", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-14)", textAlign: "center" }}>
-          <p style={{ margin: 0, font: "var(--zk-type-body-strong)", color: "var(--zk-text-muted)" }}>This is your stash. You can’t call your own match.</p>
-          <Button label="Share your stash" variant="secondary" size="md" icon="share" onClick={share} />
+      {mine ? (
+        <div style={{ ...S.card, padding: "var(--zk-space-18)", display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--zk-space-10)", textAlign: "center" }}>
+          <div style={S.label}>YOUR STASH</div>
+          <div style={{ font: "var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)", color: "var(--zk-gold)" }}>{pred.calls}</div>
+          <div style={{ font: "var(--zk-type-body-strong)", marginTop: "calc(-1 * var(--zk-space-4))" }}>{pred.calls === 1 ? "call sealed so far" : "calls sealed so far"}</div>
+          <p style={{ ...S.muted, maxWidth: 300 }}>You can’t call your own stash. Share it so more people take a shot.</p>
+          <Button label="Share your stash" variant="secondary" size="md" icon="share" onClick={() => void share()} />
         </div>
       ) : (
         <>
           {exact ? (
-            <ScoreSteppers match={match} home={shownHome} away={shownAway} setHome={setHome} setAway={setAway} readOnly={sealed || busy} />
+            <ScoreSteppers match={match} home={shownHome} away={shownAway} setHome={editHome} setAway={editAway} readOnly={sealed || busy} />
           ) : (
-            <WinnerPicks match={match} pick={shownPick} setPick={setPick} readOnly={sealed || busy} />
+            <WinnerPicks match={match} pick={shownPick} setPick={editPick} readOnly={sealed || busy} />
           )}
-          <Button
-            label={sealed ? `CALL SEALED ${callText.toUpperCase()}` : busy ? "SEALING…" : "LOCK MY CALL"}
-            variant={sealed ? "success" : "primary"}
-            size="lg"
-            iconRight="lock"
-            onClick={sealed ? undefined : () => void lockCall()}
-            disabled={!sealed && !exact && !pick}
-            ariaLabel={sealed ? `Call sealed: ${callText}` : undefined}
-          />
+          <div style={{ position: "relative" }}>
+            <Button
+              label={lockLabel}
+              variant={sealed ? "success" : isArmed ? "secondary" : "primary"}
+              size="lg"
+              iconRight="lock"
+              onClick={sealed ? undefined : onLockTap}
+              disabled={!sealed && !exact && !pick}
+              ariaLabel={sealed ? `Call sealed: ${callText}` : isArmed ? `Lock ${draft}? Tap again to seal it` : undefined}
+              sfx={isArmed ? "none" : sealed ? "none" : "select"}
+            />
+            {isArmed ? (
+              <div aria-hidden style={{ position: "absolute", left: "var(--zk-space-18)", right: "var(--zk-space-18)", bottom: -9, height: 4, borderRadius: "var(--zk-radius-pill)", background: "rgb(var(--zk-white-rgb) / .12)", overflow: "hidden" }}>
+                <div ref={armBar} style={{ height: "100%", background: "var(--zk-purple-light)", transformOrigin: "left center" }} />
+              </div>
+            ) : null}
+          </div>
         </>
       )}
       <RuleChips />
-      <SealedNote calls={pred.calls} tail="Revealed at kickoff." />
+      {mine ? null : <SealedNote calls={pred.calls} tail="Revealed at kickoff." />}
     </>,
   );
 }
-
 
 export default PredictionStash;

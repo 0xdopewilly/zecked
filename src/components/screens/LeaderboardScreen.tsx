@@ -1,6 +1,8 @@
 "use client";
 // Screen 11 · Leaderboard. Crackers / Hiders / Oracles × Today / Week / All-time, podium with a crown
-// on #1, rows from #4 down, and a pinned "You · #N" bar.
+// on #1, rows from #4 down, and a pinned "You · #N" bar. An empty board (or an open podium spot)
+// invites you to take it. Rows aren't tappable: there are no public profiles.
+import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import type { LeaderRow, Leaderboard } from "@/lib/types";
@@ -28,11 +30,30 @@ const UNIT: Record<Board, [one: string, many: string]> = {
   oracles: ["exact", "exact"],
 };
 
-const HINT: Record<Board, { text: string; label: string; href: string }> = {
-  crackers: { text: "Crack a riddle or call a match first to grab a spot.", label: "Find a stash", href: "/feed" },
-  hiders: { text: "Hide a stash and you’re on it.", label: "Hide a stash", href: "/hide" },
-  oracles: { text: "Call an exact score right and the crystal ball is yours.", label: "Call a match", href: "/feed" },
+const HINT: Record<Board, { text: string; first: string; label: string; short: string; href: string }> = {
+  crackers: {
+    text: "Crack a riddle or call a match first to grab a spot.",
+    first: "Crack a stash and the top spot is yours.",
+    label: "Crack a stash",
+    short: "Crack one",
+    href: "/feed",
+  },
+  hiders: { text: "Hide a stash and you’re on it.", first: "Hide a stash and the top spot is yours.", label: "Hide a stash", short: "Hide one", href: "/hide" },
+  oracles: {
+    text: "Call an exact score right and the crystal ball is yours.",
+    first: "Call an exact score right and the top spot is yours.",
+    label: "Call a match",
+    short: "Call one",
+    href: "/feed",
+  },
 };
+
+/** Friendly copy for a failed request: never the raw browser text ("Failed to fetch"). */
+function friendlyErr(e: unknown): string {
+  const status = (e as { status?: number } | null)?.status;
+  if (status == null) return "Can’t reach ZECKED. Check your connection and try again.";
+  return "We couldn’t load the board just now. Try again in a moment.";
+}
 
 const AVATAR_COLORS = [
   "var(--zk-pink)",
@@ -132,17 +153,21 @@ const PLACE: Record<
 function PodiumSlot({ place, row, board, loading }: { place: Place; row?: LeaderRow; board: Board; loading: boolean }) {
   const c = PLACE[place];
   const empty = !row;
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        position: "relative",
-        minWidth: 0,
-        animation: loading ? "zk-glow 1.6s ease-in-out infinite" : undefined,
-      }}
-    >
+  const open = empty && !loading;
+  const hint = HINT[board];
+  const slotStyle: CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    position: "relative",
+    minWidth: 0,
+    color: "inherit",
+    textDecoration: "none",
+    WebkitTapHighlightColor: "transparent",
+    animation: loading ? "zk-glow 1.6s ease-in-out infinite" : undefined,
+  };
+  const inner = (
+    <>
       {place === 1 && row && (
         <div
           aria-hidden="true"
@@ -177,7 +202,7 @@ function PodiumSlot({ place, row, board, loading }: { place: Place; row?: Leader
           boxShadow: empty ? "none" : c.avatarShadow,
         }}
       >
-        {empty ? (loading ? "" : "?") : initialOf(row.handle)}
+        {empty ? loading ? "" : <Icon icon="plus" size={place === 1 ? 26 : 22} stroke={2.6} /> : initialOf(row.handle)}
       </div>
       <div
         style={{
@@ -190,8 +215,8 @@ function PodiumSlot({ place, row, board, loading }: { place: Place; row?: Leader
         {empty ? (loading ? " " : "Open spot") : atHandle(row.handle)}
         {row?.isYou && <span className="zk-sr-only"> (you)</span>}
       </div>
-      <div style={{ ...ellipsis, font: "var(--zk-type-mono-xs)", color: empty ? "var(--zk-text-faint)" : c.valueColor }}>
-        {empty ? " " : scoreLabel(board, row.score)}
+      <div style={{ ...ellipsis, font: "var(--zk-type-mono-xs)", color: open ? "var(--zk-purple-light)" : empty ? "var(--zk-text-faint)" : c.valueColor }}>
+        {open ? "Take it" : empty ? " " : scoreLabel(board, row.score)}
       </div>
       <div
         aria-hidden="true"
@@ -213,7 +238,14 @@ function PodiumSlot({ place, row, board, loading }: { place: Place; row?: Leader
       >
         {place}
       </div>
-    </div>
+    </>
+  );
+  return open ? (
+    <Link href={hint.href} aria-label={`Open spot number ${place}. ${hint.label} to take it`} style={slotStyle}>
+      {inner}
+    </Link>
+  ) : (
+    <div style={slotStyle}>{inner}</div>
   );
 }
 
@@ -322,10 +354,65 @@ function Card({ children }: { children: ReactNode }) {
   );
 }
 
+/** The whole board is empty (a fresh testnet): make the first move feel like a prize. */
+function FirstOnBoard({ board, period }: { board: Board; period: Period }) {
+  const hint = HINT[board];
+  const when = period === "today" ? "today" : period === "week" ? "this week" : "yet";
+  return (
+    <div
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        marginTop: "var(--zk-space-4)",
+        borderRadius: "var(--zk-radius-2xl)",
+        padding: "var(--zk-space-18)",
+        background: "linear-gradient(160deg, var(--zk-surface-purple), var(--zk-surface) 70%)",
+        border: "1.5px solid rgb(var(--zk-gold-rgb) / .3)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--zk-space-14)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-14)" }}>
+        <div
+          aria-hidden="true"
+          style={
+            {
+              width: 56,
+              height: 56,
+              flex: "none",
+              borderRadius: "var(--zk-radius-lg)",
+              background: "var(--zk-grad-tile-gold)",
+              boxShadow: "var(--zk-inset-gloss), 0 4px 0 var(--zk-gold-deep)",
+              color: "var(--zk-gold-ink)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transform: "rotate(-6deg)",
+              animation: "zk-bob 3s ease-in-out infinite",
+              "--zk-tilt": "-6deg",
+            } as CSSProperties
+          }
+        >
+          <Icon icon="trophy" size={28} stroke={2.4} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={{ margin: 0, font: "var(--zk-type-h3)" }}>Be the first on the board</h2>
+          <p style={{ margin: "var(--zk-space-4) 0 0", font: "var(--zk-type-small)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
+            Nobody’s on it {when}. {hint.first}
+          </p>
+        </div>
+      </div>
+      <Button label={hint.label} icon={board === "hiders" ? "lock" : board === "oracles" ? "ball" : "key"} variant="primary" size="md" href={hint.href} />
+    </div>
+  );
+}
+
 /* ---------- you bar ---------- */
 
 function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; board: Board; ranked: boolean }) {
   const delta = you.deltaThisWeek ?? 0;
+  const hint = HINT[board];
   return (
     <div
       style={{
@@ -345,7 +432,7 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
         zIndex: 12,
       }}
     >
-      <span style={{ font: "var(--zk-type-mono-sm)", flex: "none" }}>{ranked ? `#${you.rank}` : "#–"}</span>
+      {ranked ? <span style={{ font: "var(--zk-type-mono-sm)", flex: "none" }}>#{you.rank}</span> : null}
       <span
         aria-hidden="true"
         style={{
@@ -363,7 +450,14 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
       >
         {initialOf(you.handle)}
       </span>
-      <span style={{ flex: 1, minWidth: 0, font: "var(--zk-type-h4)", ...ellipsis }}>You · {atHandle(you.handle)}</span>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <span style={{ font: "var(--zk-type-h4)", ...ellipsis }}>You · {atHandle(you.handle)}</span>
+        {!ranked ? (
+          <span style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"], color: "var(--zk-purple-pale)" }}>
+            Not ranked yet
+          </span>
+        ) : null}
+      </span>
       {ranked && delta > 0 ? (
         <span
           style={{
@@ -380,16 +474,7 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
           {Math.round(delta).toLocaleString("en-US")} this week
         </span>
       ) : !ranked ? (
-        <span
-          style={{
-            flex: "none",
-            font: "var(--zk-type-caption)",
-            fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
-            color: "var(--zk-purple-pale)",
-          }}
-        >
-          {board === "hiders" ? "Hide one to rank" : "Not ranked yet"}
-        </span>
+        <Button label={hint.short} variant="light" size="sm" full={false} href={hint.href} style={{ height: 44, flex: "none", padding: "0 var(--zk-space-14)" }} />
       ) : null}
     </div>
   );
@@ -411,7 +496,7 @@ export default function LeaderboardScreen() {
       setData((d) => ({ ...d, [k]: lb }));
       setErrors((e) => ({ ...e, [k]: undefined }));
     } catch (err) {
-      setErrors((e) => ({ ...e, [k]: err instanceof Error ? err.message : "Something went wrong." }));
+      setErrors((e) => ({ ...e, [k]: friendlyErr(err) }));
     }
   }, []);
 
@@ -466,7 +551,7 @@ export default function LeaderboardScreen() {
                 aria-selected={on}
                 onClick={() => setBoard(t.id)}
                 style={{
-                  height: 40,
+                  height: 44,
                   border: 0,
                   padding: 0,
                   borderRadius: "var(--zk-radius-lg)",
@@ -500,8 +585,8 @@ export default function LeaderboardScreen() {
                 aria-pressed={on}
                 onClick={() => setPeriod(p.id)}
                 style={{
-                  height: "var(--zk-h-chip-sm)",
-                  padding: "0 var(--zk-space-14)",
+                  height: 44,
+                  padding: "0 var(--zk-space-18)",
                   borderRadius: "var(--zk-radius-pill)",
                   display: "flex",
                   alignItems: "center",
@@ -528,22 +613,23 @@ export default function LeaderboardScreen() {
                 {error}
               </div>
             </div>
-            <Button label="Try again" variant="secondary" size="sm" full={false} onClick={retry} />
+            <Button label="Try again" variant="secondary" size="sm" full={false} onClick={retry} style={{ height: 44 }} />
           </Card>
         ) : (
           <>
+            {!loading && rows.length === 0 ? <FirstOnBoard board={board} period={period} /> : null}
             <Podium rows={rows} board={board} loading={loading} />
             {loading ? (
               <SkeletonRows />
-            ) : rows.length < 3 ? (
+            ) : rows.length === 0 ? null : rows.length < 3 ? (
               <Card>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "var(--zk-type-h4)" }}>Be on the board</div>
+                  <div style={{ font: "var(--zk-type-h4)" }}>Grab a spot on the podium</div>
                   <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-4)" }}>
                     {hint.text}
                   </div>
                 </div>
-                <Button label={hint.label} variant="primary" size="sm" full={false} href={hint.href} />
+                <Button label={hint.short} variant="primary" size="sm" full={false} href={hint.href} style={{ height: 44 }} />
               </Card>
             ) : (
               rows.length > 3 && (

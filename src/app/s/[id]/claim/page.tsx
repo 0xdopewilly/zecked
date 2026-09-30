@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Button, Icon } from "@/components/zk";
 import Claim, { type ClaimProps } from "@/components/screens/Claim";
+import { friendlyError } from "@/components/screens/WinMoment";
 
 type Load =
   | { kind: "loading" }
@@ -38,7 +39,7 @@ export default function ClaimPage() {
     if (detail.status === "rejected") {
       const err = detail.reason as { status?: number; message?: string } | undefined;
       if (err?.status === 404) setLoad({ kind: "none" });
-      else setLoad({ kind: "error", message: err?.message || "Couldn’t load this stash." });
+      else setLoad({ kind: "error", message: friendlyError(detail.reason, "Couldn’t load this stash.") });
       return;
     }
     const { stash, win } = detail.value;
@@ -60,6 +61,7 @@ export default function ClaimPage() {
         credited,
         testMode: stash.testMode,
         victoryMessage: stash.result?.victoryMessage,
+        kind: stash.type,
       },
     });
   }, [id]);

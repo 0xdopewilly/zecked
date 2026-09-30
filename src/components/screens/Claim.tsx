@@ -1,12 +1,15 @@
 "use client";
 // Claim screen. Wins go straight into the winner's in-app ZECKED wallet, so this is no longer a
 // "where should we send it?" form:
-//  · credited (signed-in winner): 08b-style "It's in your ZECKED wallet." + optional victory message,
+//  · credited (signed-in winner): 08b-style "It's in your ZECKED wallet." + optional note for the hider,
 //    "Withdraw to my own wallet", "Share my win", "Back to stashes".
 //  · guest winner: the prize is waiting; sign up (email code) to keep it.
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { api, formatUsd, formatZec } from "@/lib/api";
-import { Badge, Button, Icon, Input, Vault } from "@/components/zk";
+// The win overlay (WinMoment) now carries the note and Share too; this route stays for links and revisits.
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { formatUsd, formatZec } from "@/lib/api";
+import type { StashType } from "@/lib/types";
+import { Badge, Button, Icon, Vault } from "@/components/zk";
+import { TopToast, VictoryNote, shareLink, winShareText } from "@/components/screens/WinMoment";
 
 export interface ClaimProps {
   /** Stash id. */
@@ -18,10 +21,10 @@ export interface ClaimProps {
   testMode?: boolean;
   /** Victory message already on the stash card, if any. */
   victoryMessage?: string;
+  /** Riddle or prediction: "cracked it" vs "called it". */
+  kind?: StashType;
 }
 
-const MESSAGE_MAX = 80;
-const MESSAGE_NOTE = "Shown on the stash card. Your handle stays hidden.";
 /** Long CTA labels keep the big lg button but use the md type size so they never overflow a 360px phone. */
 const LONG_LABEL: CSSProperties = { font: "var(--zk-type-btn-md)" };
 
@@ -46,9 +49,10 @@ const ring = (rgb: string, delay: string): CSSProperties => ({
   animation: `zk-ring 2s var(--zk-ease-out) ${delay} infinite`,
 });
 
-function Hero({ rgb, children }: { rgb: string; children: ReactNode }) {
+/** `shift` nudges the hero right: the open vault's door swings out ~80px to the left, so door + vault read centred. */
+function Hero({ rgb, children, shift = 0 }: { rgb: string; children: ReactNode; shift?: number }) {
   return (
-    <div style={{ alignSelf: "center", position: "relative", width: 140, height: 140, flex: "none" }}>
+    <div style={{ alignSelf: "center", position: "relative", width: 140, height: 140, flex: "none", transform: shift ? `translateX(${shift}px)` : undefined }}>
       <div aria-hidden="true" style={ring(rgb, "0s")} />
       <div aria-hidden="true" style={ring(rgb, "1s")} />
       {children}
@@ -73,85 +77,18 @@ function TestNote() {
       }}
     >
       <Icon icon="flag" size={14} />
-      Test mode: play ZEC on a test network.
+      Test mode: this is test ZEC (no real value).
     </p>
-  );
-}
-
-/* ---------- victory message ---------- */
-
-function VictoryMessage({ id, initial }: { id: string; initial: string }) {
-  const [draft, setDraft] = useState(initial);
-  const [saved, setSaved] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [justSaved, setJustSaved] = useState(false);
-  const [shake, setShake] = useState(0);
-
-  const clean = draft.trim().slice(0, MESSAGE_MAX);
-  const dirty = clean !== saved;
-
-  const save = async () => {
-    if (!dirty || saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      await api.victory(id, clean);
-      setSaved(clean);
-      setDraft(clean);
-      setJustSaved(true);
-    } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : "Couldn’t save that. Try again.");
-      setShake((n) => n + 1);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const count = draft.length >= MESSAGE_MAX - 20 ? ` ${draft.length}/${MESSAGE_MAX}` : "";
-  const message = error
-    ? error
-    : justSaved && !dirty
-      ? clean
-        ? "Saved. It’s on the stash card now."
-        : "Removed from the stash card."
-      : MESSAGE_NOTE + count;
-
-  return (
-    <Input
-      label="Leave a victory message"
-      value={draft}
-      onChange={(v) => {
-        setDraft(v.slice(0, MESSAGE_MAX));
-        setJustSaved(false);
-        if (error) setError("");
-      }}
-      onEnter={() => void save()}
-      placeholder="Say something to the hider…"
-      size="md"
-      maxLength={MESSAGE_MAX}
-      state={error ? "error" : justSaved && !dirty && clean ? "success" : "default"}
-      message={message}
-      shake={shake}
-      trailing={
-        <Button
-          label={saving ? "Saving…" : !dirty && saved ? "Saved" : "Save"}
-          icon={!dirty && saved && !saving ? "check" : undefined}
-          variant="secondary"
-          size="sm"
-          full={false}
-          disabled={!dirty || saving}
-          onClick={() => void save()}
-        />
-      }
-    />
   );
 }
 
 /* ---------- component ---------- */
 
-export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage }: ClaimProps) {
-  const amount = `${formatZec(amountZat)} ZEC · ~${formatUsd(usd)}`;
+export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage, kind }: ClaimProps) {
+  const amount = `${formatZec(amountZat)} ZEC · ~${Number.isInteger(usd) ? `$${usd}` : formatUsd(usd)}`;
+  const [toast, setToast] = useState<{ text: string; n: number } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   /* ---------- guest winner: sign up to keep it ---------- */
 
@@ -163,10 +100,10 @@ export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage }
         style={{
           background: "var(--zk-bg-hero-gold)",
           gap: "var(--zk-space-14)",
-          paddingTop: "calc(env(safe-area-inset-top, 0px) + var(--zk-space-40))",
+          paddingTop: "calc(var(--zk-top-inset) + var(--zk-space-40))",
         }}
       >
-        <Hero rgb="--zk-gold-rgb">
+        <Hero rgb="--zk-gold-rgb" shift={40}>
           <Vault mode="open" size={140} />
         </Hero>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-10)", textAlign: "center", alignItems: "center", marginTop: "var(--zk-space-8)" }}>
@@ -186,7 +123,9 @@ export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage }
             <Icon icon="unlock" size={15} stroke={2.4} />
             {amount}
           </div>
-          <h1 style={{ margin: 0, font: "var(--zk-type-h1)", letterSpacing: "-.01em" }}>You cracked it. Now keep it.</h1>
+          <h1 style={{ margin: 0, font: "var(--zk-type-h1)", letterSpacing: "-.01em" }}>
+            {kind === "prediction" ? "You called it." : "You cracked it."} Now keep it.
+          </h1>
           <p style={{ margin: 0, font: "var(--zk-type-body-lg)", fontWeight: "var(--zk-fw-semibold)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
             Sign up with your email and the ZEC lands in your own ZECKED wallet. Your XP and badges come too.
           </p>
@@ -205,14 +144,14 @@ export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage }
 
   /* ---------- 08b · it's in your ZECKED wallet ---------- */
 
-  const shareWin = () => {
-    const text = `I just ZECKED ${formatZec(amountZat)} ZEC on @PlayZecked 🔓 Nobody knows it was me.`;
+  // The share sheet (or the link copied): first person, and the winner's handle stays out of it.
+  const shareWin = async () => {
     const url = `${window.location.origin}/s/${id}`;
-    window.open(
-      `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const r = await shareLink(url, winShareText(amountZat, kind));
+    if (r !== "copied" && r !== "failed") return;
+    clearTimeout(toastTimer.current);
+    setToast((t) => ({ text: r === "copied" ? "Link copied" : url, n: (t?.n ?? 0) + 1 }));
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
   };
 
   const rows: { k: string; v: ReactNode }[] = [
@@ -235,7 +174,7 @@ export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage }
       style={{
         background: "var(--zk-bg-claimed)",
         gap: "var(--zk-space-14)",
-        paddingTop: "calc(env(safe-area-inset-top, 0px) + var(--zk-space-40))",
+        paddingTop: "calc(var(--zk-top-inset) + var(--zk-space-40))",
       }}
     >
       <Hero rgb="--zk-mint-rgb">
@@ -256,12 +195,13 @@ export function Claim({ id, amountZat, usd, credited, testMode, victoryMessage }
         ))}
       </dl>
       {testMode && <TestNote />}
-      <VictoryMessage id={id} initial={victoryMessage ?? ""} />
+      <VictoryNote id={id} initial={victoryMessage ?? ""} />
       <div style={{ marginTop: "auto", paddingTop: "var(--zk-space-8)", display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>
         <Button label="Withdraw to my own wallet" variant="primary" size="lg" href="/wallet?action=withdraw" style={LONG_LABEL} />
-        <Button label="Share my win" icon="share" variant="secondary" size="md" onClick={shareWin} />
+        <Button label="Share my win" icon="share" variant="secondary" size="md" onClick={() => void shareWin()} />
         <Button label="Back to stashes" variant="ghost" size="md" href="/feed" />
       </div>
+      {toast && <TopToast key={toast.n} text={toast.text} variant="success" icon="copy" />}
     </main>
   );
 }

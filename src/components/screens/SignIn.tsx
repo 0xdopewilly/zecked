@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import { api, formatZec } from "@/lib/api";
+import { api, formatZec, type SignedIn } from "@/lib/api";
+import { useAppBack } from "@/lib/nav";
 import type { AppConfig, AuthStartResult, Player } from "@/lib/types";
 import { Button, Confetti, Icon, Input, Logo, type IconName } from "@/components/zk";
 
@@ -76,13 +77,21 @@ function GoogleG({ size = 20 }: { size?: number }) {
   );
 }
 
-/** Friendly words for the browser's passkey errors. */
+/** Friendly words for passkey errors. Browser/authenticator errors never reach the screen raw; only
+ *  our own server messages (already written for people) pass through. */
 function passkeyError(e: unknown, creating: boolean): Note {
   const name = e instanceof Error ? e.name : "";
-  if (name === "NotAllowedError" || name === "AbortError") return { text: "No worries, nothing was saved. Tap again when you’re ready.", tone: "muted" };
-  if (name === "InvalidStateError") return { text: "This device already has a ZECKED passkey. Tap “Already have a passkey? Sign in”.", tone: "error" };
-  if (name === "SecurityError") return { text: "Passkeys don’t work on this address. Open the app from its main link.", tone: "error" };
-  return { text: errText(e, creating ? "Couldn’t create the passkey. Try again" : "Couldn’t sign in with the passkey. Try again"), tone: "error" };
+  const code = (e as { code?: string } | null)?.code || "";
+  if (name === "NotAllowedError" || name === "AbortError" || code === "ERROR_CEREMONY_ABORTED")
+    return { text: "No worries, nothing was saved. Tap again when you’re ready.", tone: "muted" };
+  if (name === "InvalidStateError" || code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED")
+    return { text: "This device already has a ZECKED passkey. Tap “Already have a passkey? Sign in”.", tone: "error" };
+  if (name === "SecurityError") return { text: "Passkeys don’t work on this address. Open ZECKED from its main link.", tone: "error" };
+  if (name === "NotSupportedError" || code === "ERROR_AUTHENTICATOR_NO_SUPPORTED_PUBKEYCREDPARAMS_ALG")
+    return { text: "This device can’t make a passkey. Try your phone, or continue with Google.", tone: "error" };
+  const browserSide = e instanceof DOMException || name === "WebAuthnError" || /^ERROR_/.test(code);
+  const fallback = creating ? "Couldn’t create the passkey. Try again" : "Couldn’t sign in with the passkey. Try again";
+  return { text: browserSide ? fallback : errText(e, fallback), tone: "error" };
 }
 
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
@@ -203,7 +212,7 @@ export default function SignIn() {
   const [now, setNow] = useState(0);
 
   // success
-  const [done, setDone] = useState<{ player: Player; creditedZat: number } | null>(null);
+  const [done, setDone] = useState<SignedIn | null>(null);
 
   const boxes = useRef<(HTMLInputElement | null)[]>([]);
   const busyVerify = useRef(false);
@@ -233,7 +242,7 @@ export default function SignIn() {
         .me()
         .then(({ player }) => {
           if (!player.account?.signedIn) return;
-          setDone({ player, creditedZat: credited });
+          setDone({ player, creditedZat: credited, isNew: params.get("welcome") === "new" });
           setStep("done");
         })
         .catch(() => {});
@@ -272,7 +281,8 @@ export default function SignIn() {
   // Success: head back to where they came from.
   useEffect(() => {
     if (step !== "done") return;
-    const t = setTimeout(() => leave(true), REDIRECT_MS);
+    // New accounts get a beat longer, to spot "Change your name".
+    const t = setTimeout(() => leave(true), done?.isNew ? 2800 : REDIRECT_MS);
     return () => clearTimeout(t);
     // `leave` only reads `next`, which is fixed for this screen.
   }, [step]);
@@ -456,6 +466,7 @@ export default function SignIn() {
     setEmailError("");
   };
 
+  const appBack = useAppBack(next);
   const goBack = () => {
     if (step === "code") return differentEmail();
     if (step === "email") {
@@ -463,8 +474,7 @@ export default function SignIn() {
       setEmailError("");
       return;
     }
-    if (typeof window !== "undefined" && window.history.length > 1) router.back();
-    else router.replace(next);
+    appBack();
   };
 
   /* ---------- render ---------- */
@@ -557,9 +567,24 @@ export default function SignIn() {
               <Icon icon="coin" size={16} stroke={2.4} />+{formatZec(done.creditedZat)} ZEC added to your wallet
             </div>
           )}
-          <p style={{ margin: 0, font: "var(--zk-type-body-lg)", fontWeight: "var(--zk-fw-semibold)", color: "var(--zk-text-muted)" }}>
-            Your XP and badges came along. Taking you back…
+          <p style={{ margin: 0, font: "var(--zk-type-body-lg)", fontWeight: "var(--zk-fw-semibold)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
+            {done.isNew
+              ? done.player.xp > 0
+                ? "Your account is ready, and your XP and badges came along."
+                : "Your account is ready. Your wallet too."
+              : "Welcome back!"}
           </p>
+          {done.isNew && (
+            <a
+              href="/me"
+              onClick={() => {
+                left.current = true;
+              }}
+              style={{ font: "var(--zk-type-small)", color: "var(--zk-gold)", textDecoration: "underline", textUnderlineOffset: 3, minHeight: "var(--zk-tap-min)", display: "inline-flex", alignItems: "center" }}
+            >
+              Not feeling {handle}? Change your name
+            </a>
+          )}
         </div>
         <div style={{ position: "relative", zIndex: 6 }}>
           <Button label="Continue" iconRight="arrowRight" variant="primary" size="lg" onClick={() => leave(true)} />

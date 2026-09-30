@@ -1,5 +1,5 @@
 // Single API entrypoint (one serverless function → one warm memory store in demo mode).
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import {
   appConfig,
   checkFunding,
@@ -28,6 +28,8 @@ import { SIM_WELCOME_BONUS_ZAT, balanceOf, credit, simulateDeposit, walletInfo, 
 import { ensureSeeded } from "@/lib/server/seed";
 import { upcomingMatches } from "@/lib/server/sports";
 import { kv } from "@/lib/server/kv";
+import { notices } from "@/lib/server/notify";
+import { houseAdmin, houseStatus, houseTopUpSim, maybeHouseDrop, welcomeGift } from "@/lib/server/house";
 import { HttpError } from "@/lib/server/util";
 import { networkName } from "@/lib/zcash/engine";
 
@@ -65,10 +67,12 @@ function safePath(raw: string | null | undefined) {
 }
 
 /** Every sign-in method ends here: first-account perks, pending wins credited, and a fresh session. */
-async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: string) {
+async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: string, ip: string) {
+  let gift = 0;
   if (isNew) await kv().incr("stats:accounts");
-  if (isNew && networkName() === "sim") await credit(account.id, SIM_WELCOME_BONUS_ZAT, "bonus", "Test-mode welcome bonus 🎁");
-  const creditedZat = await creditPendingClaims(account);
+  if (isNew && networkName() === "sim" && process.env.ZECKED_HOUSE !== "on") await credit(account.id, (gift = SIM_WELCOME_BONUS_ZAT), "bonus", "Test-mode welcome bonus 🎁");
+  else if (isNew) gift = await welcomeGift(account, ip).catch(() => 0);
+  const creditedZat = (await creditPendingClaims(account)) + gift;
   await destroySession(oldSid);
   const sid = await createSession(account.id);
   return { creditedZat, sid };
@@ -114,7 +118,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
     if (a === "auth" && b === "email" && c === "verify" && method === "POST") {
       const { email, code } = await body<{ email: string; code: string }>(req);
       const { player: account, isNew } = await verifyEmailSignIn(email, code, player);
-      const done = await finishSignIn(account, isNew, sid);
+      const done = await finishSignIn(account, isNew, sid, ip);
       return json({ player: await pub(account), creditedZat: done.creditedZat, isNew }, { sid: done.sid, setCookie: true });
     }
 
@@ -128,7 +132,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
         const { response } = await body<{ response: never }>(req);
         const { player: account, isNew } =
           c === "register" ? await passkeyRegisterVerify(player, sid, rp, response) : await passkeyLoginVerify(player, sid, rp, response);
-        const done = await finishSignIn(account, isNew, sid);
+        const done = await finishSignIn(account, isNew, sid, ip);
         return json({ player: await pub(account), creditedZat: done.creditedZat, isNew }, { sid: done.sid, setCookie: true });
       }
     }
@@ -151,7 +155,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
         }
         try {
           const { player: account, isNew, next } = await googleCallback(player, sid, q.get("code")!, q.get("state")!);
-          const done = await finishSignIn(account, isNew, sid);
+          const done = await finishSignIn(account, isNew, sid, ip);
           const to = back({ welcome: isNew ? "new" : "back", next, ...(done.creditedZat ? { c: String(done.creditedZat) } : {}) });
           return withCookie(NextResponse.redirect(to, 302), done.sid, true);
         } catch (e) {
@@ -165,6 +169,26 @@ async function handle(req: NextRequest, ctx: Ctx) {
       const res = json({ ok: true });
       res.cookies.set(SID, "", { path: "/", maxAge: 0 });
       return res;
+    }
+
+    // ---- owner: the house account (top-up address, balance, force a drop) ----
+    if (a === "admin" && b === "house") {
+      const token = process.env.ZECKED_ADMIN_TOKEN;
+      const given = req.headers.get("x-admin-token") || req.nextUrl.searchParams.get("token");
+      if (!token || given !== token) return json({ error: "Not found" }, { status: 404 });
+      if (!c && method === "GET") return json(await houseAdmin());
+      if (c === "drop" && method === "POST") {
+        const s = await maybeHouseDrop(true);
+        return json({ dropped: s ? s.id : null });
+      }
+      if (c === "topup" && method === "POST" && networkName() === "sim") {
+        return json({ balanceZat: await houseTopUpSim(Number(req.nextUrl.searchParams.get("zat") || 10_000_000)) });
+      }
+    }
+
+    // ---- notices ----
+    if (a === "notifications" && method === "GET") {
+      return out({ items: await notices(player.id, req.nextUrl.searchParams.get("after")), now: new Date().toISOString() });
     }
 
     // ---- wallet ----
@@ -210,7 +234,12 @@ async function handle(req: NextRequest, ctx: Ctx) {
     if (a === "matches" && method === "GET") return out({ matches: await upcomingMatches(5, networkName() === "sim") });
 
     if (a === "stashes" && !b) {
-      if (method === "GET") return out({ stashes: await feed(req.nextUrl.searchParams.get("filter") || "all", player.id) });
+      if (method === "GET") {
+        // Keep the feed alive: hide the next house riddle when one is due (after the response is sent).
+        after(() => maybeHouseDrop().catch((e) => console.error("house drop", (e as Error).message)));
+        const [stashes, house] = await Promise.all([feed(req.nextUrl.searchParams.get("filter") || "all", player.id), houseStatus().catch(() => null)]);
+        return out({ stashes, house });
+      }
       if (method === "POST") {
         const s = await createStash(player, await body(req));
         return out({ stash: await toPublic(s, player.id) }, 201);

@@ -1,13 +1,16 @@
 "use client";
 // Screen 10 · Profile. Avatar + editable handle, account card (signed in: email, ZECKED wallet
-// balance, sign out; guest: sign up), tier card with XP bar, 5 stats, badge grid, and a
-// "My stashes" list (hider dashboard).
+// balance, sign out; guest: sign up), tier card with XP bar, 5 stats (tap one to learn what it
+// counts), badge grid, a "My stashes" list (hider dashboard) and Settings.
 import Link from "next/link";
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { api, formatUsd, formatZec } from "@/lib/api";
 import type { BadgeId, Player, PublicStash } from "@/lib/types";
 import { ZAT } from "@/lib/types";
-import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar } from "@/components/zk";
+import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar, Toast } from "@/components/zk";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { isMuted, setMuted } from "@/lib/sfx";
 
@@ -23,15 +26,58 @@ const ALL_BADGES: BadgeId[] = [
 
 const HANDLE_RE = /^[A-Za-z0-9_]{2,20}$/;
 const HANDLE_HINT = "Handles are 2–20 letters, numbers or _";
+/** The server's random first handles ("@velvettiger", "@quietkey430", "@cracker123456"). */
+const GENERATED_HANDLE_RE =
+  /^@?(?:(?:night|quiet|shadow|ghost|zero|gold|vault|cipher|silent|lucky|neon|velvet|hidden|sly|misty)(?:owl|fox|key|cat|raven|lynx|wolf|moth|otter|hawk|viper|tiger|panda|koala|zebra)(?:\d{3})?|cracker\d+)$/i;
 
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
 const atHandle = (h: string) => (h.startsWith("@") ? h : `@${h}`);
 const initialOf = (h: string) => (h.replace(/^@+/, "")[0] || "?").toUpperCase();
 
+/** Friendly copy for a failed request: never the raw browser text ("Failed to fetch", "Request failed (500)"). */
+function friendlyErr(e: unknown, fallback: string): string {
+  const status = (e as { status?: number } | null)?.status;
+  if (status == null) return "Can’t reach ZECKED. Check your connection and try again.";
+  if (status >= 500) return fallback;
+  const m = e instanceof Error ? e.message : "";
+  return m && !/^Request failed/i.test(m) ? (/[.!?]$/.test(m) ? m : `${m}.`) : fallback;
+}
+
 function sinceLabel(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * A toast that outlives this screen (sign-out navigates to the feed): rendered into its own root on
+ * <body>, at the top, then removed.
+ */
+function toastAcrossNavigation(text: string) {
+  if (typeof document === "undefined") return;
+  const host = document.createElement("div");
+  host.setAttribute("aria-live", "polite");
+  Object.assign(host.style, {
+    position: "fixed",
+    left: "50%",
+    top: "calc(var(--zk-fixed-top) + var(--zk-space-12))",
+    width: "min(394px, calc(100vw - 24px))",
+    transform: "translateX(-50%)",
+    zIndex: "86",
+    pointerEvents: "none",
+    transition: "opacity var(--zk-dur-base) var(--zk-ease-out), transform var(--zk-dur-base) var(--zk-ease-out)",
+  } satisfies Partial<CSSStyleDeclaration>);
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  root.render(<Toast text={text} variant="default" icon="user" />);
+  setTimeout(() => {
+    host.style.opacity = "0";
+    host.style.transform = "translateX(-50%) translateY(-8px)";
+  }, 2600);
+  setTimeout(() => {
+    root.unmount();
+    host.remove();
+  }, 3000);
 }
 
 /** Pencil glyph drawn in the ZK Icon style (24px grid, 2px round strokes). The icon set has no pencil. */
@@ -56,8 +102,8 @@ function PencilGlyph({ size = 16 }: { size?: number }) {
 }
 
 const squareBtn: CSSProperties = {
-  width: 40,
-  height: 40,
+  width: 44,
+  height: 44,
   flex: "none",
   borderRadius: "var(--zk-radius-md)",
   background: "var(--zk-surface)",
@@ -69,6 +115,9 @@ const squareBtn: CSSProperties = {
   padding: 0,
   cursor: "pointer",
 };
+
+/** Small buttons keep the design's 40px look elsewhere; here they get the full 44px tap height. */
+const TAP_44: CSSProperties = { height: 44 };
 
 const sectionHead = (title: string, meta?: ReactNode) => (
   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -114,21 +163,23 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
       onSaved(p);
       setEditing(false);
     } catch (e) {
-      fail(e instanceof Error ? e.message : "Couldn’t save that handle.");
+      fail(friendlyErr(e, "Couldn’t save that handle. Try again."));
     } finally {
       setSaving(false);
     }
   };
 
   const since = sinceLabel(player.createdAt);
+  // A handle the server picked at random: nudge people to make it theirs.
+  const generated = GENERATED_HANDLE_RE.test(player.handle);
 
   return (
-    <div style={{ display: "flex", alignItems: editing ? "flex-start" : "center", gap: "var(--zk-space-12)" }}>
+    <div style={{ display: "flex", alignItems: editing ? "flex-start" : "center", gap: "var(--zk-space-10)" }}>
       <div
         aria-hidden="true"
         style={{
-          width: 52,
-          height: 52,
+          width: "clamp(44px, 13.4vw, 52px)",
+          height: "clamp(44px, 13.4vw, 52px)",
           flex: "none",
           borderRadius: "50%",
           background: "var(--zk-grad-tile-purple)",
@@ -157,8 +208,8 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
                 if (error) setError("");
               }}
               onEnter={save}
-              placeholder="@yourhandle"
-              label="Your handle"
+              placeholder="@yourname"
+              label="Your name on ZECKED"
               size="sm"
               state={error ? "error" : "default"}
               message={error || "2–20 letters, numbers or _"}
@@ -176,48 +227,68 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
                 size="sm"
                 full={false}
                 disabled={saving}
+                sfx="success"
                 onClick={save}
+                style={TAP_44}
               />
-              <Button label="Cancel" variant="ghost" size="sm" full={false} onClick={cancel} />
+              <Button label="Cancel" variant="ghost" size="sm" full={false} onClick={cancel} style={TAP_44} />
             </div>
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)", minWidth: 0 }}>
-              <h1
-                style={{
-                  margin: 0,
-                  font: "var(--zk-type-h3)",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  minWidth: 0,
-                }}
-              >
-                {atHandle(player.handle)}
-              </h1>
+            {/* The name and the pencil are one 44px-tall button: tap anywhere on your name to change it. */}
+            <h1 style={{ margin: 0, minWidth: 0, display: "flex" }}>
               <button
                 type="button"
                 onClick={start}
-                aria-label="Edit handle"
+                aria-label={`${atHandle(player.handle)}. Change your name`}
                 style={{
-                  flex: "none",
-                  width: 28,
-                  height: 28,
-                  borderRadius: "var(--zk-radius-sm)",
-                  background: "var(--zk-surface)",
-                  color: "var(--zk-text-muted)",
-                  border: 0,
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  minHeight: 44,
+                  margin: "-4px 0",
                   padding: 0,
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--zk-text)",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
+                  gap: "var(--zk-space-2)",
                   cursor: "pointer",
+                  textAlign: "left",
+                  WebkitTapHighlightColor: "transparent",
                 }}
               >
-                <PencilGlyph size={15} />
+                <span
+                  style={{
+                    font: "var(--zk-fw-black) clamp(16px, 5vw, var(--zk-fs-20))/var(--zk-lh-snug) var(--zk-font-display)",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    minWidth: 0,
+                  }}
+                >
+                  {atHandle(player.handle)}
+                </span>
+                <span aria-hidden="true" style={{ width: 40, height: 44, flex: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "var(--zk-radius-sm)",
+                      background: generated ? "var(--zk-purple)" : "var(--zk-surface)",
+                      color: generated ? "var(--zk-text)" : "var(--zk-text-muted)",
+                      boxShadow: generated ? "0 3px 0 var(--zk-purple-deep)" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <PencilGlyph size={15} />
+                  </span>
+                </span>
               </button>
-            </div>
+            </h1>
             <div
               style={{
                 display: "flex",
@@ -228,14 +299,23 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
                 flexWrap: "wrap",
               }}
             >
-              {since && <>Zecking since {since}</>}
-              {player.shielded && (
+              {generated ? (
+                <span style={{ color: "var(--zk-purple-light)" }}>We picked a random name. Tap it to choose yours.</span>
+              ) : (
                 <>
-                  {since && " · "}
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--zk-space-2)", color: "var(--zk-mint)" }}>
-                    Shielded
-                    <Icon icon="check" size={12} stroke={3} />
-                  </span>
+                  {since && <>Zecking since {since}</>}
+                  {player.shielded && (
+                    <>
+                      {since && " · "}
+                      <span
+                        title="You’ve sent ZEC to a private wallet address"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "var(--zk-space-2)", color: "var(--zk-mint)" }}
+                      >
+                        Private
+                        <Icon icon="check" size={12} stroke={3} />
+                      </span>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -244,11 +324,114 @@ function IdentityRow({ player, onSaved }: { player: Player; onSaved: (p: Player)
       </div>
 
       {!editing && (
-        <Link href="/how" aria-label="How it works" style={squareBtn}>
+        <Link href="/how" aria-label="How it works" style={squareBtn} transitionTypes={["nav-forward"]}>
           <Icon icon="info" size={18} />
         </Link>
       )}
     </div>
+  );
+}
+
+/* ---------- sign-out confirmation ---------- */
+
+function signBackInWith(via: Player["account"]["via"]): string {
+  const ways = (via || []).map((v) => (v === "google" ? "Google" : v === "passkey" ? "your passkey" : "your email"));
+  const uniq = [...new Set(ways)];
+  if (!uniq.length) return "You can sign back in any time.";
+  const list = uniq.length > 1 ? `${uniq.slice(0, -1).join(", ")} or ${uniq[uniq.length - 1]}` : uniq[0];
+  return `You can sign back in with ${list}.`;
+}
+
+function SignOutSheet({
+  via,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  via: Player["account"]["via"];
+  busy: boolean;
+  error: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const titleId = useId();
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    sheetRef.current?.querySelector<HTMLElement>("button")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus?.();
+    };
+  }, [onCancel]);
+
+  return createPortal(
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 90,
+        background: "rgb(var(--zk-black-rgb) / .55)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        animation: "zk-vt-fade-in var(--zk-dur-base) var(--zk-ease-out) both",
+      }}
+    >
+      <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 430,
+          boxSizing: "border-box",
+          background: "var(--zk-surface)",
+          borderRadius: "var(--zk-radius-3xl) var(--zk-radius-3xl) 0 0",
+          border: "1px solid var(--zk-border)",
+          borderBottom: 0,
+          boxShadow: "var(--zk-shadow-float)",
+          padding: "var(--zk-space-20) var(--zk-space-18) calc(env(safe-area-inset-bottom, 0px) + var(--zk-space-18))",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--zk-space-14)",
+          color: "var(--zk-text)",
+          fontFamily: "var(--zk-font-body)",
+          animation: "zk-vt-rise var(--zk-dur-base) var(--zk-ease-out) both",
+        }}
+      >
+        <div aria-hidden="true" style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 2, background: "var(--zk-border-strong)", marginTop: -6 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-12)" }}>
+          <div style={tile("var(--zk-purple-tint)", "var(--zk-purple-light)", 44)}>
+            <Icon icon="user" size={22} stroke={2.4} />
+          </div>
+          <h2 id={titleId} style={{ margin: 0, font: "var(--zk-type-h3)" }}>
+            Sign out?
+          </h2>
+        </div>
+        <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
+          {signBackInWith(via)} Your ZEC, XP and badges stay safe in your account.
+        </p>
+        {error ? (
+          <span role="alert" style={{ font: "var(--zk-type-caption)", color: "var(--zk-red)" }}>
+            {error}
+          </span>
+        ) : null}
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-10)", marginTop: "var(--zk-space-4)" }}>
+          <Button label="Stay signed in" variant="secondary" size="md" onClick={onCancel} />
+          <Button label={busy ? "Signing out…" : "Sign out"} variant="ghost" size="md" disabled={busy} sfx="whoosh" onClick={onConfirm} />
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -276,8 +459,10 @@ const tile = (bg: string, fg: string, size = 40): CSSProperties => ({
 });
 
 function AccountCard({ player }: { player: Player }) {
+  const router = useRouter();
   const signedIn = !!player.account?.signedIn;
   const [zecUsd, setZecUsd] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -297,15 +482,23 @@ function AccountCard({ player }: { player: Player }) {
     };
   }, [signedIn]);
 
+  const closeSheet = useCallback(() => {
+    if (!leaving) {
+      setConfirming(false);
+      setError("");
+    }
+  }, [leaving]);
+
   const signOut = async () => {
     if (leaving) return;
     setLeaving(true);
     setError("");
     try {
       await api.logout();
-      window.location.reload();
+      toastAcrossNavigation("Signed out. You’re browsing as a guest.");
+      router.push("/feed", { transitionTypes: ["nav-back"] });
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : "Couldn’t sign you out. Try again.");
+      setError(friendlyErr(e, "Couldn’t sign you out. Try again."));
       setLeaving(false);
     }
   };
@@ -338,39 +531,37 @@ function AccountCard({ player }: { player: Player }) {
         <div style={tile("var(--zk-mint-tint)", "var(--zk-mint)", 32)}>
           <Icon icon="shieldCheck" size={17} stroke={2.4} />
         </div>
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            font: "var(--zk-type-small)",
-            color: "var(--zk-text-muted)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+          <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
+            {player.account.email
+              ? "Signed in as"
+              : player.account.via?.includes("google")
+                ? "Signed in with Google"
+                : player.account.via?.includes("passkey")
+                  ? "Signed in with a passkey"
+                  : "Signed in"}
+          </span>
           {player.account.email ? (
-            <>
-              Signed in as <span style={{ color: "var(--zk-text)", fontWeight: "var(--zk-fw-bold)" }}>{player.account.email}</span>
-            </>
-          ) : player.account.via?.includes("passkey") ? (
-            "Signed in with a passkey"
-          ) : (
-            "Signed in"
-          )}
+            <span
+              style={{
+                font: "var(--zk-type-small)",
+                fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
+                color: "var(--zk-text)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {player.account.email}
+            </span>
+          ) : null}
         </div>
-        <Button
-          label={leaving ? "Signing out…" : "Sign out"}
-          variant="ghost"
-          size="sm"
-          full={false}
-          disabled={leaving}
-          onClick={() => void signOut()}
-        />
+        <Button label="Sign out" variant="ghost" size="sm" full={false} sfx="whoosh" onClick={() => setConfirming(true)} style={TAP_44} />
       </div>
 
       <Link
         href="/wallet"
+        transitionTypes={["nav-forward"]}
         style={{
           display: "flex",
           alignItems: "center",
@@ -388,7 +579,7 @@ function AccountCard({ player }: { player: Player }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ font: "var(--zk-type-h4)" }}>ZECKED wallet</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-6)", marginTop: "var(--zk-space-2)", whiteSpace: "nowrap" }}>
-            <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)" }}>{formatZec(bal)} ZEC</span>
+            <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)" }}>{formatZec(bal, 8)} ZEC</span>
             {usd && <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>~{usd}</span>}
           </div>
         </div>
@@ -397,19 +588,18 @@ function AccountCard({ player }: { player: Player }) {
         </span>
       </Link>
 
-      {error && (
-        <span role="alert" style={{ font: "var(--zk-type-caption)", color: "var(--zk-red)" }}>
-          {error}
-        </span>
-      )}
+      {confirming ? (
+        <SignOutSheet via={player.account.via} busy={leaving} error={error} onCancel={closeSheet} onConfirm={() => void signOut()} />
+      ) : null}
     </section>
   );
 }
 
 /* ---------- settings ---------- */
 
-const settingRow: CSSProperties = { display: "flex", alignItems: "center", gap: "var(--zk-space-12)", minHeight: 52 };
+const settingRow: CSSProperties = { display: "flex", alignItems: "center", gap: "var(--zk-space-12)", minHeight: 60, padding: "var(--zk-space-8) 0" };
 
+/** iOS-style switch: a 52×32 track inside a 44px-tall tap area. */
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
@@ -417,35 +607,56 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
       role="switch"
       aria-checked={on}
       aria-label={label}
+      data-sfx="none"
       onClick={() => onChange(!on)}
       style={{
-        width: 52,
-        height: 32,
+        width: 60,
+        height: 44,
         flex: "none",
-        borderRadius: 999,
         border: 0,
-        padding: 3,
+        padding: 0,
+        background: "transparent",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
         cursor: "pointer",
-        background: on ? "var(--zk-mint)" : "var(--zk-surface-raised)",
-        boxShadow: on ? "inset 0 -2px 0 var(--zk-mint-deep)" : "inset 0 0 0 1.5px var(--zk-border-strong)",
-        transition: "background var(--zk-dur-fast) var(--zk-ease-out)",
         WebkitTapHighlightColor: "transparent",
       }}
     >
       <span
         style={{
-          display: "block",
-          width: 26,
-          height: 26,
-          borderRadius: "50%",
-          background: "#fff",
-          boxShadow: "0 2px 4px rgb(0 0 0 / .3)",
-          transform: on ? "translateX(20px)" : "none",
-          transition: "transform var(--zk-dur-fast) var(--zk-ease-spring)",
+          width: 52,
+          height: 32,
+          boxSizing: "border-box",
+          borderRadius: 999,
+          padding: 3,
+          background: on ? "var(--zk-mint)" : "var(--zk-surface-raised)",
+          boxShadow: on ? "inset 0 -2px 0 var(--zk-mint-deep)" : "inset 0 0 0 1.5px var(--zk-border-strong)",
+          transition: "background var(--zk-dur-fast) var(--zk-ease-out)",
         }}
-      />
+      >
+        <span
+          style={{
+            display: "block",
+            width: 26,
+            height: 26,
+            borderRadius: "50%",
+            background: "#fff",
+            boxShadow: "0 2px 4px rgb(0 0 0 / .3)",
+            transform: on ? "translateX(20px)" : "none",
+            transition: "transform var(--zk-dur-fast) var(--zk-ease-spring)",
+          }}
+        />
+      </span>
     </button>
   );
+}
+
+function passkeyError(e: unknown): string {
+  const name = e instanceof Error ? e.name : "";
+  if (name === "NotAllowedError" || name === "AbortError") return "No passkey added.";
+  if (name === "InvalidStateError") return "This device already has a passkey for ZECKED.";
+  return friendlyErr(e, "Couldn’t add the passkey. Try again.");
 }
 
 function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player) => void }) {
@@ -459,7 +670,8 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
   }, []);
   const via = player.account?.via || [];
   const signedIn = !!player.account?.signedIn;
-  const methods = via.map((v) => (v === "google" ? "Google" : v === "passkey" ? "Passkey" : "Email")).join(" · ");
+  const methods = [...new Set(via.map((v) => (v === "google" ? "Google" : v === "passkey" ? "Passkey" : "Email")))].join(" · ");
+  const hasPasskey = via.includes("passkey");
 
   const addPasskey = async () => {
     if (adding) return;
@@ -472,62 +684,72 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
       onSaved(r.player);
       setNote({ text: "Passkey added. Next time, just use Face ID or your fingerprint.", ok: true });
     } catch (e) {
-      const name = e instanceof Error ? e.name : "";
-      setNote({
-        text: name === "NotAllowedError" || name === "AbortError" ? "No passkey added." : e instanceof Error && e.message ? e.message : "Couldn’t add the passkey.",
-        ok: false,
-      });
+      setNote({ text: passkeyError(e), ok: false });
     } finally {
       setAdding(false);
     }
   };
 
   return (
-    <section aria-label="Settings" style={{ ...accountCard, gap: 0 }}>
+    <section aria-label="Settings" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)", marginTop: "var(--zk-space-8)" }}>
       {sectionHead("Settings")}
-      <div style={{ ...settingRow, marginTop: "var(--zk-space-6)" }}>
-        <div style={tile("var(--zk-sky-tint)", "var(--zk-sky)", 36)}>
-          <Icon icon="bell" size={18} stroke={2.4} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: "var(--zk-type-h4)" }}>Sounds</div>
-          <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>Pops, confetti and wins</div>
-        </div>
-        <Switch
-          label="Sounds"
-          on={soundOn}
-          onChange={(v) => {
-            setSoundOn(v);
-            setMuted(!v);
-          }}
-        />
-      </div>
-      {signedIn && (
-        <div style={{ ...settingRow, borderTop: "1px solid var(--zk-border)" }}>
-          <div style={tile("var(--zk-mint-tint)", "var(--zk-mint)", 36)}>
-            <Icon icon="passkey" size={18} stroke={2.4} />
+      <div style={{ ...accountCard, gap: 0, padding: "var(--zk-space-4) var(--zk-space-16)" }}>
+        <div style={settingRow}>
+          <div style={tile("var(--zk-sky-tint)", "var(--zk-sky)", 40)}>
+            <Icon icon="bell" size={19} stroke={2.4} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "var(--zk-type-h4)" }}>Sign-in</div>
-            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>{methods || "Signed in"}</div>
+            <div style={{ font: "var(--zk-type-h4)" }}>Sounds</div>
+            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>Pops, confetti and wins</div>
           </div>
-          {canPasskey && (
-            <Button
-              label={adding ? "Adding…" : via.includes("passkey") ? "Add another" : "Add a passkey"}
-              variant="ghost"
-              size="sm"
-              full={false}
-              disabled={adding}
-              onClick={() => void addPasskey()}
-            />
-          )}
+          <Switch
+            label="Sounds"
+            on={soundOn}
+            onChange={(v) => {
+              setSoundOn(v);
+              setMuted(!v);
+            }}
+          />
         </div>
-      )}
-      {note && (
-        <span role="status" style={{ font: "var(--zk-type-caption)", color: note.ok ? "var(--zk-mint)" : "var(--zk-text-muted)", paddingBottom: "var(--zk-space-4)" }}>
-          {note.text}
-        </span>
-      )}
+        {signedIn && (
+          <div style={{ borderTop: "1px solid var(--zk-border)" }}>
+            <div style={settingRow}>
+              <div style={tile("var(--zk-mint-tint)", "var(--zk-mint)", 40)}>
+                <Icon icon="passkey" size={19} stroke={2.4} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ font: "var(--zk-type-h4)" }}>Sign-in methods</div>
+                <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)" }}>
+                  {methods || "Signed in"}
+                </div>
+              </div>
+            </div>
+            {canPasskey && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "var(--zk-space-10)", padding: "0 0 var(--zk-space-14) 52px" }}>
+                {note ? (
+                  <p role="status" style={{ margin: 0, font: "var(--zk-type-caption)", color: note.ok ? "var(--zk-mint)" : "var(--zk-text-muted)", textWrap: "pretty" }}>
+                    {note.text}
+                  </p>
+                ) : !hasPasskey ? (
+                  <p style={{ margin: 0, font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
+                    Sign in with Face ID or your fingerprint next time. No codes, no passwords.
+                  </p>
+                ) : null}
+                <Button
+                  label={adding ? "Adding…" : hasPasskey ? "Add another passkey" : "Add a passkey"}
+                  icon={adding ? undefined : "plus"}
+                  variant={hasPasskey ? "ghost" : "secondary"}
+                  size="sm"
+                  full={false}
+                  disabled={adding}
+                  onClick={() => void addPasskey()}
+                  style={TAP_44}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -638,43 +860,114 @@ function TierCard({ player }: { player: Player }) {
 
 /* ---------- stats + badges ---------- */
 
+type StatKey = "cracked" | "hidden" | "uncrackable" | "oracle" | "streak";
+
 function Stats({ player }: { player: Player }) {
   const s = player.stats;
-  const stats = [
-    { v: String(s.cracked), l: "Cracked", c: "var(--zk-gold)" },
-    { v: String(s.hidden), l: "Hidden", c: "var(--zk-pink)" },
-    { v: String(s.uncrackable), l: "Uncrackable", c: "var(--zk-purple-light)" },
-    { v: String(s.oracle), l: "Oracle", c: "var(--zk-sky)" },
-    { v: `${s.streak}🔥`, l: "Streak", c: "var(--zk-text)" },
+  const [open, setOpen] = useState<StatKey | null>(null);
+  const noteId = useId();
+  const stats: { k: StatKey; v: ReactNode; l: string; c: string; about: string }[] = [
+    { k: "cracked", v: s.cracked, l: "Cracked", c: "var(--zk-gold)", about: "Stashes you won: riddles you cracked first and matches you called first." },
+    { k: "hidden", v: s.hidden, l: "Hidden", c: "var(--zk-pink)", about: "Stashes you hid for other players to crack." },
+    {
+      k: "uncrackable",
+      v: s.uncrackable,
+      l: "Uncrackable",
+      c: "var(--zk-purple-light)",
+      about: "Your stashes nobody cracked before time ran out. The ZEC came back to you.",
+    },
+    { k: "oracle", v: s.oracle, l: "Oracle", c: "var(--zk-sky)", about: "Exact match scores you called right. Three unlock the Oracle badge." },
+    {
+      k: "streak",
+      v: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+          <Icon icon="flame" size={18} filled stroke={1.5} color="var(--zk-pink)" />
+          {s.streak}
+        </span>
+      ),
+      l: "Streak",
+      c: "var(--zk-text)",
+      about:
+        s.streak > 0
+          ? `${s.streak} ${s.streak === 1 ? "day" : "days"} in a row of playing. Guess a riddle, call a match or hide a stash each day to keep it going. Miss a day and it starts over.`
+          : "Days in a row you’ve played. Guess a riddle, call a match or hide a stash each day to build it up.",
+    },
   ];
+  const current = stats.find((st) => st.k === open);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "var(--zk-space-6)" }}>
-      {stats.map((st) => (
-        <div
-          key={st.l}
-          style={{
-            background: "var(--zk-surface)",
-            borderRadius: "var(--zk-radius-lg)",
-            padding: "var(--zk-space-10) var(--zk-space-4)",
-            textAlign: "center",
-            minWidth: 0,
-          }}
-        >
-          <div style={{ font: "var(--zk-fw-black) var(--zk-fs-22)/1 var(--zk-font-display)", color: st.c }}>{st.v}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
+      <div style={{ display: "flex", gap: "clamp(3px, 1.2vw, var(--zk-space-6))" }}>
+        {stats.map((st) => {
+          const on = open === st.k;
+          return (
+            <button
+              key={st.k}
+              type="button"
+              aria-expanded={on}
+              aria-controls={noteId}
+              aria-label={`${st.l}: ${st.k === "streak" ? `${s.streak} day${s.streak === 1 ? "" : "s"}` : st.v}. What’s this?`}
+              data-sfx="tap"
+              onClick={() => setOpen(on ? null : st.k)}
+              style={{
+                flex: "1 1 auto",
+                minWidth: 0,
+                minHeight: 60,
+                margin: 0,
+                background: on ? "var(--zk-surface-raised)" : "var(--zk-surface)",
+                border: 0,
+                boxShadow: on ? `inset 0 0 0 1.5px ${st.c === "var(--zk-text)" ? "var(--zk-pink)" : st.c}` : "none",
+                borderRadius: "var(--zk-radius-lg)",
+                padding: "var(--zk-space-10) 3px",
+                textAlign: "center",
+                color: "var(--zk-text)",
+                cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+                transition: "background var(--zk-dur-fast) var(--zk-ease-out)",
+              }}
+            >
+              <span style={{ display: "block", font: "var(--zk-fw-black) var(--zk-fs-22)/1 var(--zk-font-display)", color: st.c }}>{st.v}</span>
+              <span
+                style={{
+                  display: "block",
+                  font: "var(--zk-fw-bold) clamp(9.5px, 2.8vw, 11px)/1 var(--zk-font-body)",
+                  color: "var(--zk-text-muted)",
+                  marginTop: "var(--zk-space-6)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {st.l}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div id={noteId} aria-live="polite">
+        {current ? (
           <div
+            key={current.k}
             style={{
-              font: "var(--zk-fw-bold) var(--zk-fs-10)/1 var(--zk-font-body)",
+              display: "flex",
+              gap: "var(--zk-space-10)",
+              alignItems: "flex-start",
+              padding: "var(--zk-space-12) var(--zk-space-14)",
+              borderRadius: "var(--zk-radius-lg)",
+              background: "var(--zk-surface-raised)",
+              font: "var(--zk-type-small)",
+              fontWeight: "var(--zk-fw-medium)" as CSSProperties["fontWeight"],
               color: "var(--zk-text-muted)",
-              marginTop: "var(--zk-space-6)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
+              animation: "zk-vt-rise var(--zk-dur-base) var(--zk-ease-out) both",
             }}
           >
-            {st.l}
+            <span style={{ display: "flex", flex: "none", marginTop: 1, color: current.k === "streak" ? "var(--zk-pink)" : current.c }}>
+              <Icon icon={current.k === "streak" ? "flame" : "info"} size={18} filled={current.k === "streak"} stroke={current.k === "streak" ? 1.5 : 2} />
+            </span>
+            <span style={{ minWidth: 0, textWrap: "pretty" }}>
+              <b style={{ color: "var(--zk-text)" }}>{current.l}. </b>
+              {current.about}
+            </span>
           </div>
-        </div>
-      ))}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -717,6 +1010,12 @@ function Badges({ player }: { player: Player }) {
 
 /* ---------- my stashes ---------- */
 
+type StashGroup = "unfunded" | "live" | "ended";
+const groupOf = (s: PublicStash): StashGroup =>
+  s.status === "awaiting_funding" ? "unfunded" : s.status === "live" || s.status === "locked" ? "live" : "ended";
+const GROUP_ORDER: StashGroup[] = ["unfunded", "live", "ended"];
+const GROUP_LABEL: Record<StashGroup, string> = { unfunded: "NOT LIVE YET", live: "LIVE NOW", ended: "FINISHED" };
+
 function MyStashes() {
   const [stashes, setStashes] = useState<PublicStash[] | null>(null);
   const [error, setError] = useState("");
@@ -727,7 +1026,7 @@ function MyStashes() {
       setStashes(stashes);
       setError("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn’t load your stashes.");
+      setError(friendlyErr(e, "Couldn’t load your stashes. Try again."));
     }
   }, []);
 
@@ -737,12 +1036,28 @@ function MyStashes() {
 
   let body: ReactNode;
   if (stashes && stashes.length > 0) {
-    body = stashes.map((s) => (
-      <StashCard
-        key={s.id}
-        stash={s}
-        href={s.status === "awaiting_funding" ? `/hide?resume=${s.id}` : `/s/${s.id}`}
-      />
+    // Unfunded first (they need you), then live, then finished. The server's order stays within a group.
+    const groups = GROUP_ORDER.map((g) => ({ g, items: stashes.filter((s) => groupOf(s) === g) })).filter((x) => x.items.length > 0);
+    const labelled = groups.length > 1;
+    body = groups.map(({ g, items }) => (
+      <div key={g} style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-10)" }}>
+        {labelled ? (
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--zk-space-8)" }}>
+            <span
+              style={{
+                font: "var(--zk-type-label)",
+                letterSpacing: "var(--zk-track-label)",
+                color: g === "unfunded" ? "var(--zk-gold)" : g === "live" ? "var(--zk-mint)" : "var(--zk-text-muted)",
+              }}
+            >
+              {GROUP_LABEL[g]}
+            </span>
+          </div>
+        ) : null}
+        {items.map((s) => (
+          <StashCard key={s.id} stash={s} href={s.status === "awaiting_funding" ? `/hide?resume=${s.id}` : `/s/${s.id}`} />
+        ))}
+      </div>
     ));
   } else if (stashes) {
     body = (
@@ -763,7 +1078,7 @@ function MyStashes() {
             Hide a riddle or a match call. Watch them sweat.
           </div>
         </div>
-        <Button label="Hide" icon="plus" variant="primary" size="sm" full={false} href="/hide" />
+        <Button label="Hide" icon="plus" variant="primary" size="sm" full={false} href="/hide" style={TAP_44} />
       </div>
     );
   } else if (error) {
@@ -779,7 +1094,7 @@ function MyStashes() {
         }}
       >
         <span style={{ flex: 1, font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>{error}</span>
-        <Button label="Retry" variant="secondary" size="sm" full={false} onClick={load} />
+        <Button label="Retry" variant="secondary" size="sm" full={false} onClick={load} style={TAP_44} />
       </div>
     );
   } else {
@@ -801,7 +1116,7 @@ function MyStashes() {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)", marginTop: "var(--zk-space-8)" }}>
       {sectionHead("My stashes", stashes && stashes.length > 0 ? String(stashes.length) : undefined)}
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-12)" }}>{body}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-16)" }}>{body}</div>
     </section>
   );
 }
@@ -829,7 +1144,7 @@ function ProfileSkeleton() {
       <div style={block(250, "var(--zk-radius-3xl)")} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "var(--zk-space-6)" }}>
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} style={block(56, "var(--zk-radius-lg)")} />
+          <div key={i} style={block(60, "var(--zk-radius-lg)")} />
         ))}
       </div>
     </div>
@@ -848,7 +1163,7 @@ export default function Profile() {
       const { player } = await api.me();
       setPlayer(player);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn’t load your profile.");
+      setError(friendlyErr(e, "Couldn’t load your profile. Try again in a moment."));
     }
   }, []);
 

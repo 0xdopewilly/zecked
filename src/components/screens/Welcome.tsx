@@ -146,7 +146,7 @@ export default function Welcome() {
               textWrap: "pretty",
             }}
           >
-            Riddles and match calls with real ZEC inside. First one to crack it keeps it.
+            Riddles and match calls with ZEC inside. First one to crack it keeps it.
           </p>
         </div>
         <div
@@ -162,8 +162,23 @@ export default function Welcome() {
             <Button label="Start zecking" variant="primary" size="lg" iconRight="arrowRight" full href="/feed" />
           </div>
           <span style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
-            Free to play · No sign-up needed
+            Free to play · Sign up to keep what you win
           </span>
+          <Link
+            href="/signin?next=%2Ffeed"
+            style={{
+              font: "var(--zk-type-small)",
+              color: "var(--zk-text)",
+              minHeight: "var(--zk-tap-min)",
+              marginTop: "calc(-1 * var(--zk-space-10))",
+              marginBottom: "calc(-1 * var(--zk-space-14))",
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "0 var(--zk-space-8)",
+            }}
+          >
+            Already have an account?&nbsp;<span style={{ color: "var(--zk-gold)", textDecoration: "underline", textUnderlineOffset: 3 }}>Sign in</span>
+          </Link>
           <Link
             href="/how"
             style={{

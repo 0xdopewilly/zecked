@@ -3,7 +3,7 @@
 import type { AuthStartResult } from "@/lib/types";
 import { networkName } from "@/lib/zcash/engine";
 import { kv } from "./kv";
-import { ensurePlayer, getPlayer, isAccount, savePlayer, type PlayerRecord } from "./players";
+import { ensurePlayer, getPlayer, isAccount, newPlayerId, savePlayer, type PlayerRecord } from "./players";
 import { HttpError, newToken, nowIso, sha256 } from "./util";
 
 const SESSION_TTL = 180 * 86400; // seconds
@@ -12,12 +12,31 @@ const MAX_VERIFY_ATTEMPTS = 6;
 const SECRET = process.env.ZECKED_SECRET || "zecked-dev-secret-change-me";
 
 // ---------- sessions ----------
+/** Session ids the proxy hands to new browsers (see src/proxy.ts). */
+const PROXY_SID = /^[A-Za-z0-9_-]{32,64}$/;
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function sessionPlayer(sid: string | undefined, legacyPid: string | undefined) {
   if (sid) {
     const s = await kv().get<{ pid: string }>(`sess:${sid}`);
     if (s) {
       const p = await getPlayer(s.pid);
       if (p) return { player: p, sid, fresh: false };
+    }
+    // A new browser whose cookie the proxy just set: bind it to ONE new guest, even when the page's
+    // first requests race each other (otherwise each would mint its own guest and cookie).
+    if (!s && PROXY_SID.test(sid)) {
+      const pid = newPlayerId();
+      if (await kv().set(`sess:${sid}`, { pid, at: nowIso() }, { nx: true, exSeconds: SESSION_TTL })) {
+        const { player } = await ensurePlayer(null, pid);
+        return { player, sid, fresh: false };
+      }
+      for (let i = 0; i < 20; i++) {
+        const won = await kv().get<{ pid: string }>(`sess:${sid}`);
+        const p = won && (await getPlayer(won.pid));
+        if (p) return { player: p, sid, fresh: false };
+        await pause(50);
+      }
     }
   }
   // New visitor, or a legacy v0.1 pid cookie. Legacy cookies may only resume an existing GUEST profile,
@@ -30,6 +49,13 @@ export async function sessionPlayer(sid: string | undefined, legacyPid: string |
   const { player } = await ensurePlayer(resume);
   const nsid = await createSession(player.id);
   return { player, sid: nsid, fresh: true };
+}
+
+/** Cheap check for server components: is this session a signed-in account? */
+export async function sessionIsAccount(sid: string | undefined) {
+  if (!sid) return false;
+  const s = await kv().get<{ pid: string }>(`sess:${sid}`);
+  return !!s && isAccount(await getPlayer(s.pid));
 }
 
 export async function createSession(pid: string) {

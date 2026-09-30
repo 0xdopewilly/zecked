@@ -13,6 +13,12 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#0E0B1F",
     theme_color: "#0E0B1F",
     categories: ["games", "entertainment", "finance"],
+    // Long-press the home-screen icon.
+    shortcuts: [
+      { name: "Hide a stash", short_name: "Hide", url: "/hide", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+      { name: "My wallet", short_name: "Wallet", url: "/wallet", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
+    ],
+    prefer_related_applications: false,
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

@@ -8,17 +8,23 @@
  *
  * `?resume=<stashId>` jumps straight to `fund` (awaiting_funding) or `live` (already funded).
  *
+ * History: every step is its own browser history entry (`/hide`, `?step=riddle|prediction|amount`,
+ * then `?resume=<id>` for funding), so back / forward / swipe-back move between steps. The draft lives
+ * in sessionStorage, so a reload, an accidental back or a trip to the wallet keeps it; it is cleared
+ * once the stash is live. After that, going back (or "Done") leaves the flow instead of replaying it.
+ *
  * Hiding needs an account: guests get a sign-up gate at step 1 (also for `?resume=`).
  * `fund` offers one-tap "Pay from my ZECKED wallet" when the balance covers the stash, with the QR
- * flow folded underneath; otherwise the QR flow is open. Uncracked ZEC goes back to the hider's
- * ZECKED wallet, so there is no refund address.
+ * flow folded underneath; otherwise it points to the wallet's Add ZEC (test ZEC is free) with the QR
+ * flow as the other way. Uncracked ZEC goes back to the hider's ZECKED wallet, so there is no refund
+ * address.
  */
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -31,16 +37,32 @@ import {
 import { Button, Chip, Confetti, Icon, Input, LiveBadge, Logo, TeamBadge, Toast } from "@/components/zk";
 import type { ToastVariant } from "@/components/zk";
 import { api, formatUsd, formatZec } from "@/lib/api";
+import { useAppBack } from "@/lib/nav";
+import { sfx } from "@/lib/sfx";
 import { ZAT } from "@/lib/types";
 import type { AppConfig, Match, PredictionKind, PublicStash, StashType } from "@/lib/types";
 
 /* ───────────────────────── constants ───────────────────────── */
 
 const POLL_MS = 5000;
+const WALLET_POLL_MS = 10_000;
+const MATCHES_REFRESH_MS = 60_000;
 const ADVANCE_MS = 1200;
+// Same limits as the server (src/lib/server/game.ts → createStash).
+const RIDDLE_MIN = 8;
 const RIDDLE_MAX = 200;
-const ANSWER_MAX = 80;
+const ANSWER_MAX = 60;
 const HINT_MAX = 120;
+/** Server: a prediction needs its match to kick off at least this far out (test matches / real ones). */
+const LEAD_DEMO_MS = 60_000;
+const LEAD_REAL_MS = 10 * 60_000;
+/** The picker is a little stricter, so there is still time to set the prize before the server checks. */
+const PICK_PAD_MS = 30_000;
+const DRAFT_KEY = "zk:hide-draft";
+/** Backup of each flow entry's place, by URL (Next.js sometimes rewrites history.state without our key). */
+const POS_KEY = "zk:hide-pos";
+/** Our key inside `history.state` (Next.js keeps custom keys it doesn't own). */
+const HIST_KEY = "zkHide";
 const DEFAULT_USD = 20;
 const FALLBACK_MIN_USD = 1;
 const FALLBACK_MAX_USD = 100;
@@ -87,10 +109,19 @@ const ARTICLES = new Set(["a", "an", "the"]);
 
 type Step = "type" | "riddle" | "prediction" | "amount" | "fund" | "live";
 const STEP_NO: Record<Step, 1 | 2 | 3 | 4> = { type: 1, riddle: 2, prediction: 2, amount: 3, fund: 4, live: 4 };
+const DRAFT_STEPS: readonly Step[] = ["type", "riddle", "prediction", "amount"];
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 const pad2 = (n: number) => String(n).padStart(2, "0");
-const errMsg = (e: unknown) => (e instanceof Error && e.message ? e.message : "Something went wrong. Try again.");
+/** Friendly copy for a failed request: never a raw "Failed to fetch" or "Request failed (500)". */
+function errMsg(e: unknown): string {
+  const msg = e instanceof Error ? e.message : "";
+  if (e instanceof TypeError || /failed to fetch|networkerror|load failed|network request failed/i.test(msg)) {
+    return "Can’t reach ZECKED. Check your connection.";
+  }
+  if (!msg || /^Request failed/.test(msg)) return "Something went wrong on our side. Try again.";
+  return msg;
+}
 const isFunded = (s: PublicStash) => s.status === "live" || s.status === "locked" || s.status === "zecked";
 const isDead = (s: PublicStash) => s.status === "expired" || s.status === "refunded" || s.status === "void";
 
@@ -161,6 +192,68 @@ export function riddleStrength(riddle: string, answer: string): Strength {
   return { level, tip: STRENGTH[level].tip };
 }
 
+/** Accepted answers: `echo | an echo` means either one wins (the server splits on "|" too). */
+const answerAlts = (answer: string) =>
+  answer
+    .split("|")
+    .map((a) => a.trim())
+    .filter(Boolean);
+
+/** Mirror of the server's answer cleanup: an answer that is only punctuation ends up empty. */
+const normalizeAnswer = (s: string) =>
+  s
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(a|an|the) /, "");
+
+/** With several accepted answers, the riddle is only as strong as the easiest one. */
+function riddleStrengthAll(riddle: string, answer: string): Strength {
+  const alts = answerAlts(answer);
+  if (alts.length < 2) return riddleStrength(riddle, alts[0] ?? "");
+  return alts
+    .map((a) => riddleStrength(riddle, a))
+    .reduce((worst, s) => (s.warn && !worst.warn) || (!!s.warn === !!worst.warn && s.level < worst.level) ? s : worst);
+}
+
+interface RiddleIssues {
+  riddle?: string;
+  answer?: string;
+}
+
+/** The server's riddle rules, in plain words (empty object = good to go). */
+function riddleIssues(d: { riddle: string; answer: string }): RiddleIssues {
+  const out: RiddleIssues = {};
+  const len = d.riddle.trim().length;
+  if (!len) out.riddle = "Write your riddle first.";
+  else if (len < RIDDLE_MIN) out.riddle = `Riddles need at least ${RIDDLE_MIN} characters (${RIDDLE_MIN - len} more).`;
+  else if (len > RIDDLE_MAX) out.riddle = `Riddles are up to ${RIDDLE_MAX} characters.`;
+  const ans = d.answer.trim();
+  const alts = answerAlts(ans);
+  if (!alts.length) out.answer = "Add the answer.";
+  else if (ans.length > ANSWER_MAX) out.answer = `Answers are up to ${ANSWER_MAX} characters.`;
+  else if (alts.some((a) => !normalizeAnswer(a))) out.answer = "Use letters or numbers in the answer.";
+  return out;
+}
+
+const matchLeadMs = (m: Match) => (m.demo ? LEAD_DEMO_MS : LEAD_REAL_MS);
+/** Too close to kickoff to hide a stash on (`pad` adds time for the steps still ahead). */
+const kicksOffTooSoon = (m: Match, now: number, pad = 0) => Date.parse(m.kickoff) < now + matchLeadMs(m) + pad;
+
+/** "45s", "3m 20s", "12m", "3h 5m" until kickoff; null once it is more than a day out (or already due). */
+function untilKickoff(iso: string, now: number): string | null {
+  const s = Math.round((Date.parse(iso) - now) / 1000);
+  if (!Number.isFinite(s) || s <= 0 || s >= 86_400) return null;
+  if (s < 60) return `${s}s`;
+  if (s < 300) return `${Math.floor(s / 60)}m ${pad2(s % 60)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  const m = Math.floor(s / 60);
+  return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`;
+}
+
 /** "Tue 20:00" in local time (with the date when it is more than 6 days out). */
 function formatKickoff(iso: string): string {
   const d = new Date(iso);
@@ -176,6 +269,9 @@ function hoursUntilFullTime(kickoff: string): number {
   const ms = Date.parse(kickoff) - Date.now();
   return Math.max(1, Math.ceil((Number.isFinite(ms) ? ms : 0) / 3_600_000) + 3);
 }
+
+/** A wallet balance: "0" when empty (not "0.00"). */
+const fmtBal = (zat: number) => (zat > 0 ? formatZec(zat, 4) : "0");
 
 const shortAddr = (a: string) => (a.length > 16 ? `${a.slice(0, 6)}…${a.slice(-5)}` : a);
 
@@ -226,21 +322,23 @@ interface Draft {
 
 interface Flow {
   step: Step;
+  /** Which way the last step change went (for the slide). */
+  dir: "fwd" | "back" | "none";
   draft: Draft;
   stash: PublicStash | null;
   /** Serialized create-body of `stash`, so going back and forward again reuses it. */
   stashKey: string | null;
-  /** Arrived via ?resume: there is no draft to go back to. */
+  /** Arrived via ?resume without a saved draft: there is no draft to go back to. */
   resumed: boolean;
 }
 
 type FlowAction =
   | { t: "patch"; patch: Partial<Draft> }
-  | { t: "next" }
-  | { t: "back" }
+  | { t: "goto"; step: Step; dir?: Flow["dir"] }
+  | { t: "restore"; draft: Draft; step: Step }
   | { t: "fund" }
   | { t: "created"; stash: PublicStash; key: string }
-  | { t: "resume"; stash: PublicStash }
+  | { t: "resume"; stash: PublicStash; draft?: Draft; key?: string | null }
   | { t: "update"; stash: PublicStash }
   | { t: "reset" };
 
@@ -255,39 +353,178 @@ const INITIAL_DRAFT: Draft = {
   usd: DEFAULT_USD,
   expiryHours: 24,
 };
-const INITIAL_FLOW: Flow = { step: "type", draft: INITIAL_DRAFT, stash: null, stashKey: null, resumed: false };
+const INITIAL_FLOW: Flow = { step: "type", dir: "none", draft: INITIAL_DRAFT, stash: null, stashKey: null, resumed: false };
+
+const detailsStep = (d: Draft): Step => (d.type === "riddle" ? "riddle" : "prediction");
+const draftHasContent = (d: Draft) => !!(d.riddle.trim() || d.answer.trim() || d.hint.trim() || d.matchId);
+
+/** The furthest a draft can honestly be: a step whose earlier steps aren't done falls back to them. */
+function reachableStep(want: Step, d: Draft): Step {
+  if (want === "riddle" || want === "prediction") return detailsStep(d);
+  if (want === "amount") {
+    const ok = d.type === "riddle" ? !riddleIssues(d).riddle && !riddleIssues(d).answer : !!d.matchId;
+    return ok ? "amount" : detailsStep(d);
+  }
+  return want === "type" ? "type" : want;
+}
 
 function flowReducer(s: Flow, a: FlowAction): Flow {
   switch (a.t) {
     case "patch":
       return { ...s, draft: { ...s.draft, ...a.patch } };
-    case "next":
-      if (s.step === "type") return { ...s, step: s.draft.type === "riddle" ? "riddle" : "prediction" };
-      if (s.step === "riddle" || s.step === "prediction") return { ...s, step: "amount" };
-      if (s.step === "fund" && s.stash && isFunded(s.stash)) return { ...s, step: "live" };
-      return s;
-    case "back":
-      if (s.step === "riddle" || s.step === "prediction") return { ...s, step: "type" };
-      if (s.step === "amount") return { ...s, step: s.draft.type === "riddle" ? "riddle" : "prediction" };
-      if (s.step === "fund" && !s.resumed) return { ...s, step: "amount" };
-      return s;
+    case "goto":
+      return a.step === s.step ? s : { ...s, step: a.step, dir: a.dir ?? "none" };
+    case "restore":
+      return { ...s, draft: a.draft, step: a.step, dir: "none" };
     case "fund":
-      return s.stash ? { ...s, step: "fund" } : s;
+      return s.stash ? { ...s, step: "fund", dir: "fwd" } : s;
     case "created":
-      return { ...s, stash: a.stash, stashKey: a.key, step: isFunded(a.stash) ? "live" : "fund" };
+      return { ...s, stash: a.stash, stashKey: a.key, step: isFunded(a.stash) ? "live" : "fund", dir: "fwd" };
     case "resume":
       return {
         ...s,
         stash: a.stash,
-        stashKey: null,
-        resumed: true,
-        draft: { ...s.draft, type: a.stash.type },
+        stashKey: a.draft ? (a.key ?? null) : null,
+        resumed: !a.draft,
+        draft: a.draft ?? { ...s.draft, type: a.stash.type },
         step: isFunded(a.stash) ? "live" : "fund",
+        dir: "none",
       };
     case "update":
       return s.stash && s.stash.id === a.stash.id ? { ...s, stash: a.stash } : s;
     case "reset":
-      return INITIAL_FLOW;
+      return { ...INITIAL_FLOW, dir: "back" };
+  }
+}
+
+/* ───────────────────────── draft + history persistence ───────────────────────── */
+
+interface SavedDraft {
+  draft: Draft;
+  /** The unfunded stash made from this draft, so coming back reuses it instead of making another. */
+  stashId?: string | null;
+  stashKey?: string | null;
+}
+
+function loadSaved(): SavedDraft | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<SavedDraft>;
+    if (!v || typeof v !== "object" || !v.draft || typeof v.draft !== "object") return null;
+    const d = { ...INITIAL_DRAFT, ...v.draft };
+    // Only trust the shapes we wrote.
+    if (d.type !== "riddle" && d.type !== "prediction") d.type = "riddle";
+    if (d.kind !== "exact" && d.kind !== "winner") d.kind = "exact";
+    return {
+      draft: {
+        ...d,
+        riddle: String(d.riddle).slice(0, RIDDLE_MAX),
+        answer: String(d.answer).slice(0, ANSWER_MAX),
+        hint: String(d.hint).slice(0, HINT_MAX),
+        hintOpen: !!d.hintOpen,
+        matchId: typeof d.matchId === "string" ? d.matchId : null,
+        usd: Number.isFinite(Number(d.usd)) ? Number(d.usd) : DEFAULT_USD,
+        expiryHours: EXPIRIES.some((x) => x.hours === Number(d.expiryHours)) ? Number(d.expiryHours) : 24,
+      },
+      stashId: typeof v.stashId === "string" ? v.stashId : null,
+      stashKey: typeof v.stashKey === "string" ? v.stashKey : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(v: SavedDraft | null) {
+  try {
+    if (v) sessionStorage.setItem(DRAFT_KEY, JSON.stringify(v));
+    else sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* private mode: the draft just won't survive a reload */
+  }
+}
+
+/** Where this history entry sits in the flow: `i` = entries since the flow's first one; `from` = that first entry came from an in-app page. */
+interface HistPos {
+  i: number;
+  from: boolean;
+}
+
+function readHist(): HistPos | null {
+  try {
+    const h = (window.history.state as Record<string, unknown> | null)?.[HIST_KEY] as HistPos | undefined;
+    return h && typeof h.i === "number" ? { i: h.i, from: !!h.from } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * pushState / replaceState with our position. Only our key is passed: Next.js copies its own
+ * internals over (and learns the new URL, so useSearchParams stays in sync).
+ */
+function writeHist(mode: "push" | "replace", url: string, pos: HistPos) {
+  const data = { [HIST_KEY]: pos };
+  if (mode === "push") window.history.pushState(data, "", url);
+  else window.history.replaceState(data, "", url);
+  rememberPos(url, pos);
+}
+
+const hereUrl = () => window.location.pathname + window.location.search;
+
+function rememberPos(url: string, pos: HistPos) {
+  try {
+    const m = JSON.parse(sessionStorage.getItem(POS_KEY) || "{}") as Record<string, HistPos>;
+    m[url] = pos;
+    sessionStorage.setItem(POS_KEY, JSON.stringify(m));
+  } catch {
+    /* no storage: history.state alone */
+  }
+}
+function recallPos(url: string): HistPos | null {
+  try {
+    const h = (JSON.parse(sessionStorage.getItem(POS_KEY) || "{}") as Record<string, HistPos>)[url];
+    return h && typeof h.i === "number" ? { i: h.i, from: !!h.from } : null;
+  } catch {
+    return null;
+  }
+}
+function forgetPos() {
+  try {
+    sessionStorage.removeItem(POS_KEY);
+  } catch {
+    /* nothing to forget */
+  }
+}
+
+const stepUrl = (step: Step, stashId?: string | null) =>
+  (step === "fund" || step === "live") && stashId
+    ? `/hide?resume=${encodeURIComponent(stashId)}`
+    : step === "type"
+      ? "/hide"
+      : `/hide?step=${step}`;
+
+function stepFromUrl(): { step: Step | null; resume: string | null } {
+  const q = new URLSearchParams(window.location.search);
+  const raw = q.get("step");
+  const step = raw && DRAFT_STEPS.includes(raw as Step) ? (raw as Step) : null;
+  return { step, resume: q.get("resume") };
+}
+
+
+/** history.go(-n). (A hand-rolled view transition around it used to stall the next navigation by ~2s,
+ *  so going back is instant, like the app's ← buttons.) `slide` is kept for call sites. */
+function goBackBy(n: number, slide: boolean) {
+  void slide;
+  window.history.go(-n);
+}
+
+/** The app's in-app marker (set by NavTracker in src/lib/nav.ts once this tab moved around inside ZECKED). */
+function cameFromApp() {
+  try {
+    return sessionStorage.getItem("zk:in-app") === "1" && window.history.length > 1;
+  } catch {
+    return false;
   }
 }
 
@@ -295,8 +532,8 @@ function flowReducer(s: Flow, a: FlowAction): Flow {
 
 const H1: CSSProperties = { margin: "var(--zk-space-8) 0 0", font: "var(--zk-type-h1)" };
 const ICON_BTN: CSSProperties = {
-  width: 40,
-  height: 40,
+  width: 44,
+  height: 44,
   flex: "none",
   borderRadius: "var(--zk-radius-md)",
   background: "var(--zk-surface)",
@@ -360,23 +597,64 @@ function Spinner({ size = 22 }: { size?: number }) {
   );
 }
 
+/**
+ * The step's forward button. Until the step is valid it looks disabled, but a tap still lands (on a
+ * see-through layer) so we can say what's missing instead of doing nothing.
+ */
+function NextButton({
+  label,
+  valid,
+  busy = false,
+  onNext,
+  onInvalid,
+}: {
+  label: string;
+  valid: boolean;
+  busy?: boolean;
+  onNext: () => void;
+  onInvalid: () => void;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <div aria-hidden={valid ? undefined : true}>
+        <Button label={label} variant="primary" size="lg" disabled={!valid || busy} sfx="whoosh" onClick={onNext} />
+      </div>
+      {valid ? null : (
+        <button
+          type="button"
+          aria-label={label}
+          aria-disabled="true"
+          data-sfx="none"
+          onClick={onInvalid}
+          style={{
+            position: "absolute",
+            inset: 0,
+            margin: 0,
+            padding: 0,
+            border: "none",
+            borderRadius: "var(--zk-radius-2xl)",
+            background: "transparent",
+            cursor: "not-allowed",
+            WebkitTapHighlightColor: "transparent",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────────── header ───────────────────────── */
 
-function StepHeader({ n, onBack }: { n: 1 | 2 | 3 | 4; onBack?: () => void }) {
+/** ← goes to the previous step; on the first step it is a ✕ that leaves the flow. */
+function StepHeader({ n, onBack, close }: { n: 1 | 2 | 3 | 4; onBack: () => void; close?: boolean }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        {onBack ? (
-          <button type="button" aria-label="Back" onClick={onBack} style={ICON_BTN}>
-            <Icon icon="back" size={20} stroke={2.6} />
-          </button>
-        ) : (
-          <Link href="/feed" aria-label="Close" style={ICON_BTN}>
-            <Icon icon="close" size={18} stroke={2.6} />
-          </Link>
-        )}
+        <button type="button" aria-label={close ? "Close" : "Back"} onClick={onBack} data-sfx="tap" style={ICON_BTN}>
+          {close ? <Icon icon="close" size={18} stroke={2.6} /> : <Icon icon="back" size={20} stroke={2.6} />}
+        </button>
         <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-text-muted)" }}>STEP {n} / 4</span>
-        <div style={{ width: 40 }} />
+        <div style={{ width: 44 }} />
       </div>
       <div
         role="progressbar"
@@ -404,7 +682,20 @@ function StepHeader({ n, onBack }: { n: 1 | 2 | 3 | 4; onBack?: () => void }) {
 
 /* ───────────────────────── step 1 · type ───────────────────────── */
 
-function TypeStep({ type, onPick, onContinue }: { type: StashType; onPick: (t: StashType) => void; onContinue: () => void }) {
+function TypeStep({
+  type,
+  onPick,
+  onContinue,
+  hasDraft,
+  onStartFresh,
+}: {
+  type: StashType;
+  onPick: (t: StashType) => void;
+  onContinue: () => void;
+  /** A saved draft was brought back: offer to throw it away. */
+  hasDraft: boolean;
+  onStartFresh: () => void;
+}) {
   const isRiddle = type === "riddle";
   const isPred = type === "prediction";
   return (
@@ -582,7 +873,7 @@ function TypeStep({ type, onPick, onContinue }: { type: StashType; onPick: (t: S
                 marginTop: "var(--zk-space-6)",
               }}
             >
-              Pick a real match. First correct call takes it.
+              Pick a football match. First right call zecks it.
             </div>
           </div>
           {isPred ? (
@@ -593,7 +884,39 @@ function TypeStep({ type, onPick, onContinue }: { type: StashType; onPick: (t: S
         </div>
       </div>
       <div style={CTA}>
-        <Button label="Continue" variant="primary" size="lg" onClick={onContinue} />
+        {hasDraft ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--zk-space-6)",
+              font: "var(--zk-type-small)",
+              color: "var(--zk-text-muted)",
+            }}
+          >
+            <Icon icon="check" size={14} stroke={3} color="var(--zk-mint)" />
+            <span>We kept your draft.</span>
+            <button
+              type="button"
+              onClick={onStartFresh}
+              style={{
+                minHeight: 44,
+                padding: "0 var(--zk-space-6)",
+                border: "none",
+                background: "transparent",
+                font: "var(--zk-type-small)",
+                fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
+                color: "var(--zk-gold)",
+                cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              Start fresh
+            </button>
+          </div>
+        ) : null}
+        <Button label="Continue" variant="primary" size="lg" sfx="whoosh" onClick={onContinue} />
       </div>
     </>
   );
@@ -763,6 +1086,29 @@ function StrengthMeter({ strength }: { strength: Strength }) {
   );
 }
 
+/** A field label with its character counter on the right. */
+function FieldLabel({ htmlFor, text, count, max }: { htmlFor: string; text: string; count: number; max: number }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--zk-space-8)", marginBottom: -2 }}>
+      <label htmlFor={htmlFor} style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
+        {text}
+      </label>
+      <span
+        aria-hidden="true"
+        style={{
+          font: "var(--zk-type-mono-xs)",
+          fontVariantNumeric: "tabular-nums",
+          color: count >= max ? "var(--zk-orange)" : "var(--zk-text-faint)",
+        }}
+      >
+        {count} / {max}
+      </span>
+    </div>
+  );
+}
+
+const ANSWER_ID = "zk-hide-answer";
+
 function RiddleStep({
   draft,
   patch,
@@ -772,79 +1118,136 @@ function RiddleStep({
   patch: (p: Partial<Draft>) => void;
   onNext: () => void;
 }) {
+  // The answer starts masked (it's a secret), but it is a plain text field: no password-manager prompts.
   const [showAnswer, setShowAnswer] = useState(false);
   // Autofocus the hint only when it was just opened (not when coming back to this step).
   const [focusHint, setFocusHint] = useState(false);
-  const strength = useMemo(() => riddleStrength(draft.riddle, draft.answer), [draft.riddle, draft.answer]);
-  const canNext = draft.riddle.trim().length > 0 && words(draft.answer).length > 0;
+  // Errors turn red once they tried to move on; before that the hints stay calm.
+  const [tried, setTried] = useState(false);
+  const [shake, setShake] = useState({ riddle: 0, answer: 0 });
+  const strength = useMemo(() => riddleStrengthAll(draft.riddle, draft.answer), [draft.riddle, draft.answer]);
+  const issues = riddleIssues(draft);
+  const valid = !issues.riddle && !issues.answer;
+  const riddleLen = draft.riddle.trim().length;
+
+  // The shared <Input> has no pass-through props: tag the answer field so password managers and
+  // autocorrect leave it alone, and mask it with CSS instead of type="password".
+  useEffect(() => {
+    const el = document.getElementById(ANSWER_ID) as HTMLInputElement | null;
+    if (!el) return;
+    el.setAttribute("data-1p-ignore", "true");
+    el.setAttribute("data-lpignore", "true");
+    el.setAttribute("data-bwignore", "true");
+    el.setAttribute("data-form-type", "other");
+    el.setAttribute("autocapitalize", "none");
+    el.setAttribute("autocorrect", "off");
+    el.style.setProperty("-webkit-text-security", showAnswer ? "none" : "disc");
+  }, [showAnswer]);
+
+  const onInvalid = () => {
+    setTried(true);
+    sfx("error");
+    setShake((s) => ({ riddle: s.riddle + (issues.riddle ? 1 : 0), answer: s.answer + (issues.answer ? 1 : 0) }));
+  };
+
+  const riddleMsg = issues.riddle && (tried || riddleLen > 0) ? issues.riddle : `${RIDDLE_MIN}–${RIDDLE_MAX} characters.`;
+  const answerErr = tried ? issues.answer : undefined;
 
   return (
     <>
       <h1 style={H1}>Make it tricky.</h1>
-      <Input
-        label="Your riddle"
-        multiline
-        height={132}
-        font="display"
-        value={draft.riddle}
-        onChange={(v) => patch({ riddle: v.slice(0, RIDDLE_MAX) })}
-        maxLength={RIDDLE_MAX}
-        placeholder="I have cities, but no houses. Forests, but no trees. What am I?"
-        message={`${draft.riddle.length} / ${RIDDLE_MAX}`}
-      />
-      <Input
-        label="The answer"
-        size="md"
-        type={showAnswer ? "text" : "password"}
-        value={draft.answer}
-        onChange={(v) => patch({ answer: v.slice(0, ANSWER_MAX) })}
-        maxLength={ANSWER_MAX}
-        placeholder="Only you know it"
-        autoComplete="off"
-        spellCheck={false}
-        message="Not case-sensitive. “a”, “an” and “the” are ignored."
-        trailing={
-          <button
-            type="button"
-            onClick={() => setShowAnswer((v) => !v)}
-            aria-label={showAnswer ? "Hide answer" : "Show answer"}
-            aria-pressed={showAnswer}
-            style={{
-              width: 30,
-              height: 30,
-              padding: 0,
-              border: "none",
-              borderRadius: "50%",
-              background: "transparent",
-              color: "var(--zk-text-muted)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              WebkitTapHighlightColor: "transparent",
-            }}
-          >
-            <Icon icon={showAnswer ? "eyeOff" : "eye"} size={16} stroke={3} />
-          </button>
-        }
-      />
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-6)" }}>
+        <FieldLabel htmlFor="zk-hide-riddle" text="Your riddle" count={draft.riddle.length} max={RIDDLE_MAX} />
+        <Input
+          id="zk-hide-riddle"
+          ariaLabel="Your riddle"
+          multiline
+          height={132}
+          font="display"
+          value={draft.riddle}
+          onChange={(v) => patch({ riddle: v.slice(0, RIDDLE_MAX) })}
+          maxLength={RIDDLE_MAX}
+          placeholder="I have cities, but no houses. Forests, but no trees. What am I?"
+          state={tried && issues.riddle ? "error" : undefined}
+          shake={shake.riddle}
+          message={riddleMsg}
+        />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-6)" }}>
+        <FieldLabel htmlFor={ANSWER_ID} text="The answer" count={draft.answer.length} max={ANSWER_MAX} />
+        <Input
+          id={ANSWER_ID}
+          ariaLabel="The answer"
+          size="md"
+          type="text"
+          value={draft.answer}
+          onChange={(v) => patch({ answer: v.slice(0, ANSWER_MAX) })}
+          maxLength={ANSWER_MAX}
+          placeholder="Only you know it"
+          autoComplete="off"
+          spellCheck={false}
+          state={answerErr ? "error" : undefined}
+          shake={shake.answer}
+          message={
+            <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span>{answerErr ?? "Not case-sensitive."}</span>
+              <span style={{ color: "var(--zk-text-muted)" }}>
+                “A”, “an” and “the” don’t count. More than one right answer? Separate them with{" "}
+                <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text)" }}>|</span>, like{" "}
+                <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text)", whiteSpace: "nowrap" }}>map | atlas</span>.
+              </span>
+            </span>
+          }
+          trailing={
+            <button
+              type="button"
+              onClick={() => setShowAnswer((v) => !v)}
+              aria-label={showAnswer ? "Hide answer" : "Show answer"}
+              aria-pressed={showAnswer}
+              data-sfx="tap"
+              style={{
+                width: 44,
+                height: 44,
+                margin: "0 -8px 0 0",
+                padding: 0,
+                border: "none",
+                borderRadius: "50%",
+                background: "transparent",
+                color: "var(--zk-text-muted)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <Icon icon={showAnswer ? "eyeOff" : "eye"} size={18} stroke={2.6} />
+            </button>
+          }
+        />
+      </div>
       <StrengthMeter strength={strength} />
       {draft.hintOpen ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-6)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "-10px 0 -10px" }}>
             <label htmlFor="zk-hide-hint" style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
               Bonus hint (unlocks later)
             </label>
             <button
               type="button"
               onClick={() => patch({ hintOpen: false, hint: "" })}
+              data-sfx="tap"
               style={{
+                minWidth: 44,
+                height: 44,
                 border: "none",
                 background: "transparent",
-                padding: "var(--zk-space-4) 0",
+                padding: "0 0 0 var(--zk-space-12)",
                 font: "var(--zk-type-caption)",
+                fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
                 color: "var(--zk-text-muted)",
                 cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
               }}
             >
               Remove
@@ -858,7 +1261,7 @@ function RiddleStep({
             maxLength={HINT_MAX}
             autoFocus={focusHint}
             placeholder="A nudge for when they’re stuck"
-            message={`${draft.hint.length} / ${HINT_MAX}`}
+            message={`Optional · ${draft.hint.length} / ${HINT_MAX}`}
           />
         </div>
       ) : (
@@ -888,7 +1291,7 @@ function RiddleStep({
         </button>
       )}
       <div style={CTA}>
-        <Button label="Next: set the prize" variant="primary" size="lg" disabled={!canNext} onClick={onNext} />
+        <NextButton label="Next: set the prize" valid={valid} onNext={onNext} onInvalid={onInvalid} />
       </div>
     </>
   );
@@ -896,14 +1299,35 @@ function RiddleStep({
 
 /* ───────────────────────── step 2b · prediction ───────────────────────── */
 
-function MatchRow({ m, selected, onSelect }: { m: Match; selected: boolean; onSelect: () => void }) {
+function MatchRow({
+  m,
+  now,
+  selected,
+  tooSoon,
+  onSelect,
+  onTooSoon,
+}: {
+  m: Match;
+  now: number;
+  selected: boolean;
+  /** Kicks off too soon to hide a stash on: shown greyed out, not selectable. */
+  tooSoon: boolean;
+  onSelect: () => void;
+  onTooSoon: () => void;
+}) {
+  const until = untilKickoff(m.kickoff, now);
+  // The countdown leads (it's what matters when picking); the league can get cut off.
+  const when = until ? `Kicks off in ${until}` : formatKickoff(m.kickoff);
+  const tap = tooSoon ? onTooSoon : onSelect;
   return (
     <div
       role="radio"
       aria-checked={selected}
+      aria-disabled={tooSoon || undefined}
       tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={radioKeys(onSelect)}
+      onClick={tap}
+      onKeyDown={radioKeys(tap)}
+      data-sfx={tooSoon ? "none" : undefined}
       style={{
         display: "flex",
         alignItems: "center",
@@ -912,19 +1336,22 @@ function MatchRow({ m, selected, onSelect }: { m: Match; selected: boolean; onSe
         borderRadius: "var(--zk-radius-xl)",
         background: selected ? "var(--zk-sky-tint)" : "var(--zk-surface)",
         border: `2px solid ${selected ? "var(--zk-sky)" : "transparent"}`,
-        cursor: "pointer",
+        cursor: tooSoon ? "not-allowed" : "pointer",
+        opacity: tooSoon ? 0.5 : 1,
         flex: "none",
+        transition: "opacity var(--zk-dur-base) var(--zk-ease-out)",
         WebkitTapHighlightColor: "transparent",
       }}
     >
-      <div style={{ display: "flex", flex: "none" }}>
+      <div style={{ display: "flex", flex: "none", filter: tooSoon ? "grayscale(.8)" : undefined }}>
         <TeamBadge code={m.home.code} color={m.home.color} ink={m.home.ink} logo={m.home.logo} name={m.home.name} size={38} />
         <div style={{ marginLeft: -8 }}>
           <TeamBadge code={m.away.code} color={m.away.color} ink={m.away.ink} logo={m.away.logo} name={m.away.name} size={38} />
         </div>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-6)", minWidth: 0 }}>
+        {/* The test-match sticker sits by the names and drops under them when a small phone runs out of room. */}
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: "var(--zk-space-6)", rowGap: 3, minWidth: 0 }}>
           <span style={{ font: "var(--zk-type-h4)", whiteSpace: "nowrap" }}>
             {m.home.code} vs {m.away.code}
           </span>
@@ -953,27 +1380,43 @@ function MatchRow({ m, selected, onSelect }: { m: Match; selected: boolean; onSe
           style={{
             font: "var(--zk-type-caption)",
             fontWeight: "var(--zk-fw-medium)" as CSSProperties["fontWeight"],
+            fontVariantNumeric: "tabular-nums",
             color: "var(--zk-text-muted)",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
           }}
         >
-          {m.leagueName} · {formatKickoff(m.kickoff)}
+          {tooSoon ? (
+            <>
+              <b style={{ color: "var(--zk-text)" }}>Too soon</b> · {until ? `kicks off in ${until}` : "kicking off now"}
+            </>
+          ) : (
+            <>
+              <span style={{ color: "var(--zk-text)" }}>{when}</span>
+              {m.demo ? null : <> · {m.leagueName}</>}
+            </>
+          )}
         </div>
       </div>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 22,
-          height: 22,
-          flex: "none",
-          borderRadius: "50%",
-          boxSizing: "border-box",
-          border: `2px solid ${selected ? "var(--zk-sky)" : "var(--zk-border-strong)"}`,
-          background: selected ? "var(--zk-sky)" : "transparent",
-        }}
-      />
+      {tooSoon ? (
+        <span aria-hidden="true" style={{ flex: "none", display: "flex", color: "var(--zk-text-faint)" }}>
+          <Icon icon="clock" size={20} />
+        </span>
+      ) : (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 22,
+            height: 22,
+            flex: "none",
+            borderRadius: "50%",
+            boxSizing: "border-box",
+            border: `2px solid ${selected ? "var(--zk-sky)" : "var(--zk-border-strong)"}`,
+            background: selected ? "var(--zk-sky)" : "transparent",
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1069,6 +1512,7 @@ function PredictionStep({
   matchesError,
   onRetry,
   onNext,
+  onToast,
 }: {
   draft: Draft;
   patch: (p: Partial<Draft>) => void;
@@ -1076,9 +1520,16 @@ function PredictionStep({
   matchesError: string | null;
   onRetry: () => void;
   onNext: () => void;
+  onToast: (text: string, variant?: ToastVariant, icon?: string, sound?: false) => void;
 }) {
   const [q, setQ] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  // Ticks every second: kickoff countdowns, and matches greying out as kickoff gets close.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
   const upcoming = useMemo(
     () =>
       (matches ?? [])
@@ -1088,6 +1539,29 @@ function PredictionStep({
   );
   const shown = useMemo(() => upcoming.filter((m) => matchesQuery(m, q)), [upcoming, q]);
   const loading = matches === null && !matchesError;
+  const selected = upcoming.find((m) => m.id === draft.matchId);
+  const selectedTooSoon = !!selected && kicksOffTooSoon(selected, now, PICK_PAD_MS);
+  const valid = !!selected && !selectedTooSoon;
+
+  // A picked match that is now about to kick off (or gone from the list) can't be hidden on anymore.
+  useEffect(() => {
+    if (!draft.matchId || matches === null) return;
+    if (!selected) {
+      patch({ matchId: null });
+    } else if (selectedTooSoon) {
+      patch({ matchId: null });
+      onToast(`${selected.home.code} vs ${selected.away.code} is about to kick off. Pick another match.`, "default", "clock");
+    }
+  }, [draft.matchId, matches, selected, selectedTooSoon, patch, onToast]);
+
+  const onTooSoon = () => {
+    sfx("error");
+    onToast("That one kicks off too soon. Pick a later match so people have time to call it.", "default", "clock", false);
+  };
+  const onInvalid = () => {
+    sfx("error");
+    onToast(loading ? "Matches are still loading…" : "Pick a match first.", "default", "ball", false);
+  };
 
   let list: ReactNode;
   if (loading) {
@@ -1108,7 +1582,7 @@ function PredictionStep({
       >
         <span style={{ font: "var(--zk-type-h4)" }}>Couldn’t load matches</span>
         <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>{matchesError}</span>
-        <Chip label="Try again" size="sm" onClick={onRetry} />
+        <Chip label="Try again" onClick={onRetry} style={{ height: 44 }} />
       </div>
     );
   } else if (!shown.length) {
@@ -1133,7 +1607,15 @@ function PredictionStep({
     );
   } else {
     list = shown.map((m) => (
-      <MatchRow key={m.id} m={m} selected={draft.matchId === m.id} onSelect={() => patch({ matchId: m.id })} />
+      <MatchRow
+        key={m.id}
+        m={m}
+        now={now}
+        selected={draft.matchId === m.id}
+        tooSoon={kicksOffTooSoon(m, now, PICK_PAD_MS)}
+        onSelect={() => patch({ matchId: m.id })}
+        onTooSoon={onTooSoon}
+      />
     ));
   }
 
@@ -1217,7 +1699,7 @@ function PredictionStep({
         />
       </div>
       <div style={CTA}>
-        <Button label="Next: set the prize" variant="primary" size="lg" disabled={!draft.matchId} onClick={onNext} />
+        <NextButton label="Next: set the prize" valid={valid} onNext={onNext} onInvalid={onInvalid} />
       </div>
     </>
   );
@@ -1359,13 +1841,24 @@ function AmountStep({
   patch,
   config,
   creating,
+  walletBalance,
+  match,
+  matchGone,
   onNext,
+  onPickAnother,
 }: {
   draft: Draft;
   patch: (p: Partial<Draft>) => void;
   config: AppConfig | null;
   creating: boolean;
+  /** ZECKED wallet balance in zat (null = unknown / still loading). */
+  walletBalance: number | null;
+  /** The picked match (predictions), once matches are loaded. */
+  match: Match | undefined;
+  /** Predictions: matches are loaded and the picked one isn't upcoming anymore (it started). */
+  matchGone: boolean;
   onNext: () => void;
+  onPickAnother: () => void;
 }) {
   const min = Math.max(1, Math.ceil(config?.minStashUsd ?? FALLBACK_MIN_USD));
   const max = Math.max(min, Math.floor(config?.maxStashUsd ?? FALLBACK_MAX_USD));
@@ -1373,9 +1866,20 @@ function AmountStep({
   const [customOpen, setCustomOpen] = useState(false);
   const [customText, setCustomText] = useState("");
 
-  const zec = config?.zecUsd ? formatZec(Math.round((usd / config.zecUsd) * ZAT), 4) : "…";
+  const zecZat = config?.zecUsd ? Math.round((usd / config.zecUsd) * ZAT) : null;
+  const zec = zecZat != null ? formatZec(zecZat, 4) : "…";
   const active = customOpen ? "Custom" : (PRESETS.find((p) => p.usd === usd)?.label ?? "Custom");
   const isPrediction = draft.type === "prediction";
+
+  // Predictions: the server wants the match to still be far enough from kickoff when the stash is made.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isPrediction) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [isPrediction]);
+  const matchTooSoon = isPrediction && (matchGone || (!!match && kicksOffTooSoon(match, now, 5_000)));
+  const short = walletBalance != null && zecZat != null && walletBalance < zecZat;
 
   const setUsd = (v: number) => {
     const n = clamp(Math.round(v), min, max);
@@ -1418,6 +1922,28 @@ function AmountStep({
           ${usd}
         </div>
         <div style={{ font: "var(--zk-type-mono)", fontSize: "var(--zk-fs-18)", marginTop: "var(--zk-space-12)" }}>{zec} ZEC</div>
+        <div
+          style={{
+            marginTop: "var(--zk-space-6)",
+            minHeight: 18,
+            font: "var(--zk-type-caption)",
+            fontWeight: "var(--zk-fw-medium)" as CSSProperties["fontWeight"],
+            color: short ? "var(--zk-gold)" : "var(--zk-text-muted)",
+            textAlign: "center",
+            maxWidth: "100%",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {walletBalance == null
+            ? " "
+            : walletBalance <= 0
+              ? "Your wallet is empty · test ZEC is free"
+              : short
+                ? `You have ${fmtBal(walletBalance)} test ZEC · add more next`
+                : `You have ${fmtBal(walletBalance)} test ZEC`}
+        </div>
       </div>
       <PrizeSlider value={usd} min={min} max={max} onChange={setUsd} />
       <div style={{ display: "flex", justifyContent: "space-between", font: "var(--zk-type-mono-xs)", color: "var(--zk-text-muted)" }}>
@@ -1487,7 +2013,7 @@ function AmountStep({
           <Chip variant="info" icon="flag" label="Resolves at full time" />
         </div>
       ) : (
-        <div style={{ display: "flex", gap: "var(--zk-space-8)", flexWrap: "wrap" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "var(--zk-space-8)" }}>
           {EXPIRIES.map((x) => (
             <Chip
               key={x.hours}
@@ -1495,6 +2021,7 @@ function AmountStep({
               size="sm"
               active={draft.expiryHours === x.hours}
               onClick={() => patch({ expiryHours: x.hours })}
+              style={{ height: 44, width: "100%", justifyContent: "center", padding: 0 }}
             />
           ))}
         </div>
@@ -1515,18 +2042,51 @@ function AmountStep({
         <span style={{ color: "var(--zk-purple-light)", display: "flex", flex: "none" }}>
           <Icon icon="shield" size={18} />
         </span>
-        <span>
-          If nobody cracks it, the ZEC comes back to you. And you earn <b style={{ color: "var(--zk-text)" }}>Uncrackable</b>.
-        </span>
+        {isPrediction ? (
+          <span>If nobody calls it, the ZEC comes back to you.</span>
+        ) : (
+          <span>
+            If nobody cracks it, the ZEC comes back to you. And you earn <b style={{ color: "var(--zk-text)" }}>Uncrackable</b>.
+          </span>
+        )}
       </div>
       <div style={CTA}>
-        <Button
-          label={creating ? "Hiding it…" : "Next: fund it"}
-          variant="primary"
-          size="lg"
-          disabled={creating}
-          onClick={onNext}
-        />
+        {matchTooSoon ? (
+          <>
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                gap: "var(--zk-space-10)",
+                alignItems: "flex-start",
+                padding: "var(--zk-space-12) var(--zk-space-14)",
+                borderRadius: "var(--zk-radius-lg)",
+                background: "var(--zk-gold-tint)",
+                font: "var(--zk-type-small)",
+                color: "var(--zk-text)",
+              }}
+            >
+              <span style={{ color: "var(--zk-gold)", display: "flex", flex: "none" }}>
+                <Icon icon="clock" size={18} />
+              </span>
+              <span>
+                {match && !matchGone
+                  ? `${match.home.code} vs ${match.away.code} is about to kick off, so there’s no time left to call it. Pick a later match.`
+                  : "That match has already kicked off. Pick another one."}
+              </span>
+            </div>
+            <Button label="Pick another match" variant="primary" size="lg" onClick={onPickAnother} />
+          </>
+        ) : (
+          <Button
+            label={creating ? "Hiding it…" : "Next: fund it"}
+            variant="primary"
+            size="lg"
+            sfx="whoosh"
+            disabled={creating}
+            onClick={onNext}
+          />
+        )}
       </div>
     </>
   );
@@ -1534,7 +2094,7 @@ function AmountStep({
 
 /* ───────────────────────── step 4a · fund ───────────────────────── */
 
-function RefundNote() {
+function RefundNote({ type }: { type: StashType }) {
   return (
     <div
       style={{
@@ -1552,15 +2112,16 @@ function RefundNote() {
       <span style={{ color: "var(--zk-purple-light)", display: "flex", flex: "none" }}>
         <Icon icon="shield" size={18} />
       </span>
-      <span>If nobody cracks it, the ZEC goes back to your ZECKED wallet.</span>
+      <span>If nobody {type === "prediction" ? "calls" : "cracks"} it, the ZEC goes back to your ZECKED wallet.</span>
     </div>
   );
 }
 
 /**
- * Two ways to fund:
+ * Three ways to fund:
  *  - enough in the ZECKED wallet → one-tap "Pay from my ZECKED wallet", the QR flow folded underneath;
- *  - balance too low (or unknown) → the QR flow, open, with "Your balance" + an "Add ZEC" link.
+ *  - not enough → "Add free test ZEC" (the wallet's Add ZEC; the draft waits here), QR folded underneath;
+ *  - no wallet info, or already paid / expired → the QR flow, open.
  */
 function FundStep({
   stash,
@@ -1571,14 +2132,17 @@ function FundStep({
   checking,
   simulating,
   walletBalance,
+  walletPending,
   walletLoading,
   paying,
+  canGoBack,
   onPayFromBalance,
   onCopyAddress,
   onSent,
   onSimulate,
   onGoLive,
   onStartOver,
+  onSmaller,
 }: {
   stash: PublicStash;
   qrSrc: string | null;
@@ -1589,14 +2153,19 @@ function FundStep({
   simulating: boolean;
   /** ZECKED wallet balance, or null when there is no wallet info. */
   walletBalance: number | null;
+  /** Test ZEC seen on its way into the wallet (not spendable yet). */
+  walletPending: number;
   walletLoading: boolean;
   paying: boolean;
+  /** There is a prize step to go back to (not a bare ?resume= link). */
+  canGoBack: boolean;
   onPayFromBalance: () => void;
   onCopyAddress: () => void;
   onSent: () => void;
   onSimulate: () => void;
   onGoLive: () => void;
   onStartOver: () => void;
+  onSmaller: () => void;
 }) {
   const [qrOpen, setQrOpen] = useState(false);
   const funding = stash.funding;
@@ -1606,11 +2175,14 @@ function FundStep({
   const partial = !paid && fundedZat > 0 && fundedZat < amountZat;
   // The server charges the stash amount (`stash.amountZat`) from the balance.
   const chargeZat = stash.amountZat;
+  const feeZat = Math.max(0, amountZat - chargeZat);
   const open = !paid && !dead;
   const canPay = open && walletBalance != null && walletBalance >= chargeZat;
   // While the balance loads, assume the one-tap path (fold the QR) so the screen doesn't jump.
   const payPath = open && (walletLoading || canPay);
-  const showQr = !payPath || qrOpen;
+  const lowPath = open && !walletLoading && walletBalance != null && !canPay;
+  // A payment already coming in by QR keeps the QR open.
+  const showQr = (!payPath && !lowPath) || qrOpen || partial;
 
   const statusText = paid
     ? "ZEC detected!"
@@ -1683,7 +2255,7 @@ function FundStep({
               display: "flex",
               alignItems: "center",
               gap: "var(--zk-space-10)",
-              padding: "var(--zk-space-8) var(--zk-space-8) var(--zk-space-8) var(--zk-space-16)",
+              padding: "var(--zk-space-6) var(--zk-space-6) var(--zk-space-6) var(--zk-space-16)",
               borderRadius: "var(--zk-radius-lg)",
               background: "var(--zk-surface)",
             }}
@@ -1701,7 +2273,16 @@ function FundStep({
             >
               {shortAddr(funding.address)}
             </span>
-            <Button label="Copy" icon="copy" variant="secondary" size="sm" full={false} onClick={onCopyAddress} />
+            <Button
+              label="Copy"
+              icon="copy"
+              variant="secondary"
+              size="sm"
+              full={false}
+              ariaLabel="Copy wallet address"
+              onClick={onCopyAddress}
+              style={{ height: 44 }}
+            />
           </div>
           {open ? <Button label="Open in wallet" icon="wallet" variant="ghost" size="md" href={funding.uri} /> : null}
         </>
@@ -1760,6 +2341,64 @@ function FundStep({
     </>
   );
 
+  const sendExactly = (
+    <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
+      Scan from any Zcash wallet and send exactly{" "}
+      <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>{formatZec(amountZat, 8)} ZEC</span>
+      {feeZat > 0 ? <> (that includes a {formatZec(feeZat, 8)} ZEC network fee, a tiny fee the Zcash network charges).</> : "."}
+    </p>
+  );
+
+  const qrToggle = (
+    <button
+      type="button"
+      aria-expanded={showQr}
+      onClick={() => setQrOpen((o) => !o)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "var(--zk-space-10)",
+        width: "100%",
+        minHeight: 52,
+        padding: "var(--zk-space-14) var(--zk-space-16)",
+        borderRadius: "var(--zk-radius-lg)",
+        background: "var(--zk-surface)",
+        border: "1px solid var(--zk-border)",
+        color: "var(--zk-text)",
+        font: "var(--zk-type-body-strong)",
+        textAlign: "left",
+        cursor: "pointer",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
+        <span style={{ color: "var(--zk-text-muted)", display: "flex" }}>
+          <Icon icon="camera" size={18} />
+        </span>
+        Or send from another Zcash wallet
+      </span>
+      <Icon
+        icon="back"
+        size={18}
+        stroke={2.6}
+        style={{
+          color: "var(--zk-text-muted)",
+          transform: showQr ? "rotate(90deg)" : "rotate(-90deg)",
+          transition: "transform var(--zk-dur-base) var(--zk-ease-out)",
+        }}
+      />
+    </button>
+  );
+
+  const foldedQr = showQr ? (
+    <>
+      {sendExactly}
+      {qrBlock}
+      <Button label={checking ? "Checking…" : "I’ve sent it"} variant="ghost" size="md" disabled={checking} onClick={onSent} />
+    </>
+  ) : null;
+
   const simulateBtn = testMode ? (
     <Button
       label={simulating ? "Simulating…" : "Simulate payment (test mode)"}
@@ -1771,20 +2410,26 @@ function FundStep({
     />
   ) : null;
 
+  const holds = (
+    <>
+      <p style={{ margin: "calc(var(--zk-space-4) * -1) 0 0", font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
+        Your stash holds
+      </p>
+      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-10)", flexWrap: "wrap" }}>
+        <span style={{ font: "var(--zk-type-mono-lg)", fontSize: "var(--zk-fs-26)", color: "var(--zk-gold)" }}>
+          {formatZec(chargeZat, 8)} ZEC
+        </span>
+        <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(stash.usd)}</span>
+      </div>
+    </>
+  );
+
   /* ── one-tap path: enough ZEC in the ZECKED wallet ── */
   if (payPath) {
     return (
       <>
         <h1 style={H1}>Fund it.</h1>
-        <p style={{ margin: "calc(var(--zk-space-4) * -1) 0 0", font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
-          Your stash holds
-        </p>
-        <div style={{ display: "flex", alignItems: "baseline", gap: "var(--zk-space-10)", flexWrap: "wrap" }}>
-          <span style={{ font: "var(--zk-type-mono-lg)", fontSize: "var(--zk-fs-26)", color: "var(--zk-gold)" }}>
-            {formatZec(chargeZat, 8)} ZEC
-          </span>
-          <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(stash.usd)}</span>
-        </div>
+        {holds}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)", marginTop: "var(--zk-space-4)" }}>
           {walletLoading ? (
             <div
@@ -1811,71 +2456,93 @@ function FundStep({
           )}
           <div style={{ textAlign: "center", font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
             {walletLoading || walletBalance == null ? (
-              " "
+              " "
             ) : (
               <>
-                Balance <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-gold)" }}>{formatZec(walletBalance, 4)} ZEC</span>
+                Balance <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-gold)" }}>{formatZec(walletBalance, 4)} test ZEC</span>
               </>
             )}
           </div>
         </div>
-        <button
-          type="button"
-          aria-expanded={qrOpen}
-          onClick={() => setQrOpen((o) => !o)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "var(--zk-space-10)",
-            width: "100%",
-            padding: "var(--zk-space-14) var(--zk-space-16)",
-            borderRadius: "var(--zk-radius-lg)",
-            background: "var(--zk-surface)",
-            border: "1px solid var(--zk-border)",
-            color: "var(--zk-text)",
-            font: "var(--zk-type-body-strong)",
-            textAlign: "left",
-            cursor: "pointer",
-            WebkitTapHighlightColor: "transparent",
-          }}
-        >
-          <span style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
-            <span style={{ color: "var(--zk-text-muted)", display: "flex" }}>
-              <Icon icon="camera" size={18} />
-            </span>
-            Or send from another Zcash wallet
-          </span>
-          <Icon
-            icon="back"
-            size={18}
-            stroke={2.6}
-            style={{
-              color: "var(--zk-text-muted)",
-              transform: qrOpen ? "rotate(90deg)" : "rotate(-90deg)",
-              transition: "transform var(--zk-dur-base) var(--zk-ease-out)",
-            }}
-          />
-        </button>
-        {showQr ? (
-          <>
-            <p style={{ margin: 0, font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>
-              Scan from any Zcash wallet and send exactly{" "}
-              <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)", whiteSpace: "nowrap" }}>
-                {formatZec(amountZat, 8)} ZEC
-              </span>
-            </p>
-            {qrBlock}
-            <Button label={checking ? "Checking…" : "I’ve sent it"} variant="ghost" size="md" disabled={checking} onClick={onSent} />
-          </>
-        ) : null}
-        <RefundNote />
+        {qrToggle}
+        {foldedQr}
+        <RefundNote type={stash.type} />
         {simulateBtn ? <div style={CTA}>{simulateBtn}</div> : null}
       </>
     );
   }
 
-  /* ── QR path: balance too low / unknown, or already paid / expired ── */
+  /* ── not enough in the wallet (a first run on testnet starts at 0): test ZEC is free ── */
+  if (lowPath && walletBalance != null) {
+    const empty = walletBalance <= 0;
+    return (
+      <>
+        <h1 style={H1}>Fund it.</h1>
+        {holds}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--zk-space-12)",
+            padding: "var(--zk-space-16)",
+            borderRadius: "var(--zk-radius-2xl)",
+            background: "var(--zk-surface)",
+            border: "1px solid rgb(var(--zk-gold-rgb) / .35)",
+            marginTop: "var(--zk-space-4)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-12)" }}>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 44,
+                height: 44,
+                flex: "none",
+                borderRadius: "var(--zk-radius-lg)",
+                background: "var(--zk-gold-tint)",
+                color: "var(--zk-gold)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon icon="wallet" size={22} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ font: "var(--zk-type-h4)" }}>{empty ? "Your wallet is empty" : "Almost there"}</div>
+              <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                You have <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text)" }}>{fmtBal(walletBalance)}</span> test
+                ZEC · needs <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-gold)" }}>{formatZec(chargeZat, 4)}</span>
+              </div>
+            </div>
+          </div>
+          <p style={{ margin: 0, font: "var(--zk-type-small)", color: "var(--zk-text)" }}>
+            Test ZEC is free (no real value). Add some to your ZECKED wallet, then come back: your stash waits right here.
+          </p>
+          {walletPending > 0 ? (
+            <div role="status" style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-10)", font: "var(--zk-type-small)", color: "var(--zk-mint)" }}>
+              <Spinner size={16} />
+              <span>
+                {formatZec(walletPending, 4)} test ZEC is on its way. This updates by itself.
+              </span>
+            </div>
+          ) : null}
+          <Button label="Add free test ZEC" icon="plus" variant="primary" size="lg" href="/wallet?action=add" />
+        </div>
+        {qrToggle}
+        {foldedQr}
+        <RefundNote type={stash.type} />
+        <div style={CTA}>
+          {simulateBtn}
+          {canGoBack && walletBalance > 0 ? (
+            <Button label="Make the prize smaller" variant="ghost" size="md" onClick={onSmaller} />
+          ) : null}
+        </div>
+      </>
+    );
+  }
+
+  /* ── QR path: no wallet info, or already paid / expired ── */
   return (
     <>
       <h1 style={H1}>Fund it.</h1>
@@ -1888,44 +2555,13 @@ function FundStep({
         </span>
         <span style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)" }}>~{formatUsd(stash.usd)}</span>
       </div>
-      {open && walletBalance != null ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--zk-space-10)",
-            padding: "var(--zk-space-10) var(--zk-space-14)",
-            borderRadius: "var(--zk-radius-lg)",
-            background: "var(--zk-surface)",
-            font: "var(--zk-type-small)",
-          }}
-        >
-          <span style={{ color: "var(--zk-text-muted)", display: "flex", flex: "none" }}>
-            <Icon icon="wallet" size={18} />
-          </span>
-          <span style={{ flex: 1, minWidth: 0, color: "var(--zk-text-muted)" }}>
-            Your balance:{" "}
-            <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-text)" }}>{formatZec(walletBalance, 4)} ZEC</span>
-          </span>
-          <Link
-            href="/wallet?action=add"
-            style={{
-              flex: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--zk-space-4)",
-              font: "var(--zk-type-body-strong)",
-              color: "var(--zk-gold)",
-              textDecoration: "none",
-            }}
-          >
-            <Icon icon="plus" size={14} stroke={2.8} />
-            Add ZEC
-          </Link>
-        </div>
+      {open && feeZat > 0 ? (
+        <p style={{ margin: "calc(var(--zk-space-6) * -1) 0 0", font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
+          Includes a {formatZec(feeZat, 8)} ZEC network fee (a tiny fee the Zcash network charges).
+        </p>
       ) : null}
       {qrBlock}
-      {open ? <RefundNote /> : null}
+      {open ? <RefundNote type={stash.type} /> : null}
       <div style={CTA}>
         {dead ? (
           <Button label="Hide a new stash" variant="primary" size="lg" onClick={onStartOver} />
@@ -1962,19 +2598,35 @@ function ShareCardPreview({
   const riddleShort = riddleText.length > 70 ? riddleText.slice(0, 68) + "…" : riddleText;
   const isRiddle = stash.type === "riddle";
   const link = `${host || "zecked.com"}/s/${stash.id}`;
+  // The card is laid out at its real size (354×199, like the image people will see) and scaled down
+  // as a whole on narrow phones, so the text never reflows into itself.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const fit = () => setScale(Math.min(1, (el.clientWidth || 354) / 354));
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
+    <div ref={boxRef} style={{ width: "100%", maxWidth: 354, height: 199 * scale }}>
     <div
       style={{
-        width: "100%",
-        maxWidth: 354,
-        aspectRatio: "354 / 199",
+        width: 354,
+        height: 199,
         borderRadius: "var(--zk-radius-xl)",
         overflow: "hidden",
         position: "relative",
         background: isRiddle ? "var(--zk-bg-share-riddle)" : "var(--zk-bg-share-prediction)",
         border: "1px solid var(--zk-border-strong)",
         boxShadow: "var(--zk-shadow-float)",
-        transform: "rotate(-2deg)",
+        // Scale from the top-left corner (it fills the box), tilt around the middle (as before).
+        transform: `scale(${scale}) translate(177px, 99.5px) rotate(-2deg) translate(-177px, -99.5px)`,
+        transformOrigin: "0 0",
       }}
     >
       <div style={{ position: "absolute", left: 16, top: 14 }}>
@@ -2088,6 +2740,7 @@ function ShareCardPreview({
         {link}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -2098,7 +2751,10 @@ function LiveStep({
   kind,
   origin,
   host,
+  testnet,
+  paidFromWallet,
   onCopyLink,
+  onDone,
 }: {
   stash: PublicStash;
   riddleText: string;
@@ -2106,19 +2762,39 @@ function LiveStep({
   kind: PredictionKind;
   origin: string;
   host: string;
+  /** Not mainnet: the prize is test ZEC, and the post should say so. */
+  testnet: boolean;
+  /** Just paid with one tap: say so here (a toast would sit on top of the headline). */
+  paidFromWallet: boolean;
   onCopyLink: (url: string) => void;
+  onDone: () => void;
 }) {
   const url = `${origin}/s/${stash.id}`;
   const home = match?.home.code ?? "";
   const away = match?.away.code ?? "";
+  const zec = `${formatZec(stash.amountZat)} ${testnet ? "test ZEC" : "ZEC"}`;
+  const prize = testnet ? zec : formatUsd(stash.usd);
   const text =
     stash.type === "riddle"
-      ? `Crack my riddle and ZECK ${formatZec(stash.amountZat)} ZEC 🔐 First one wins.`
+      ? `Crack my riddle and ZECK ${zec} 🔐 First one wins.`
       : kind === "winner"
-        ? `First to call the ${home} vs ${away} winner ZECKS ${formatUsd(stash.usd)} ⚽`
-        : `First to call ${home} vs ${away} exactly ZECKS ${formatUsd(stash.usd)} ⚽`;
+        ? `First to call the ${home} vs ${away} winner ZECKS ${prize} ⚽`
+        : `First to call ${home} vs ${away} exactly ZECKS ${prize} ⚽`;
   const enc = encodeURIComponent;
   const open = (href: string) => window.open(href, "_blank", "noopener,noreferrer");
+  // The phone's own share sheet (WhatsApp, Messages, anything); without one, the link goes on the clipboard.
+  const share = async () => {
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: "ZECKED", text, url });
+        return;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+      }
+    }
+    onCopyLink(url);
+  };
+  const half: CSSProperties = { padding: "0 var(--zk-space-8)" };
 
   return (
     <>
@@ -2137,7 +2813,7 @@ function LiveStep({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)", alignItems: "center", textAlign: "center" }}>
-          <LiveBadge size="md" label="Live · verified by viewing key" />
+          <LiveBadge size="md" label="Live · prize verified" />
           <h1
             style={{
               margin: 0,
@@ -2150,6 +2826,24 @@ function LiveStep({
           <p style={{ margin: 0, font: "var(--zk-type-body)", fontSize: "var(--zk-fs-15)", color: "var(--zk-text-muted)", maxWidth: 300 }}>
             Now go stir up trouble. Share it where your people hang out.
           </p>
+          {paidFromWallet ? (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--zk-space-6)",
+                padding: "var(--zk-space-6) var(--zk-space-12)",
+                borderRadius: "var(--zk-radius-pill)",
+                background: "var(--zk-mint-tint)",
+                color: "var(--zk-mint)",
+                font: "var(--zk-type-caption)",
+                fontWeight: "var(--zk-fw-bold)" as CSSProperties["fontWeight"],
+              }}
+            >
+              <Icon icon="check" size={14} stroke={3} />
+              Paid from your ZECKED wallet
+            </span>
+          ) : null}
         </div>
         <div style={{ marginTop: "var(--zk-space-14)" }}>
           <div
@@ -2165,18 +2859,23 @@ function LiveStep({
           <ShareCardPreview stash={stash} riddleText={riddleText} match={match} kind={kind} host={host} />
         </div>
         <div style={{ ...CTA, paddingTop: "var(--zk-space-14)" }}>
-          <Button
-            label="Share on X"
-            variant="light"
-            size="md"
-            onClick={() => open(`https://x.com/intent/post?text=${enc(text)}&url=${enc(url)}`)}
-          />
-          <Button
-            label="Share on Telegram"
-            variant="sky"
-            size="md"
-            onClick={() => open(`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`)}
-          />
+          <Button label="Share" icon="share" variant="primary" size="lg" onClick={() => void share()} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--zk-space-10)" }}>
+            <Button
+              label="Post on X"
+              variant="light"
+              size="md"
+              style={half}
+              onClick={() => open(`https://x.com/intent/post?text=${enc(text)}&url=${enc(url)}`)}
+            />
+            <Button
+              label="Telegram"
+              variant="sky"
+              size="md"
+              style={half}
+              onClick={() => open(`https://t.me/share/url?url=${enc(url)}&text=${enc(text)}`)}
+            />
+          </div>
           <button
             type="button"
             onClick={() => onCopyLink(url)}
@@ -2214,7 +2913,10 @@ function LiveStep({
               Copy
             </span>
           </button>
-          <Button label="View my stash" variant="ghost" size="md" href={`/s/${stash.id}`} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--zk-space-10)" }}>
+            <Button label="View my stash" variant="ghost" size="md" style={half} href={`/s/${stash.id}`} />
+            <Button label="Done" variant="ghost" size="md" style={half} onClick={onDone} />
+          </div>
         </div>
       </div>
     </>
@@ -2228,6 +2930,7 @@ interface ToastState {
   text: string;
   variant: ToastVariant;
   icon?: string;
+  sound?: false;
 }
 
 const STEP_BG: Record<Step, string> = {
@@ -2238,9 +2941,23 @@ const STEP_BG: Record<Step, string> = {
   fund: "var(--zk-bg)",
   live: "var(--zk-bg-live)",
 };
+const STEP_ORDER: Record<Step, number> = { type: 0, riddle: 1, prediction: 1, amount: 2, fund: 3, live: 4 };
+
+/** Step slide + top toast drop (reduced motion is handled app-wide in globals.css). */
+const FLOW_CSS =
+  "@keyframes zkh-step-fwd{from{opacity:0;transform:translateX(24px)}}" +
+  "@keyframes zkh-step-back{from{opacity:0;transform:translateX(-24px)}}" +
+  "@keyframes zkh-toast-in{from{opacity:0;transform:translateY(-12px)}}";
+
+/** Next.js patches history.pushState once the router mounts; history writes wait for that (never more than ~1s). */
+function whenRouterReady(fn: () => void, tries = 20) {
+  if (Object.prototype.hasOwnProperty.call(window.history, "pushState") || tries <= 0) fn();
+  else setTimeout(() => whenRouterReady(fn, tries - 1), 50);
+}
 
 export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   const router = useRouter();
+  const appBack = useAppBack("/feed");
   const [s, dispatch] = useReducer(flowReducer, INITIAL_FLOW);
   const patch = useCallback((p: Partial<Draft>) => dispatch({ t: "patch", patch: p }), []);
 
@@ -2256,20 +2973,51 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   const [auth, setAuth] = useState<"loading" | "in" | "out" | "unknown">("loading");
   // ZECKED wallet balance for one-tap funding (null = no wallet info). Refunds go back to this wallet.
   const [walletBal, setWalletBal] = useState<number | null>(null);
+  const [walletPending, setWalletPending] = useState(0);
   const [walletLoading, setWalletLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [paidFromWallet, setPaidFromWallet] = useState(false);
   const [qr, setQr] = useState<{ uri: string; src: string } | null>(null);
   const [qrFailedFor, setQrFailedFor] = useState<string | null>(null);
   const [loc, setLoc] = useState({ origin: "", host: "" });
   const [toast, setToast] = useState<ToastState | null>(null);
+  /** The saved draft (if any) is back in place; only then is it written again. */
+  const [hydrated, setHydrated] = useState(false);
+  /** A saved draft came back on step 1: offer "Start fresh". */
+  const [restoredDraft, setRestoredDraft] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pollBusy = useRef(false);
   /** Stash ids this component created or resumed, so a ?resume= URL update for them is a no-op. */
   const knownIds = useRef(new Set<string>());
+  /** The draft saved in this tab when the flow opened (brings the draft back on ?resume= of its stash). */
+  const savedRef = useRef<SavedDraft | null>(null);
+  /** The unfunded stash the draft already made, so the same draft doesn't make a second one. */
+  const reuseRef = useRef<{ stashId: string; stashKey: string } | null>(null);
+  /** Latest state for the popstate listener. */
+  const sRef = useRef(s);
+  /**
+   * This entry's place in the flow. Next.js can rewrite an entry's history.state (it refetches the
+   * page after a reload, then replaces the state without our key), so we keep it here and put it back.
+   */
+  const posRef = useRef<HistPos | null>(null);
+  const keepPos = useCallback(() => {
+    const want = posRef.current;
+    if (!want || window.location.pathname !== "/hide" || readHist()) return;
+    window.history.replaceState({ ...((window.history.state as object | null) ?? {}), [HIST_KEY]: want }, "");
+  }, []);
+  useEffect(() => {
+    sRef.current = s;
+    keepPos();
+  });
+  const curPos = () => readHist() ?? posRef.current;
+  const writePos = useCallback((mode: "push" | "replace", url: string, pos: HistPos) => {
+    posRef.current = pos;
+    writeHist(mode, url, pos);
+  }, []);
 
-  const showToast = useCallback((text: string, variant: ToastVariant = "default", icon?: string) => {
+  const showToast = useCallback((text: string, variant: ToastVariant = "default", icon?: string, sound?: false) => {
     clearTimeout(toastTimer.current);
-    setToast({ id: Date.now(), text, variant, icon });
+    setToast({ id: Date.now(), text, variant, icon, sound });
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
@@ -2277,6 +3025,127 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   useEffect(() => {
     setLoc({ origin: window.location.origin, host: window.location.host });
   }, []);
+
+  /* ── history: each step is an entry; `HistPos` says where this entry sits in the flow ── */
+  const pushStep = useCallback(
+    (step: Step, stashId?: string) => {
+      const h = readHist() ?? posRef.current ?? { i: 0, from: cameFromApp() };
+      writePos("push", stepUrl(step, stashId), { i: h.i + 1, from: h.from });
+    },
+    [writePos],
+  );
+
+  /** Leave the flow: back past its first entry when that came from inside the app, else to the feed. */
+  const exitFlow = useCallback(
+    (h: HistPos | null, slide = true) => {
+      if (h?.from) {
+        const at = window.location.href;
+        goBackBy(h.i + 1, slide);
+        // history.go() past the start of the tab is a silent no-op: then just go to the feed.
+        setTimeout(() => {
+          if (window.location.href === at) router.replace("/feed");
+        }, 700);
+      } else {
+        router.replace("/feed");
+      }
+    },
+    [router],
+  );
+
+  /** ✕ on step 1 (and the resumed fund step, which has nothing before it). */
+  const closeFlow = () => {
+    const h = curPos();
+    if (h && h.i > 0) exitFlow(h);
+    else appBack();
+  };
+
+  // Mount: bring the saved draft back, and give this history entry its place in the flow.
+  useEffect(() => {
+    const saved = loadSaved();
+    savedRef.current = saved;
+    if (saved?.stashId && saved.stashKey) reuseRef.current = { stashId: saved.stashId, stashKey: saved.stashKey };
+    const { step, resume } = stepFromUrl();
+    let fixUrl: string | null = null;
+    if (!resume) {
+      // No saved draft behind a ?step= link (new tab, cleared storage): that step starts empty.
+      const draft = saved?.draft ?? { ...INITIAL_DRAFT, type: step === "prediction" ? "prediction" : "riddle" };
+      const want = step ?? "type";
+      const at = reachableStep(want, draft);
+      if (saved || at !== "type") dispatch({ t: "restore", draft, step: at });
+      if (at !== want) fixUrl = stepUrl(at);
+      if (saved && at === "type" && draftHasContent(saved.draft)) setRestoredDraft(true);
+    }
+    const url = fixUrl;
+    whenRouterReady(() => {
+      let h = readHist();
+      if (!h) {
+        // A new flow starts at step 1; anything else lost its key to a Next.js rewrite: look it up.
+        if (!resume && !step) forgetPos();
+        else h = recallPos(hereUrl());
+      }
+      h ??= { i: 0, from: cameFromApp() };
+      posRef.current = h;
+      if (url) writeHist("replace", url, h);
+      else {
+        // Same URL: only our key changes, so keep Next's own state as it is.
+        window.history.replaceState({ ...(window.history.state as object | null), [HIST_KEY]: h }, "");
+        rememberPos(hereUrl(), h);
+      }
+    });
+    setHydrated(true);
+  }, []);
+
+  // Keep the draft in this tab, so a reload, an accidental back or a trip to the wallet doesn't lose it.
+  useEffect(() => {
+    if (!hydrated || s.resumed || s.step === "live") return;
+    const reuse = s.stash?.status === "awaiting_funding" && s.stashKey ? { stashId: s.stash.id, stashKey: s.stashKey } : reuseRef.current;
+    const pristine = !draftHasContent(s.draft) && !reuse && JSON.stringify(s.draft) === JSON.stringify(INITIAL_DRAFT);
+    saveDraft(pristine ? null : { draft: s.draft, stashId: reuse?.stashId ?? null, stashKey: reuse?.stashKey ?? null });
+  }, [hydrated, s.draft, s.stash, s.stashKey, s.resumed, s.step]);
+
+  // Live: the stash is out there, so the draft is done with.
+  useEffect(() => {
+    if (s.step !== "live") return;
+    saveDraft(null);
+    forgetPos();
+    savedRef.current = null;
+    reuseRef.current = null;
+  }, [s.step]);
+
+  // Browser back / forward / swipe-back between steps.
+  useEffect(() => {
+    const onPop = () => {
+      if (window.location.pathname !== "/hide") return;
+      const cur = sRef.current;
+      const { step, resume } = stepFromUrl();
+      // Our key can be gone from an entry Next.js rewrote: the flow is linear, so work it out from the step.
+      const target: Step = resume ? "fund" : (step ?? "type");
+      const was = posRef.current;
+      const h =
+        readHist() ??
+        recallPos(hereUrl()) ??
+        (was ? { i: Math.max(0, was.i + STEP_ORDER[target] - STEP_ORDER[cur.step === "live" ? "fund" : cur.step]), from: was.from } : null);
+      posRef.current = h;
+      for (const ms of [300, 1000, 2500]) setTimeout(keepPos, ms);
+      // A finished flow isn't replayed: going back from the live screen leaves the flow.
+      if (cur.step === "live") {
+        // (They already went back: no extra slide on top of the browser's own.)
+        if (!(resume && cur.stash?.id === resume)) exitFlow(h, false);
+        return;
+      }
+      if (resume) {
+        if (cur.stash?.id === resume) dispatch({ t: "goto", step: "fund", dir: "fwd" });
+        else knownIds.current.delete(resume); // the ?resume= effect below loads it
+        return;
+      }
+      const want = step ?? "type";
+      const at = reachableStep(want, cur.draft);
+      dispatch({ t: "goto", step: at, dir: STEP_ORDER[at] < STEP_ORDER[cur.step] ? "back" : "fwd" });
+      if (at !== want) writePos("replace", stepUrl(at), h ?? { i: 0, from: false });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [exitFlow, keepPos, writePos]);
 
   // App config: rate, min/max prize, test mode.
   useEffect(() => {
@@ -2323,17 +3192,23 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     }
     let cancelled = false;
     setResuming(true);
+    const restart = () => writePos("replace", "/hide", readHist() ?? posRef.current ?? { i: 0, from: cameFromApp() });
     api
       .stash(resumeId)
       .then(({ stash }) => {
         if (cancelled) return;
         if (!stash.isMine) {
           showToast("Only the hider can fund this stash.", "error");
+          restart();
         } else if (stash.status === "awaiting_funding" || isFunded(stash)) {
           knownIds.current.add(stash.id);
-          dispatch({ t: "resume", stash });
+          // Back from the wallet (or a reload): the draft that made this stash comes back with it.
+          const saved = savedRef.current;
+          const mine = saved && saved.stashId === stash.id ? saved : null;
+          dispatch({ t: "resume", stash, draft: mine?.draft, key: mine?.stashKey });
         } else {
           showToast("This stash can’t be funded anymore.", "error");
+          restart();
         }
       })
       .catch((e) => {
@@ -2345,23 +3220,36 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     return () => {
       cancelled = true;
     };
-  }, [resumeId, showToast, auth]);
+  }, [resumeId, showToast, auth, writePos]);
 
-  // Matches: load when the prediction step opens.
-  const loadMatches = useCallback(() => {
-    setMatchesError(null);
-    setMatches(null);
+  // Matches: load for the picker (and for the prize step of a prediction); refresh quietly while picking.
+  const loadMatches = useCallback((quiet = false) => {
+    if (!quiet) {
+      setMatchesError(null);
+      setMatches(null);
+    }
     api
       .matches()
-      .then((r) => setMatches(r.matches))
-      .catch((e) => setMatchesError(errMsg(e)));
+      .then((r) => {
+        setMatches(r.matches);
+        setMatchesError(null);
+      })
+      .catch((e) => {
+        if (!quiet) setMatchesError(errMsg(e));
+      });
   }, []);
   const matchesRequested = useRef(false);
   useEffect(() => {
-    if (s.step !== "prediction" || matchesRequested.current) return;
-    matchesRequested.current = true;
-    loadMatches();
-  }, [s.step, loadMatches]);
+    const need = s.step === "prediction" || (s.step === "amount" && s.draft.type === "prediction");
+    if (!need) return;
+    if (!matchesRequested.current) {
+      matchesRequested.current = true;
+      loadMatches();
+    }
+    if (s.step !== "prediction") return;
+    const t = setInterval(() => loadMatches(true), MATCHES_REFRESH_MS);
+    return () => clearInterval(t);
+  }, [s.step, s.draft.type, loadMatches]);
 
   // Keep the prize inside the configured range.
   useEffect(() => {
@@ -2380,6 +3268,42 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     () => s.stash?.prediction?.match ?? matches?.find((m) => m.id === s.draft.matchId),
     [s.stash, matches, s.draft.matchId],
   );
+
+  /* ── forward / back ── */
+  const goNext = () => {
+    if (s.step === "type") {
+      const next = detailsStep(s.draft);
+      setRestoredDraft(false);
+      pushStep(next);
+      dispatch({ t: "goto", step: next, dir: "fwd" });
+    } else if (s.step === "riddle" || s.step === "prediction") {
+      pushStep("amount");
+      dispatch({ t: "goto", step: "amount", dir: "fwd" });
+    }
+  };
+
+  /** ← in the step header: the previous step (a real history step back when there is one). */
+  const goPrev = () => {
+    const prev: Step | null =
+      s.step === "riddle" || s.step === "prediction"
+        ? "type"
+        : s.step === "amount"
+          ? detailsStep(s.draft)
+          : s.step === "fund" && !s.resumed
+            ? "amount"
+            : null;
+    if (!prev) {
+      closeFlow();
+      return;
+    }
+    const h = curPos();
+    if (h && h.i > 0) {
+      window.history.back(); // the popstate listener shows the step
+      return;
+    }
+    writePos("replace", stepUrl(prev), h ?? { i: 0, from: cameFromApp() });
+    dispatch({ t: "goto", step: prev, dir: "back" });
+  };
 
   /* ── step 3 → 4a: create the stash ── */
   const createStash = async () => {
@@ -2407,19 +3331,32 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     // Prediction expiry drifts with the clock, so it is not part of the "same stash?" key.
     const key = JSON.stringify({ ...body, expiryHours: d.type === "riddle" ? body.expiryHours : 0 });
     if (s.stash && s.stashKey === key && s.stash.status === "awaiting_funding") {
+      pushStep("fund", s.stash.id);
       dispatch({ t: "fund" });
-      window.history.replaceState(null, "", `/hide?resume=${encodeURIComponent(s.stash.id)}`);
       return;
     }
     setCreating(true);
     try {
+      // Same draft as the unfunded stash from before (a reload or a trip to the wallet)? Use that one.
+      const reuse = !s.stash && reuseRef.current?.stashKey === key ? reuseRef.current.stashId : null;
+      if (reuse) {
+        const prev = await api.stash(reuse).catch(() => null);
+        if (prev && prev.stash.isMine && prev.stash.status === "awaiting_funding") {
+          knownIds.current.add(prev.stash.id);
+          setFundedZat(0);
+          pushStep("fund", prev.stash.id);
+          dispatch({ t: "created", stash: prev.stash, key });
+          return;
+        }
+      }
       // No refund address: if nobody cracks it, the ZEC goes back to the hider's ZECKED wallet.
       const { stash } = await api.create(body);
       knownIds.current.add(stash.id);
+      reuseRef.current = { stashId: stash.id, stashKey: key };
       setFundedZat(0);
+      // Its own history entry: a reload (or coming back from the wallet) resumes funding, back goes to the prize.
+      pushStep("fund", stash.id);
       dispatch({ t: "created", stash, key });
-      // A reload (or coming back from the wallet app) resumes funding.
-      window.history.replaceState(null, "", `/hide?resume=${encodeURIComponent(stash.id)}`);
     } catch (e) {
       if (errStatus(e) === 401) setAuth("out");
       else showToast(errMsg(e), "error");
@@ -2479,11 +3416,12 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   const stashId = s.stash?.id;
   const awaiting = s.stash?.status === "awaiting_funding";
 
-  // Step 4a: the ZECKED wallet balance decides between one-tap funding and the QR flow.
+  // The ZECKED wallet balance: a hint on the prize step, and on 4a it picks one-tap funding vs Add ZEC.
   const loadWallet = useCallback(async () => {
     try {
       const w = await api.wallet();
       setWalletBal(w.balanceZat);
+      setWalletPending(w.pendingDepositZat || 0);
     } catch (e) {
       if (errStatus(e) === 401) setWalletBal(null);
       /* otherwise keep the last known balance; the QR flow always works */
@@ -2491,16 +3429,22 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
       setWalletLoading(false);
     }
   }, []);
+  const walletStep = s.step === "amount" || (s.step === "fund" && !!stashId && awaiting);
   useEffect(() => {
-    if (s.step !== "fund" || !stashId || !awaiting || auth === "out") return;
+    if (!walletStep || auth === "out") return;
     void loadWallet();
-    // Back from /wallet (added ZEC in another tab) or from a wallet app: refresh the balance.
+    // Back from /wallet (added test ZEC) or from a wallet app: refresh the balance.
     const onVisible = () => {
       if (document.visibilityState === "visible") void loadWallet();
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [s.step, stashId, awaiting, auth, loadWallet]);
+    // While funding, keep an eye on it: test ZEC from a faucet shows up on its own.
+    const t = s.step === "fund" ? setInterval(() => void loadWallet(), WALLET_POLL_MS) : undefined;
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(t);
+    };
+  }, [walletStep, s.step, auth, loadWallet]);
 
   const payFromBalance = async () => {
     if (!s.stash || paying) return;
@@ -2511,8 +3455,8 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
       setWalletBal(res.wallet.balanceZat);
       dispatch({ t: "update", stash: res.stash });
       if (isFunded(res.stash)) {
-        dispatch({ t: "next" }); // straight to 4b, no need to wait for "ZEC detected"
-        showToast("Paid from your ZECKED wallet", "success", "wallet");
+        setPaidFromWallet(true); // said on the live screen itself, not in a toast over its headline
+        dispatch({ t: "goto", step: "live", dir: "fwd" }); // straight to 4b, no need to wait for "ZEC detected"
       } else {
         void checkFunding(id, false);
       }
@@ -2520,7 +3464,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
       const status = errStatus(e);
       if (status === 401) setAuth("out");
       else if (status === 402) {
-        showToast("Not enough ZEC in your wallet. Add ZEC or send from another wallet.", "error");
+        showToast("Not enough test ZEC in your wallet yet. Add some (it’s free) or send from another wallet.", "error");
         void loadWallet();
       } else showToast(errMsg(e), "error");
     } finally {
@@ -2549,11 +3493,16 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     };
   }, [s.step, stashId, awaiting, checkFunding]);
 
-  // ✓ ZEC detected → the live screen after a beat.
+  // ✓ ZEC detected → a coin, then the live screen after a beat (its confetti brings its own sound).
   const funded = !!s.stash && isFunded(s.stash);
+  const wasFunded = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (wasFunded.current === false && funded) sfx("coin");
+    wasFunded.current = s.stash ? funded : null;
+  }, [s.stash, funded]);
   useEffect(() => {
     if (s.step !== "fund" || !funded) return;
-    const t = setTimeout(() => dispatch({ t: "next" }), ADVANCE_MS);
+    const t = setTimeout(() => dispatch({ t: "goto", step: "live", dir: "fwd" }), ADVANCE_MS);
     return () => clearTimeout(t);
   }, [s.step, funded]);
 
@@ -2577,20 +3526,14 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     else showToast("Couldn’t copy. Long-press to copy instead.", "error");
   };
 
-  /* ── navigation ── */
-  const back = () => {
-    if (s.step === "fund") {
-      if (s.resumed) {
-        router.push("/feed");
-        return;
-      }
-      window.history.replaceState(null, "", "/hide");
-    }
-    dispatch({ t: "back" });
-  };
+  /** Throw the draft away and begin again at step 1 (this entry becomes step 1). */
   const startOver = () => {
-    window.history.replaceState(null, "", "/hide");
+    saveDraft(null);
+    savedRef.current = null;
+    reuseRef.current = null;
+    setRestoredDraft(false);
     setFundedZat(0);
+    writePos("replace", "/hide", curPos() ?? { i: 0, from: cameFromApp() });
     dispatch({ t: "reset" });
   };
 
@@ -2601,19 +3544,27 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
       aria-live="polite"
       style={{
         position: "fixed",
-        left: "50%",
-        transform: "translateX(-50%)",
-        bottom: "calc(env(safe-area-inset-bottom, 0px) + 96px)",
-        width: "min(394px, calc(100vw - 36px))",
+        left: 0,
+        right: 0,
+        top: "calc(var(--zk-fixed-top) + var(--zk-space-10))",
         zIndex: 80,
+        display: "flex",
+        justifyContent: "center",
+        padding: "0 var(--zk-screen-pad)",
         pointerEvents: "none",
       }}
     >
-      <Toast key={toast.id} text={toast.text} variant={toast.variant} icon={toast.icon} />
+      <div
+        key={toast.id}
+        style={{ width: "100%", maxWidth: "calc(430px - 2 * var(--zk-screen-pad))", animation: "zkh-toast-in 220ms var(--zk-ease-out) both" }}
+      >
+        <Toast text={toast.text} variant={toast.variant} icon={toast.icon} sound={toast.sound} />
+      </div>
     </div>
   ) : null;
+  const flowCss = <style>{FLOW_CSS}</style>;
 
-  if (resuming || auth === "loading") {
+  if (resuming || auth === "loading" || !hydrated) {
     return (
       <main
         className="zk-screen"
@@ -2624,6 +3575,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
         <span style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
           {resumeId ? "Opening your stash…" : "Opening the vault…"}
         </span>
+        {toastLayer}
       </main>
     );
   }
@@ -2633,7 +3585,8 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     const next = resumeId ? encodeURIComponent(`/hide?resume=${resumeId}`) : "/hide";
     return (
       <main className="zk-screen" style={{ background: STEP_BG.type, gap: "var(--zk-space-12)" }}>
-        <StepHeader n={1} />
+        {flowCss}
+        <StepHeader n={1} onBack={closeFlow} close />
         <GateStep href={`/signin?next=${next}&reason=hide`} />
         {toastLayer}
       </main>
@@ -2644,11 +3597,17 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   switch (s.step) {
     case "type":
       body = (
-        <TypeStep type={s.draft.type} onPick={(type) => patch({ type })} onContinue={() => dispatch({ t: "next" })} />
+        <TypeStep
+          type={s.draft.type}
+          onPick={(type) => patch({ type })}
+          onContinue={goNext}
+          hasDraft={restoredDraft}
+          onStartFresh={startOver}
+        />
       );
       break;
     case "riddle":
-      body = <RiddleStep draft={s.draft} patch={patch} onNext={() => dispatch({ t: "next" })} />;
+      body = <RiddleStep draft={s.draft} patch={patch} onNext={goNext} />;
       break;
     case "prediction":
       body = (
@@ -2657,8 +3616,9 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
           patch={patch}
           matches={matches}
           matchesError={matchesError}
-          onRetry={loadMatches}
-          onNext={() => dispatch({ t: "next" })}
+          onRetry={() => loadMatches()}
+          onNext={goNext}
+          onToast={showToast}
         />
       );
       break;
@@ -2669,7 +3629,15 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
           patch={patch}
           config={config}
           creating={creating}
+          walletBalance={walletLoading ? null : walletBal}
+          match={s.draft.type === "prediction" ? matches?.find((m) => m.id === s.draft.matchId) : undefined}
+          matchGone={
+            s.draft.type === "prediction" &&
+            matches !== null &&
+            !matches.some((m) => m.id === s.draft.matchId && m.status === "scheduled")
+          }
           onNext={() => void createStash()}
+          onPickAnother={goPrev}
         />
       );
       break;
@@ -2684,14 +3652,17 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
           checking={checking}
           simulating={simulating}
           walletBalance={walletBal}
+          walletPending={walletPending}
           walletLoading={walletLoading}
           paying={paying}
+          canGoBack={!s.resumed}
           onPayFromBalance={() => void payFromBalance()}
           onCopyAddress={() => s.stash?.funding && void copy(s.stash.funding.address, "Address copied")}
           onSent={() => s.stash && void checkFunding(s.stash.id, true)}
           onSimulate={() => void simulate()}
-          onGoLive={() => dispatch({ t: "next" })}
+          onGoLive={() => dispatch({ t: "goto", step: "live", dir: "fwd" })}
           onStartOver={startOver}
+          onSmaller={goPrev}
         />
       ) : null;
       break;
@@ -2704,16 +3675,36 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
           kind={s.stash.prediction?.kind ?? s.draft.kind}
           origin={loc.origin}
           host={loc.host}
+          testnet={config ? config.network !== "mainnet" : true}
+          paidFromWallet={paidFromWallet}
           onCopyLink={(url) => void copy(url, "Link copied")}
+          onDone={() => exitFlow(curPos())}
         />
       ) : null;
       break;
   }
 
+  const slide = s.dir === "fwd" ? "zkh-step-fwd" : s.dir === "back" ? "zkh-step-back" : null;
   return (
     <main className="zk-screen" style={{ background: STEP_BG[s.step], gap: "var(--zk-space-12)" }}>
-      {s.step !== "live" ? <StepHeader n={n} onBack={s.step === "type" ? undefined : back} /> : null}
-      {body}
+      {flowCss}
+      {s.step !== "live" ? <StepHeader n={n} onBack={s.step === "type" ? closeFlow : goPrev} close={s.step === "type"} /> : null}
+      {s.step === "live" ? (
+        body
+      ) : (
+        <div
+          key={s.step}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--zk-space-12)",
+            animation: slide ? `${slide} 260ms var(--zk-ease-out) both` : undefined,
+          }}
+        >
+          {body}
+        </div>
+      )}
       {toastLayer}
     </main>
   );

@@ -1,11 +1,17 @@
 "use client";
 // Screen 02 · Home feed. Header (wordmark, streak, wallet balance), live ticker, filter chips,
 // stash list, floating "Hide a stash" button and the tab bar.
+//  - Feels live: polls every 8s while visible; new stashes slide in at the top, or wait behind a
+//    "↑ 2 new stashes" pill while you're scrolled down. Touch: pull down to refresh.
+//  - Coming back is instant: the last feed, player, ticker, filter and scroll position live in memory
+//    for the whole visit (the filter also survives a reload), then refresh in the background.
+//  - The header slides away while you scroll down (the chips stay) and comes back on scroll up.
 import Link from "next/link";
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { api, formatZec, type FeedFilter } from "@/lib/api";
+import { sfx } from "@/lib/sfx";
 import type { Player, PublicStash, TickerItem } from "@/lib/types";
-import { Button, Chip, Icon, Logo, StashCard, TabBar } from "@/components/zk";
+import { Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
 
 const CHIPS: { label: string; filter: FeedFilter }[] = [
   { label: "All", filter: "all" },
@@ -15,8 +21,62 @@ const CHIPS: { label: string; filter: FeedFilter }[] = [
   { label: "Biggest", filter: "biggest" },
 ];
 
-const FEED_MS = 20_000;
+const FEED_MS = 8_000;
 const TICKER_MS = 15_000;
+const ME_MS = 30_000;
+const FILTER_KEY = "zk:feed-filter";
+const LIST_GAP = 14; // px, = --zk-space-14 between cards
+
+type TickerState = { items: TickerItem[]; now: number; loaded: boolean };
+/** The house's free drops, sent along with the feed: when the next one lands (null = none scheduled). */
+type HouseStatus = { nextDropAt: string | null; liveId: string | null };
+type FeedError = "offline" | "server";
+type LoadWhy = "enter" | "poll" | "pull";
+
+/* ---------- memory: returning to the feed is instant ---------- */
+
+// Module scope lives for the whole visit. Only written from effects and handlers (never during render),
+// so the server-side copy stays empty and the first hydration always matches the server HTML.
+const mem: {
+  visited: boolean;
+  filter: FeedFilter;
+  lists: Partial<Record<FeedFilter, PublicStash[]>>;
+  player: Player | null;
+  ticker: TickerState;
+  house: HouseStatus | null;
+  scrollY: number;
+} = { visited: false, filter: "all", lists: {}, player: null, ticker: { items: [], now: 0, loaded: false }, house: null, scrollY: 0 };
+
+// Back/forward (the ← button, the browser, an edge swipe) restores the scroll position; a fresh visit
+// (tab bar, links) starts at the top like any other screen.
+let poppedAt = 0;
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => {
+    poppedAt = Date.now();
+  });
+}
+
+function reducedMotion(): boolean {
+  try {
+    return !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+/** No status = the request never reached us (offline, DNS, CORS…). */
+function errorKind(e: unknown): FeedError {
+  return (e as { status?: number } | null)?.status ? "server" : "offline";
+}
+
+const ERROR_COPY: Record<FeedError, { title: string; body: string }> = {
+  offline: { title: "Can’t reach ZECKED.", body: "Check your connection and try again." },
+  server: { title: "ZECKED is taking a breather.", body: "Give it a few seconds and try again." },
+};
+
+// Tap targets: the visual chip stays compact, an invisible slop grows the hit area to 44px.
+const HIT_SLOP_36: CSSProperties = { position: "absolute", inset: "-4px -2px" };
+const HIT_SLOP_38: CSSProperties = { position: "absolute", inset: "-4px -2px" }; // inside a 1px border
 
 /* ---------- ticker helpers ---------- */
 
@@ -55,6 +115,20 @@ function ago(iso: string, now: number): string {
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }
+
+// The strip always takes its 36px (+12px margin), loaded or not, so nothing below it moves.
+const TICKER_STRIP: CSSProperties = {
+  marginTop: "var(--zk-space-12)",
+  height: 36,
+  flex: "none",
+  overflow: "hidden",
+  background: "rgb(var(--zk-mint-rgb) / .07)",
+  borderTop: "1px solid rgb(var(--zk-mint-rgb) / .18)",
+  borderBottom: "1px solid rgb(var(--zk-mint-rgb) / .18)",
+  display: "flex",
+  alignItems: "center",
+  paddingLeft: "var(--zk-space-16)",
+};
 
 function Ticker({ items, now }: { items: TickerItem[]; now: number }) {
   const [paused, setPaused] = useState(false);
@@ -102,18 +176,7 @@ function Ticker({ items, now }: { items: TickerItem[]; now: number }) {
       onTouchCancel={resume}
       onMouseEnter={pause}
       onMouseLeave={resume}
-      style={{
-        marginTop: "var(--zk-space-12)",
-        height: 36,
-        flex: "none",
-        overflow: "hidden",
-        background: "rgb(var(--zk-mint-rgb) / .07)",
-        borderTop: "1px solid rgb(var(--zk-mint-rgb) / .18)",
-        borderBottom: "1px solid rgb(var(--zk-mint-rgb) / .18)",
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: "var(--zk-space-16)",
-      }}
+      style={TICKER_STRIP}
     >
       <div
         style={{
@@ -133,9 +196,31 @@ function Ticker({ items, now }: { items: TickerItem[]; now: number }) {
   );
 }
 
-/* ---------- header chips ---------- */
+function TickerSlot({ ticker }: { ticker: TickerState }) {
+  if (ticker.items.length > 0) return <Ticker items={ticker.items} now={ticker.now} />;
+  if (!ticker.loaded) {
+    return (
+      <div aria-hidden="true" style={TICKER_STRIP}>
+        <div style={{ width: 180, height: 10, borderRadius: "var(--zk-radius-sm)", background: "rgb(var(--zk-mint-rgb) / .12)" }} />
+      </div>
+    );
+  }
+  return (
+    <div style={{ ...TICKER_STRIP, gap: "var(--zk-space-6)", font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
+      <span style={{ color: "var(--zk-mint)", display: "flex" }}>
+        <Icon icon="sparkle" size={14} stroke={2.4} />
+      </span>
+      <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: "var(--zk-space-16)" }}>
+        All quiet. New stashes land here live.
+      </span>
+    </div>
+  );
+}
+
+/* ---------- header ---------- */
 
 const headerChip: CSSProperties = {
+  position: "relative",
   height: 36,
   borderRadius: "var(--zk-radius-pill)",
   background: "var(--zk-surface)",
@@ -153,8 +238,31 @@ function compactZec(zat: number): string {
   return formatZec(Math.floor(Math.max(0, zat) / 10_000) * 10_000, 4);
 }
 
-function Header({ player }: { player: Player | null }) {
+function Header({ player, collapsed }: { player: Player | null; collapsed: boolean }) {
   const streak = player?.stats.streak ?? 0;
+  const [tip, setTip] = useState(false);
+  const groupRef = useRef<HTMLDivElement>(null);
+
+  // The streak explainer closes on any outside tap, Escape, after a few seconds, or when the header hides.
+  useEffect(() => {
+    if (!tip) return;
+    const outside = (e: PointerEvent) => {
+      if (!groupRef.current?.contains(e.target as Node)) setTip(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTip(false);
+    };
+    const t = setTimeout(() => setTip(false), 6000);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", esc);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [tip]);
+  const tipOpen = tip && !collapsed;
+
   const coin = (
     <span
       style={{
@@ -185,14 +293,30 @@ function Header({ player }: { player: Player | null }) {
   return (
     <div style={{ padding: "0 var(--zk-screen-pad)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       <Logo variant="wordmark" size={28} />
-      <div style={{ display: "flex", gap: "var(--zk-space-8)", alignItems: "center" }}>
-        <div
-          aria-label={`${streak} day streak`}
-          style={{ ...headerChip, padding: "0 var(--zk-space-12)", font: "var(--zk-type-btn-sm)", color: "var(--zk-text)" }}
-        >
-          <Icon icon="flame" size={16} filled stroke={1.5} color="var(--zk-pink)" />
-          {streak}
-        </div>
+      <div ref={groupRef} style={{ position: "relative", display: "flex", gap: "var(--zk-space-8)", alignItems: "center" }}>
+        {/* A 0 streak says nothing: the chip shows up once you've played. */}
+        {streak > 0 && (
+          <button
+            type="button"
+            aria-expanded={tipOpen}
+            aria-controls="zk-streak-tip"
+            aria-label={`${streak} day streak. What’s this?`}
+            onClick={() => setTip((v) => !v)}
+            style={{
+              ...headerChip,
+              padding: "0 var(--zk-space-12)",
+              font: "var(--zk-type-btn-sm)",
+              color: "var(--zk-text)",
+              border: 0,
+              cursor: "pointer",
+              touchAction: "manipulation",
+            }}
+          >
+            <Icon icon="flame" size={16} filled stroke={1.5} color="var(--zk-pink)" />
+            {streak}
+            <span aria-hidden="true" style={HIT_SLOP_36} />
+          </button>
+        )}
         {!player ? (
           <div aria-busy="true" aria-label="Loading your ZEC" style={balanceStyle}>
             {coin}
@@ -202,6 +326,7 @@ function Header({ player }: { player: Player | null }) {
           <Link href="/wallet" aria-label={`Your ZEC: ${formatZec(balanceZat, 8)} ZEC. Open your wallet`} style={balanceStyle}>
             {coin}
             {compactZec(balanceZat)}
+            <span aria-hidden="true" style={HIT_SLOP_36} />
           </Link>
         ) : (
           <Link
@@ -211,7 +336,37 @@ function Header({ player }: { player: Player | null }) {
           >
             {coin}
             Sign up
+            <span aria-hidden="true" style={HIT_SLOP_36} />
           </Link>
+        )}
+
+        {tipOpen && (
+          <div
+            id="zk-streak-tip"
+            role="status"
+            style={{
+              position: "absolute",
+              top: "calc(100% + var(--zk-space-10))",
+              right: 0,
+              width: 236,
+              zIndex: 20,
+              padding: "var(--zk-space-12) var(--zk-space-14)",
+              borderRadius: "var(--zk-radius-lg)",
+              background: "var(--zk-surface-raised)",
+              border: "1px solid var(--zk-border-strong)",
+              boxShadow: "var(--zk-shadow-card)",
+              animation: "zk-vt-rise 180ms var(--zk-ease-out) both",
+            }}
+          >
+            <div style={{ font: "var(--zk-type-h4)" }}>
+              {streak}-day streak <span aria-hidden="true">🔥</span>
+            </div>
+            <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-4)" }}>
+              {streak === 1
+                ? "You played today. Crack a riddle or make a call tomorrow to make it 2."
+                : `You’ve played ${streak} days in a row. Crack a riddle or make a call every day to keep it going.`}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -310,29 +465,163 @@ function StateTile({ icon, grad, edge }: { icon: string; grad: string; edge: str
   );
 }
 
-function EmptyState() {
+const STEPS: { icon: string; grad: string; edge: string; title: string; text: string }[] = [
+  { icon: "vault", grad: "var(--zk-grad-tile-purple)", edge: "var(--zk-purple-shade)", title: "Hide", text: "ZEC behind a riddle or a match" },
+  { icon: "share", grad: "var(--zk-grad-tile-sky)", edge: "var(--zk-sky-shade)", title: "Share", text: "the link with your friends" },
+  { icon: "unlock", grad: "var(--zk-grad-tile-gold)", edge: "var(--zk-gold-deep)", title: "Zeck it", text: "first to crack it keeps it" },
+];
+
+/** "Next free stash drops in 01:12:09", only when the server has actually scheduled one. */
+function NextDrop({ at, onDone }: { at: string; onDone: () => void }) {
+  const secs = (Date.parse(at) - Date.now()) / 1000;
+  const far = secs >= 86_400 ? `${Math.floor(secs / 86_400)}d ${Math.floor((secs % 86_400) / 3600)}h` : undefined;
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--zk-space-8)",
+        padding: "var(--zk-space-8) var(--zk-space-14)",
+        borderRadius: "var(--zk-radius-pill)",
+        background: "var(--zk-gold-tint)",
+        border: "1px solid rgb(var(--zk-gold-rgb) / .3)",
+        font: "var(--zk-type-small)",
+        color: "var(--zk-text)",
+      }}
+    >
+      <Icon icon="clock" size={16} stroke={2.4} color="var(--zk-gold)" />
+      Next free stash drops in
+      <Countdown to={at} format="hms" text={far} tone="gold" size="sm" onDone={onDone} />
+    </div>
+  );
+}
+
+/**
+ * The whole feed is empty (the first thing players see on a fresh network): a teaser, not a dead end.
+ * `nextDrop` is the spot for a "Next drop in…" line once the server schedules house drops.
+ */
+function EmptyFeed({ nextDrop }: { nextDrop?: ReactNode }) {
+  return (
+    <section
+      aria-labelledby="zk-empty-title"
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        background:
+          "radial-gradient(70% 45% at 50% 0%, rgb(var(--zk-gold-rgb) / .16), transparent 70%), radial-gradient(60% 40% at 100% 100%, rgb(var(--zk-purple-rgb) / .22), transparent 70%), var(--zk-surface)",
+        borderRadius: "var(--zk-radius-2xl)",
+        border: "1.5px solid var(--zk-border)",
+        padding: "var(--zk-space-20) var(--zk-space-16) var(--zk-space-18)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+      }}
+    >
+      <Vault mode="loop" size={84} />
+      <div style={{ font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-gold)", marginTop: "var(--zk-space-14)" }}>
+        THE VAULT IS EMPTY
+      </div>
+      <h2 id="zk-empty-title" style={{ font: "var(--zk-type-h2)", margin: "var(--zk-space-8) 0 0", textWrap: "balance" } as CSSProperties}>
+        No stashes yet. Hide the first one.
+      </h2>
+      <p style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", margin: "var(--zk-space-6) 0 0", maxWidth: 300 }}>
+        It’s test ZEC (no real value), so go wild.
+      </p>
+
+      <ol
+        aria-label="How it works"
+        style={{
+          listStyle: "none",
+          margin: "var(--zk-space-16) 0 0",
+          padding: 0,
+          width: "100%",
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: "var(--zk-space-8)",
+        }}
+      >
+        {STEPS.map((s, i) => (
+          <li
+            key={s.title}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "var(--zk-space-4)",
+              padding: "var(--zk-space-10) var(--zk-space-6)",
+              borderRadius: "var(--zk-radius-lg)",
+              background: "rgb(var(--zk-bg-rgb) / .45)",
+              border: "1px solid var(--zk-border)",
+              minWidth: 0,
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                width: 36,
+                height: 36,
+                marginBottom: "var(--zk-space-2)",
+                borderRadius: "var(--zk-radius-md)",
+                background: s.grad,
+                boxShadow: `var(--zk-inset-gloss), 0 3px 0 ${s.edge}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: i === 2 ? "var(--zk-gold-ink)" : "var(--zk-text)",
+              }}
+            >
+              <Icon icon={s.icon} size={18} stroke={2.4} />
+            </div>
+            <div style={{ font: "var(--zk-type-h4)" }}>
+              <span className="zk-sr-only">{i + 1}. </span>
+              {s.title}
+            </div>
+            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textWrap: "balance" } as CSSProperties}>{s.text}</div>
+          </li>
+        ))}
+      </ol>
+
+      {nextDrop ? <div style={{ marginTop: "var(--zk-space-14)" }}>{nextDrop}</div> : null}
+
+      <div style={{ width: "100%", marginTop: "var(--zk-space-16)", display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
+        <Button label="Hide the first stash" icon="plus" variant="primary" size="lg" href="/hide" />
+        <Button label="Get free test ZEC" icon="coin" variant="ghost" size="md" href="/wallet?action=add" sfx="tap" />
+      </div>
+    </section>
+  );
+}
+
+const FILTER_EMPTY: Record<Exclude<FeedFilter, "all">, { icon: string; title: string }> = {
+  riddles: { icon: "lock", title: "No riddles live right now." },
+  predictions: { icon: "ball", title: "No match calls open right now." },
+  ending: { icon: "hourglass", title: "Nothing’s ending soon." },
+  biggest: { icon: "coin", title: "No live stashes to rank yet." },
+};
+
+function FilterEmpty({ filter, onAll }: { filter: Exclude<FeedFilter, "all">; onAll: () => void }) {
+  const c = FILTER_EMPTY[filter];
   return (
     <StateCard>
-      <StateTile icon="vault" grad="var(--zk-grad-tile-purple)" edge="var(--zk-purple-shade)" />
-      <div style={{ font: "var(--zk-type-h3)" }}>No stashes here yet.</div>
+      <StateTile icon={c.icon} grad="var(--zk-grad-tile-purple)" edge="var(--zk-purple-shade)" />
+      <div style={{ font: "var(--zk-type-h3)" }}>{c.title}</div>
       <div style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", marginTop: "calc(-1 * var(--zk-space-6))" }}>
-        Be the first to hide one.
+        New ones pop up here the moment they’re hidden.
       </div>
       <div style={{ marginTop: "var(--zk-space-4)" }}>
-        <Button label="Hide a stash" icon="plus" variant="primary" size="md" full={false} href="/hide" />
+        <Button label="See all stashes" variant="secondary" size="md" full={false} onClick={onAll} sfx="tap" />
       </div>
     </StateCard>
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({ kind, onRetry }: { kind: FeedError; onRetry: () => void }) {
+  const c = ERROR_COPY[kind];
   return (
     <StateCard>
       <StateTile icon="signal" grad="var(--zk-grad-tile-sky)" edge="var(--zk-sky-shade)" />
-      <div style={{ font: "var(--zk-type-h3)" }}>The vault didn’t answer.</div>
-      <div style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", marginTop: "calc(-1 * var(--zk-space-6))" }}>
-        {message}
-      </div>
+      <div style={{ font: "var(--zk-type-h3)" }}>{c.title}</div>
+      <div style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", marginTop: "calc(-1 * var(--zk-space-6))" }}>{c.body}</div>
       <div style={{ marginTop: "var(--zk-space-4)" }}>
         <Button label="Try again" variant="secondary" size="md" full={false} onClick={onRetry} />
       </div>
@@ -340,88 +629,478 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
+/** Cards are still on screen but the last refresh failed: say so without throwing them away. */
+function StaleBanner({ kind, onRetry }: { kind: FeedError; onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-10)",
+        padding: "var(--zk-space-6) var(--zk-space-6) var(--zk-space-6) var(--zk-space-14)",
+        borderRadius: "var(--zk-radius-lg)",
+        background: "var(--zk-sky-tint)",
+        border: "1px solid rgb(var(--zk-sky-rgb) / .3)",
+      }}
+    >
+      <span style={{ color: "var(--zk-sky)", display: "flex" }}>
+        <Icon icon="signal" size={18} stroke={2.4} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0, font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>
+        <b style={{ color: "var(--zk-text)" }}>{ERROR_COPY[kind].title}</b> Showing the last stashes we saw.
+      </div>
+      <Button label="Retry" variant="ghost" size="sm" full={false} onClick={onRetry} style={{ height: 44 }} />
+    </div>
+  );
+}
+
+/** One feed row. A stash that just appeared makes room, then pops in. */
+function FeedItem({ stash, animate }: { stash: PublicStash; animate: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const atMount = useRef(animate);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!atMount.current || !el?.animate || reducedMotion()) return;
+    const h = el.offsetHeight;
+    el.style.overflow = "hidden";
+    const grow = el.animate([{ height: "0px", marginBottom: `-${LIST_GAP}px` }, { height: `${h}px`, marginBottom: "0px" }], {
+      duration: 320,
+      easing: "cubic-bezier(.22,1,.36,1)",
+    });
+    const done = () => {
+      el.style.overflow = "";
+    };
+    grow.onfinish = done;
+    grow.oncancel = done;
+    const pop = (el.firstElementChild as HTMLElement | null)?.animate(
+      [
+        { opacity: 0, transform: "translateY(-16px) scale(.92)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 560, delay: 100, easing: "cubic-bezier(.3,1.6,.5,1)", fill: "backwards" }
+    );
+    return () => {
+      grow.cancel();
+      pop?.cancel();
+    };
+  }, []);
+  return (
+    <div ref={ref} style={{ flex: "none" }}>
+      <StashCard stash={stash} href={`/s/${stash.id}`} markMine />
+    </div>
+  );
+}
+
 /* ---------- screen ---------- */
 
 export default function Feed() {
-  const [filter, setFilter] = useState<FeedFilter>("all");
-  const [lists, setLists] = useState<Partial<Record<FeedFilter, PublicStash[]>>>({});
-  const [errors, setErrors] = useState<Partial<Record<FeedFilter, string>>>({});
-  const [player, setPlayer] = useState<Player | null>(null);
-  const [ticker, setTicker] = useState<{ items: TickerItem[]; now: number }>({ items: [], now: 0 });
+  const [filter, setFilter] = useState<FeedFilter>(() => mem.filter);
+  const [lists, setLists] = useState<Partial<Record<FeedFilter, PublicStash[]>>>(() => mem.lists);
+  const [errors, setErrors] = useState<Partial<Record<FeedFilter, FeedError>>>({});
+  const [player, setPlayer] = useState<Player | null>(() => mem.player);
+  const [ticker, setTicker] = useState<TickerState>(() => mem.ticker);
+  const [house, setHouse] = useState<HouseStatus | null>(() => mem.house);
+  const [held, setHeld] = useState<string[]>([]); // new stashes waiting behind the pill
+  const [fresh, setFresh] = useState<string[]>([]); // new stashes that animate in
+  const [collapsed, setCollapsed] = useState(false);
+  const [lift, setLift] = useState(0);
+  const [headerH, setHeaderH] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadFeed = useCallback(async (f: FeedFilter) => {
+  const mainRef = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+  const insetRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const pullRef = useRef<HTMLDivElement>(null);
+  const pullIconRef = useRef<HTMLDivElement>(null);
+
+  // Latest values for async callbacks and listeners.
+  const listsRef = useRef(lists);
+  const filterRef = useRef(filter);
+  const heldRef = useRef(held);
+  const inflight = useRef<Partial<Record<FeedFilter, boolean>>>({});
+  const touching = useRef(false); // a finger/mouse is on the screen: don't slide cards in under it
+  const freshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useLayoutEffect(() => {
+    listsRef.current = lists;
+    filterRef.current = filter;
+    heldRef.current = held;
+  });
+
+  // Remember everything for the next visit.
+  useEffect(() => {
+    mem.lists = lists;
+  }, [lists]);
+  useEffect(() => {
+    mem.player = player;
+  }, [player]);
+  useEffect(() => {
+    mem.ticker = ticker;
+  }, [ticker]);
+  useEffect(() => {
+    mem.filter = filter;
+  }, [filter]);
+  useEffect(() => {
+    mem.house = house;
+  }, [house]);
+
+  // First visit this session (a reload, a fresh tab): pick the filter back up.
+  useEffect(() => {
+    if (mem.visited) return;
+    mem.visited = true;
     try {
-      const { stashes } = await api.feed(f);
-      setLists((p) => ({ ...p, [f]: stashes }));
-      setErrors((p) => ({ ...p, [f]: undefined }));
-    } catch (e) {
-      setErrors((p) => ({ ...p, [f]: e instanceof Error ? e.message : "Something went wrong." }));
+      const f = sessionStorage.getItem(FILTER_KEY) as FeedFilter | null;
+      if (f && f !== "all" && CHIPS.some((c) => c.filter === f)) setFilter(f);
+    } catch {}
+  }, []);
+
+  // Coming back (←, browser back, swipe): the list is already rendered from memory, so jump straight to
+  // where you were, before the first paint.
+  useLayoutEffect(() => {
+    if (Date.now() - poppedAt > 2500) return;
+    const y = mem.scrollY;
+    if (y > 0 && (listsRef.current[filterRef.current]?.length ?? 0) > 0) window.scrollTo(0, y);
+  }, []);
+
+  // The header's height, for placing the "new stashes" pill right under it.
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const measure = () => setHeaderH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const showFresh = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setFresh((f) => [...f, ...ids]);
+    clearTimeout(freshTimer.current);
+    freshTimer.current = setTimeout(() => setFresh([]), 1500);
+  }, []);
+  useEffect(() => () => clearTimeout(freshTimer.current), []);
+
+  const reveal = useCallback(() => {
+    const ids = heldRef.current;
+    if (!ids.length) return;
+    heldRef.current = [];
+    setHeld([]);
+    showFresh(ids);
+  }, [showFresh]);
+
+  const loadFeed = useCallback(
+    async (f: FeedFilter, why: LoadWhy) => {
+      if (inflight.current[f] && why === "poll") return;
+      inflight.current[f] = true;
+      try {
+        // The feed also says when the house's next free drop lands (not in api.ts's type yet).
+        const res = (await api.feed(f)) as { stashes: PublicStash[]; house?: HouseStatus | null };
+        const stashes = res.stashes;
+        if (res.house !== undefined) setHouse(res.house);
+        const prev = listsRef.current[f];
+        if (prev && f === filterRef.current) {
+          const known = new Set(prev.map((s) => s.id));
+          const added = stashes.filter((s) => !known.has(s.id) && (s.status === "live" || s.status === "locked")).map((s) => s.id);
+          if (added.length) {
+            // At the very top they slide straight in; further down (or mid-tap) they wait behind the
+            // pill so the list never jumps under your thumb.
+            if (window.scrollY > 2 || touching.current) setHeld((h) => [...h, ...added.filter((id) => !h.includes(id))]);
+            else showFresh(added);
+            if (why !== "enter" && !document.hidden) sfx("notify");
+          }
+        }
+        setLists((p) => ({ ...p, [f]: stashes }));
+        setErrors((p) => (p[f] ? { ...p, [f]: undefined } : p));
+      } catch (e) {
+        setErrors((p) => ({ ...p, [f]: errorKind(e) }));
+      } finally {
+        inflight.current[f] = false;
+      }
+    },
+    [showFresh]
+  );
+
+  const loadTicker = useCallback(async () => {
+    try {
+      const { items } = await api.ticker();
+      setTicker({ items, now: Date.now(), loaded: true });
+    } catch {
+      /* keep the last ticker */
     }
   }, []);
 
-  // Feed: load on filter change, refresh every 20s while the tab is visible.
+  const loadMe = useCallback(async () => {
+    try {
+      const { player } = await api.me();
+      setPlayer(player);
+    } catch {
+      /* keep the last player */
+    }
+  }, []);
+
+  // Feed: load on filter change (from memory first), refresh every 8s while the tab is visible.
   useEffect(() => {
-    loadFeed(filter);
+    void loadFeed(filter, "enter");
     const t = setInterval(() => {
-      if (!document.hidden) loadFeed(filter);
+      if (!document.hidden) void loadFeed(filter, "poll");
     }, FEED_MS);
-    const onVis = () => {
-      if (!document.hidden) loadFeed(filter);
+    const onBack = () => {
+      if (!document.hidden) void loadFeed(filter, "poll");
     };
-    document.addEventListener("visibilitychange", onVis);
+    document.addEventListener("visibilitychange", onBack);
+    window.addEventListener("online", onBack);
     return () => {
       clearInterval(t);
-      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("visibilitychange", onBack);
+      window.removeEventListener("online", onBack);
     };
   }, [filter, loadFeed]);
 
-  // Ticker: poll every 15s.
+  // Ticker (15s) and player: balance + streak (30s), both paused while hidden.
   useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const { items } = await api.ticker();
-        if (alive) setTicker({ items, now: Date.now() });
-      } catch {
-        /* keep the last ticker */
-      }
-    };
-    load();
-    const t = setInterval(() => {
-      if (!document.hidden) load();
+    void loadTicker();
+    void loadMe();
+    const tt = setInterval(() => {
+      if (!document.hidden) void loadTicker();
     }, TICKER_MS);
+    const tm = setInterval(() => {
+      if (!document.hidden) void loadMe();
+    }, ME_MS);
+    const onBack = () => {
+      if (document.hidden) return;
+      void loadTicker();
+      void loadMe();
+    };
+    document.addEventListener("visibilitychange", onBack);
     return () => {
-      alive = false;
-      clearInterval(t);
+      clearInterval(tt);
+      clearInterval(tm);
+      document.removeEventListener("visibilitychange", onBack);
+    };
+  }, [loadTicker, loadMe]);
+
+  // One scroll listener: remembers the position, slides the header away on the way down (back on the way
+  // up), and shows held stashes once you're back at the top.
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let acc = 0;
+    let raf = 0;
+    const run = () => {
+      raf = 0;
+      if (!mainRef.current?.isConnected) return;
+      const y = Math.max(0, window.scrollY);
+      mem.scrollY = y;
+      const dy = y - lastY;
+      lastY = y;
+      if (y < 80) {
+        acc = 0;
+        setCollapsed(false);
+      } else if (dy > 0) {
+        acc = Math.max(0, acc) + dy;
+        if (acc > 24) {
+          setLift(Math.max(0, (topRef.current?.offsetHeight ?? 0) - (insetRef.current?.offsetHeight ?? 0)));
+          setCollapsed(true);
+        }
+      } else if (dy < 0) {
+        acc = Math.min(0, acc) + dy;
+        if (acc < -24) setCollapsed(false);
+      }
+      if (y <= 2 && heldRef.current.length && !touching.current) reveal();
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(run);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [reveal]);
+
+  // While a finger is down nothing slides in; once it lifts (and we're at the top) held stashes appear.
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const down = () => {
+      clearTimeout(t);
+      touching.current = true;
+    };
+    const up = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        touching.current = false;
+        if (window.scrollY <= 2 && heldRef.current.length) reveal();
+      }, 400);
+    };
+    window.addEventListener("pointerdown", down, { passive: true });
+    window.addEventListener("pointerup", up, { passive: true });
+    window.addEventListener("pointercancel", up, { passive: true });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [reveal]);
+
+  // Pull to refresh (touch only). The list follows the finger with some resistance, the vault spins
+  // while we reload, then everything springs back. Only starts at the very top on a downward drag, so
+  // ordinary scrolling and the sideways chip row are untouched.
+  const refreshAll = useRef<() => Promise<void>>(async () => {});
+  useLayoutEffect(() => {
+    refreshAll.current = async () => {
+      await Promise.all([loadFeed(filterRef.current, "pull"), loadTicker(), loadMe()]);
+    };
+  });
+  useEffect(() => {
+    const main = mainRef.current;
+    const list = listRef.current;
+    const ind = pullRef.current;
+    const icon = pullIconRef.current;
+    if (!main || !list || !ind || !icon) return;
+    const TH = 64;
+    const MAX = 120;
+    const HOLD = 60;
+    let y0 = 0;
+    let x0 = 0;
+    let tracking = false;
+    let decided = false;
+    let dist = 0;
+    let busy = false;
+
+    const paint = (d: number, animate: boolean) => {
+      const tr = animate ? "transform 340ms var(--zk-ease-out), opacity 240ms ease-out" : "none";
+      list.style.transition = tr;
+      list.style.transform = d > 0 ? `translate3d(0, ${d}px, 0)` : "";
+      const k = Math.min(1, d / TH);
+      ind.style.transition = tr;
+      ind.style.opacity = String(k);
+      ind.style.transform = `translate3d(0, ${d / 2 - 22}px, 0) scale(${0.6 + 0.4 * k})`;
+      if (!busy) icon.style.transform = `rotate(${d * 3}deg)`;
+    };
+    const onStart = (e: TouchEvent) => {
+      tracking = false;
+      if (busy || e.touches.length !== 1 || window.scrollY > 0) return;
+      y0 = e.touches[0].clientY;
+      x0 = e.touches[0].clientX;
+      tracking = true;
+      decided = false;
+      dist = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!tracking) return;
+      const dy = e.touches[0].clientY - y0;
+      const dx = e.touches[0].clientX - x0;
+      if (!decided) {
+        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+        decided = true;
+        if (dy < 0 || Math.abs(dx) > Math.abs(dy)) {
+          tracking = false;
+          return;
+        }
+      }
+      if (window.scrollY > 0) {
+        tracking = false;
+        paint(0, true);
+        return;
+      }
+      dist = MAX * (1 - Math.exp(-Math.max(0, dy - 8) / MAX));
+      paint(dist, false);
+    };
+    const onEnd = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!decided) return;
+      if (dist < TH) {
+        paint(0, true);
+        return;
+      }
+      busy = true;
+      sfx("whoosh");
+      setRefreshing(true);
+      paint(HOLD, true);
+      icon.style.animation = "zk-spin .8s linear infinite";
+      const t0 = Date.now();
+      void refreshAll.current().finally(() => {
+        setTimeout(() => {
+          busy = false;
+          icon.style.animation = "";
+          setRefreshing(false);
+          paint(0, true);
+        }, Math.max(0, 650 - (Date.now() - t0)));
+      });
+    };
+    const onCancel = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!busy) paint(0, true);
+    };
+    main.addEventListener("touchstart", onStart, { passive: true });
+    main.addEventListener("touchmove", onMove, { passive: true });
+    main.addEventListener("touchend", onEnd);
+    main.addEventListener("touchcancel", onCancel);
+    return () => {
+      main.removeEventListener("touchstart", onStart);
+      main.removeEventListener("touchmove", onMove);
+      main.removeEventListener("touchend", onEnd);
+      main.removeEventListener("touchcancel", onCancel);
     };
   }, []);
 
-  // Player: streak + pending claims.
-  useEffect(() => {
-    let alive = true;
-    api
-      .me()
-      .then(({ player }) => alive && setPlayer(player))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const pick = (f: FeedFilter) => {
+    if (f === filter) {
+      if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+      return;
+    }
+    heldRef.current = [];
+    setHeld([]);
+    setFilter(f);
+    try {
+      sessionStorage.setItem(FILTER_KEY, f);
+    } catch {}
+    if (window.scrollY > 0) window.scrollTo(0, 0);
+  };
+
+  const onPill = () => {
+    const smooth = !reducedMotion() && window.scrollY > 0;
+    window.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+    // The scroll listener reveals them as soon as we're at the top; this covers a scroll that never lands.
+    setTimeout(reveal, smooth ? 700 : 0);
+  };
 
   const list = lists[filter];
   const error = errors[filter];
   const retry = () => {
     setErrors((p) => ({ ...p, [filter]: undefined }));
-    loadFeed(filter);
+    void loadFeed(filter, "poll");
   };
 
+  const heldSet = new Set(held);
+  const freshSet = new Set(fresh);
+  const shown = list?.filter((s) => !heldSet.has(s.id));
+  const waiting = list ? list.filter((s) => heldSet.has(s.id)).length : 0;
+  // The whole feed is empty (not just this filter): the teaser, with its own single primary button.
+  const feedEmpty = !!list && list.length === 0 && (filter === "all" || lists.all?.length === 0);
+
   let body: ReactNode;
-  if (list && list.length > 0) {
-    body = list.map((s) => <StashCard key={s.id} stash={s} href={`/s/${s.id}`} />);
+  if (shown && shown.length > 0) {
+    body = (
+      <>
+        {error && <StaleBanner kind={error} onRetry={retry} />}
+        {shown.map((s) => (
+          <FeedItem key={s.id} stash={s} animate={freshSet.has(s.id)} />
+        ))}
+      </>
+    );
+  } else if (feedEmpty) {
+    const dropAt = house?.nextDropAt && Date.parse(house.nextDropAt) > Date.now() ? house.nextDropAt : null;
+    body = <EmptyFeed nextDrop={dropAt ? <NextDrop at={dropAt} onDone={() => void loadFeed(filter, "poll")} /> : undefined} />;
   } else if (list) {
-    body = <EmptyState />;
+    body = <FilterEmpty filter={filter as Exclude<FeedFilter, "all">} onAll={() => pick("all")} />;
   } else if (error) {
-    body = <ErrorState message={error} onRetry={retry} />;
+    body = <ErrorState kind={error} onRetry={retry} />;
   } else {
     body = (
       <div aria-busy="true" style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)" }}>
@@ -435,21 +1114,47 @@ export default function Feed() {
 
   return (
     <main
+      ref={mainRef}
       className="zk-screen has-tabs"
       style={{ background: "var(--zk-bg)", paddingTop: 0, paddingLeft: 0, paddingRight: 0 }}
     >
-      {/* Header, ticker and chips stay pinned while the list scrolls, as in the design. */}
+      {/* Covers the status bar (notch) while the header is slid away. Zero-height when there's no inset. */}
       <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "100%",
+          maxWidth: 430,
+          height: "var(--zk-top-inset)",
+          background: "var(--zk-bg)",
+          zIndex: 6,
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Header, ticker and chips stay pinned while the list scrolls; the top part slides away on the
+          way down (a transform, so nothing below reflows) and the chips stay. */}
+      <div
+        ref={headerRef}
         style={{
           position: "sticky",
           top: 0,
           zIndex: 5,
           background: "var(--zk-bg)",
-          paddingTop: "calc(env(safe-area-inset-top, 0px) + var(--zk-space-14))",
+          transform: collapsed && lift > 0 ? `translate3d(0, ${-lift}px, 0)` : "none",
+          transition: "transform 260ms var(--zk-ease-out)",
         }}
       >
-        <Header player={player} />
-        {ticker.items.length > 0 && <Ticker items={ticker.items} now={ticker.now} />}
+        <div ref={topRef} aria-hidden={collapsed || undefined} inert={collapsed || undefined}>
+          <div ref={insetRef} style={{ height: "var(--zk-top-inset)" }} />
+          <div style={{ paddingTop: "var(--zk-space-14)" }}>
+            <Header player={player} collapsed={collapsed} />
+            <TickerSlot ticker={ticker} />
+          </div>
+        </div>
         <div
           role="group"
           aria-label="Filter stashes"
@@ -457,37 +1162,132 @@ export default function Feed() {
           style={{
             display: "flex",
             gap: "var(--zk-space-8)",
-            padding: "var(--zk-space-12) var(--zk-space-16) var(--zk-space-6)",
+            padding: "var(--zk-space-12) var(--zk-space-16) var(--zk-space-8)",
             flex: "none",
           }}
         >
           {CHIPS.map((c) => (
-            <Chip key={c.filter} label={c.label} active={filter === c.filter} onClick={() => setFilter(c.filter)} />
+            <Chip
+              key={c.filter}
+              active={filter === c.filter}
+              onClick={() => pick(c.filter)}
+              style={{ position: "relative" }}
+              label={
+                <>
+                  {c.label}
+                  <span aria-hidden="true" style={HIT_SLOP_38} />
+                </>
+              }
+            />
           ))}
+        </div>
+
+      </div>
+
+      {/* New stashes that arrived while you were scrolled down. Outside the header: its transform would
+          otherwise pin this to the header instead of the screen. */}
+      {waiting > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            top: (collapsed ? headerH - lift : headerH) + 10,
+            left: 0,
+            right: 0,
+            margin: "0 auto",
+            maxWidth: 430,
+            zIndex: 7,
+            display: "flex",
+            justifyContent: "center",
+            pointerEvents: "none",
+            transition: "top 260ms var(--zk-ease-out)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onPill}
+            data-sfx="tap"
+            style={{
+              pointerEvents: "auto",
+              minHeight: 44,
+              padding: "0 var(--zk-space-18) 0 var(--zk-space-14)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "var(--zk-space-6)",
+              border: 0,
+              borderRadius: "var(--zk-radius-pill)",
+              background: "var(--zk-purple)",
+              color: "var(--zk-text)",
+              font: "var(--zk-type-btn-sm)",
+              boxShadow: "0 4px 0 var(--zk-purple-shade), 0 10px 24px rgb(var(--zk-black-rgb) / .4)",
+              cursor: "pointer",
+              touchAction: "manipulation",
+              animation: "zk-vt-rise 220ms var(--zk-ease-out) both",
+            }}
+          >
+            <Icon icon="back" size={16} stroke={2.8} style={{ transform: "rotate(90deg)" }} />
+            {waiting} new {waiting === 1 ? "stash" : "stashes"}
+          </button>
+        </div>
+      )}
+
+      <div style={{ position: "relative" }}>
+        {/* Pull-to-refresh indicator, revealed in the gap as the list is pulled down. */}
+        <div
+          ref={pullRef}
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: "50%",
+            marginLeft: -22,
+            width: 44,
+            height: 44,
+            borderRadius: "var(--zk-radius-md)",
+            background: "var(--zk-grad-tile-gold)",
+            boxShadow: "var(--zk-inset-gloss), 0 3px 0 var(--zk-gold-deep)",
+            color: "var(--zk-gold-ink)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: 0,
+            transform: "translate3d(0, -22px, 0) scale(.6)",
+            pointerEvents: "none",
+          }}
+        >
+          <div ref={pullIconRef} style={{ display: "flex" }}>
+            <Icon icon="vault" size={24} stroke={2.4} />
+          </div>
+        </div>
+        <span className="zk-sr-only" role="status">
+          {refreshing ? "Refreshing stashes…" : ""}
+        </span>
+
+        <div
+          ref={listRef}
+          style={{
+            // 16px on top so a card's sticker (WHALE STASH) never tucks under the header.
+            padding: "var(--zk-space-16) var(--zk-space-16) 72px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--zk-space-14)",
+          }}
+        >
+          {body}
         </div>
       </div>
 
-      <div
-        style={{
-          padding: "var(--zk-space-8) var(--zk-space-16) 72px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--zk-space-14)",
-        }}
-      >
-        {body}
-      </div>
-
-      <div
-        style={{
-          position: "fixed",
-          right: "max(var(--zk-space-16), calc((100vw - 430px) / 2 + var(--zk-space-16)))",
-          bottom: "calc(var(--zk-tabbar-h) + var(--zk-space-16))",
-          zIndex: 10,
-        }}
-      >
-        <Button label="Hide a stash" icon="plus" variant="primary" size="md" full={false} href="/hide" />
-      </div>
+      {!feedEmpty && (
+        <div
+          style={{
+            position: "fixed",
+            right: "max(var(--zk-space-16), calc((100vw - 430px) / 2 + var(--zk-space-16)))",
+            bottom: "calc(var(--zk-tabbar-h) + var(--zk-space-16))",
+            zIndex: 10,
+          }}
+        >
+          <Button label="Hide a stash" icon="plus" variant="primary" size="md" full={false} href="/hide" />
+        </div>
+      )}
 
       <TabBar active="home" />
     </main>

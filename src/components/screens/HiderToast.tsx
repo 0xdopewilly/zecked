@@ -10,12 +10,14 @@ export interface HiderToastProps {
   meta?: string;
   /** Called after the toast has slid away (auto after 6s, or on tap). */
   onClose: () => void;
+  /** Tap action (e.g. open the stash); the toast still slides away. */
+  onTap?: () => void;
 }
 
 const SHOW_MS = 6000;
 const EXIT_MS = 320;
 
-export function HiderToast({ text, meta, onClose }: HiderToastProps) {
+export function HiderToast({ text, meta, onClose, onTap }: HiderToastProps) {
   const [shown, setShown] = useState(false);
   const closing = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -51,7 +53,7 @@ export function HiderToast({ text, meta, onClose }: HiderToastProps) {
     <div
       style={{
         position: "fixed",
-        top: "calc(env(safe-area-inset-top, 0px) + var(--zk-space-28))",
+        top: "calc(var(--zk-fixed-top) + var(--zk-space-12))",
         left: "50%",
         width: "calc(min(100vw, 430px) - 2 * var(--zk-space-12))",
         zIndex: 85,
@@ -65,7 +67,10 @@ export function HiderToast({ text, meta, onClose }: HiderToastProps) {
       <div
         role="alert"
         aria-live="assertive"
-        onClick={dismiss}
+        onClick={() => {
+          onTap?.();
+          dismiss();
+        }}
         style={{
           background: "linear-gradient(rgb(var(--zk-white-rgb) / .16), rgb(var(--zk-white-rgb) / .16)), var(--zk-scrim)",
           backdropFilter: "blur(20px)",

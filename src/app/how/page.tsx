@@ -1,6 +1,6 @@
 "use client";
 // How it works + rules. Same visual language as the app screens: h1, surface cards, 3D tiles, info chips.
-import { useRouter } from "next/navigation";
+import { useAppBack } from "@/lib/nav";
 import type { CSSProperties, ReactNode } from "react";
 import { Button, Chip, Icon, LiveBadge, Logo } from "@/components/zk";
 
@@ -33,7 +33,7 @@ const STEPS: { icon: string; grad: string; edge: string; ink?: string; title: st
     edge: "var(--zk-mint-deep)",
     ink: "var(--zk-mint-ink)",
     title: "It lands shielded",
-    text: "The ZEC goes straight to the winner’s private wallet. Nobody can see who won 🥷",
+    text: "The ZEC lands in the winner’s ZECKED wallet, ready to send to any Zcash wallet. Nobody can see who won 🥷",
   },
 ];
 
@@ -56,7 +56,7 @@ const RULES: { icon: string; color: string; text: ReactNode; callout?: boolean }
     color: "var(--zk-purple-light)",
     text: "Nobody cracked it before expiry? The stash goes back to the hider. A postponed or abandoned match sends it back too.",
   },
-  { icon: "clock", color: "var(--zk-mint)", text: <><b>Winners have 7 days to claim.</b> Your prize waits in the vault.</> },
+  { icon: "clock", color: "var(--zk-mint)", text: <><b>Wins land in your wallet instantly.</b> Playing as a guest? Sign up and your win comes with you.</> },
   {
     icon: "coin",
     color: "var(--zk-gold)",
@@ -109,11 +109,7 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 export default function HowItWorksPage() {
-  const router = useRouter();
-  const back = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) router.back();
-    else router.push("/");
-  };
+  const back = useAppBack("/feed");
 
   return (
     <main className="zk-screen" style={{ background: "var(--zk-bg-hero-purple)" }}>
@@ -150,13 +146,13 @@ export default function HowItWorksPage() {
             How it <span style={{ color: "var(--zk-gold)" }}>works</span>
           </h1>
           <p style={{ margin: 0, font: "var(--zk-type-body-lg)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
-            Riddles and match calls with real ZEC inside. First one to crack it keeps it.
+            Riddles and match calls with ZEC inside. First one to crack it keeps it.
           </p>
         </div>
 
         <div style={{ display: "flex", gap: "var(--zk-space-8)", flexWrap: "wrap" }}>
           <Chip variant="info" icon="sparkle" label="Free to play" />
-          <Chip variant="info" icon="user" label="No sign-up needed" />
+          <Chip variant="info" icon="user" label="Play as a guest" />
           <Chip variant="info" icon="shield" label="Built on Zcash" />
         </div>
 
