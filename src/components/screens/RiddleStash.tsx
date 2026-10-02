@@ -574,7 +574,7 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             >
               Prize verified
             </div>
-            Anyone can check the ZEC is really in there, using the stash’s viewing key. It can look, but it can’t touch.
+            Before this stash went live, ZECKED checked the Zcash blockchain: its ZEC landed in the stash’s own shielded address. It stays there until someone cracks it.
           </div>
         )}
       </div>

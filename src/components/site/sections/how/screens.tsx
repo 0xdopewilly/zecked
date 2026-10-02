@@ -221,7 +221,7 @@ export function ShareScreen({ t, detached }: ScreenProps) {
       />
       <StatusBar />
       <div style={{ ...pad, marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", position: "relative" }}>
-        <LiveBadge label="Live · verified by viewing key" />
+        <LiveBadge label="Live · prize verified" />
         <div style={{ marginTop: 14, font: "var(--zk-type-hero)", letterSpacing: "var(--zk-track-tight)" }}>
           Your stash is <span style={{ color: "var(--zk-gold)", textShadow: "var(--zk-text-shadow-gold)" }}>LIVE</span>
         </div>
@@ -354,7 +354,7 @@ export function CrackScreen({ t }: ScreenProps) {
           position: "relative",
         }}
       >
-        <LiveBadge label="Live · verified by viewing key" />
+        <LiveBadge label="Live · prize verified" />
         <div style={{ marginTop: 12, font: "var(--zk-type-riddle)", fontSize: 28 }}>{RIDDLE}</div>
         <div style={{ marginTop: 12, display: "flex", gap: 16, font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>

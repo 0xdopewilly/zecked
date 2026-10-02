@@ -12,12 +12,12 @@ type Feature = { n: string; tag: string; icon: string; rgb: string; color: strin
 const FEATURES: Feature[] = [
   {
     n: "01",
-    tag: "Viewing keys",
+    tag: "On-chain prizes",
     icon: "eye",
     rgb: "var(--zk-sky-rgb)",
     color: "var(--zk-sky)",
-    title: "Prizes you can verify",
-    body: "Anyone can check a stash is real and funded, using its viewing key. That key can look, but it can’t touch.",
+    title: "Prizes that are really there",
+    body: "A stash only goes live once its ZEC has landed on the Zcash blockchain, in its own shielded address. No ZEC, no stash.",
     Art: VerifyArt,
   },
   {
@@ -43,7 +43,7 @@ const FEATURES: Feature[] = [
 ];
 
 const WORDS = ["ENCRYPTED", "PRIVATE BY DEFAULT", "FIRST ONE WINS", "HIDE IT", "CRACK IT", "GET ZECKED"];
-const TAPE = ["SHIELDED PAYOUTS", "VIEWING KEYS", "ENCRYPTED MEMOS", "FREE TO PLAY", "FIRST ONE WINS"];
+const TAPE = ["SHIELDED PAYOUTS", "VERIFIED PRIZES", "ENCRYPTED MEMOS", "FREE TO PLAY", "FIRST ONE WINS"];
 
 const CSS = `
 ${SPLIT_FIX_CSS}

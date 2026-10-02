@@ -32,7 +32,7 @@ const QA: { q: string; a: ReactNode }[] = [
     q: "Why Zcash?",
     a: (
       <>
-        Zcash has private, shielded payments and viewing keys. That’s what makes verifiable prizes and anonymous winners possible. <a href="#why">See how it works</a>.
+        Zcash has private, shielded payments, so winners stay anonymous, and every stash’s ZEC is confirmed on the Zcash blockchain before it goes live. <a href="#why">See how it works</a>.
       </>
     ),
   },

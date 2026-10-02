@@ -227,11 +227,11 @@ export default function HowItWorksPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-8)", flexWrap: "wrap" }}>
               <LiveBadge label="Live · verified" size="md" />
-              <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>by viewing key</span>
+              <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>on the Zcash blockchain</span>
             </div>
             <div style={{ font: "var(--zk-type-body)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
-              Every live stash is checked with a Zcash viewing key.{" "}
-              <span style={{ color: "var(--zk-text)" }}>Anyone can check this stash is real. Nobody can touch it.</span>
+              A stash only goes live once its ZEC has landed on the Zcash blockchain, in its own shielded address.{" "}
+              <span style={{ color: "var(--zk-text)" }}>No ZEC, no stash.</span>
             </div>
           </div>
           <div style={{ height: 1, background: "var(--zk-border)" }} />
