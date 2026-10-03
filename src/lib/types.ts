@@ -277,7 +277,7 @@ export interface PublicProfile {
 export interface Notice {
   id: string;
   at: string;
-  kind: "zecked" | "refunded" | "deposit" | "win";
+  kind: "zecked" | "refunded" | "deposit" | "win" | "invite";
   text: string;
   stashId?: string;
   amountZat?: number;

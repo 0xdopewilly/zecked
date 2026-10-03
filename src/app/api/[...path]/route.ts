@@ -33,6 +33,7 @@ import { notices } from "@/lib/server/notify";
 import { publicProfile, toggleReaction } from "@/lib/server/social";
 import { removePushSub, savePushSub } from "@/lib/server/push";
 import { houseAdmin, houseStatus, houseTopUpSim, maybeHouseDrop, welcomeGift } from "@/lib/server/house";
+import { INVITE_COOKIE, inviter, linkInvite, myInvite, rewardInvite } from "@/lib/server/invites";
 import { adminRemoveAvatar, readCapped, removeAvatar, serveAvatar, setAvatar } from "@/lib/server/avatars";
 import { HttpError } from "@/lib/server/util";
 import { networkName } from "@/lib/zcash/engine";
@@ -78,9 +79,11 @@ function safePath(raw: string | null | undefined) {
 }
 
 /** Every sign-in method ends here: first-account perks, pending wins credited, and a fresh session. */
-async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: string, ip: string) {
+async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: string, ip: string, invite?: string) {
   let gift = 0;
   if (isNew) await kv().incr("stats:accounts");
+  // Arrived through a friend's invite link: remember who (they're rewarded once this account plays).
+  if (isNew) await linkInvite(account, invite).catch((e) => console.error("invite", (e as Error).message));
   if (isNew && networkName() === "sim" && process.env.ZECKED_HOUSE !== "on") await credit(account.id, (gift = SIM_WELCOME_BONUS_ZAT), "bonus", "Test-mode welcome bonus 🎁");
   else if (isNew) gift = await welcomeGift(account, ip).catch(() => 0);
   const creditedZat = (await creditPendingClaims(account)) + gift;
@@ -131,7 +134,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
     if (a === "auth" && b === "email" && c === "verify" && method === "POST") {
       const { email, code } = await body<{ email: string; code: string }>(req);
       const { player: account, isNew } = await verifyEmailSignIn(email, code, player);
-      const done = await finishSignIn(account, isNew, sid, ip);
+      const done = await finishSignIn(account, isNew, sid, ip, req.cookies.get(INVITE_COOKIE)?.value);
       return json({ player: await pub(account), creditedZat: done.creditedZat, isNew }, { sid: done.sid, setCookie: true });
     }
 
@@ -145,7 +148,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
         const { response } = await body<{ response: never }>(req);
         const { player: account, isNew } =
           c === "register" ? await passkeyRegisterVerify(player, sid, rp, response) : await passkeyLoginVerify(player, sid, rp, response);
-        const done = await finishSignIn(account, isNew, sid, ip);
+        const done = await finishSignIn(account, isNew, sid, ip, req.cookies.get(INVITE_COOKIE)?.value);
         return json({ player: await pub(account), creditedZat: done.creditedZat, isNew }, { sid: done.sid, setCookie: true });
       }
     }
@@ -168,7 +171,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
         }
         try {
           const { player: account, isNew, next } = await googleCallback(player, sid, q.get("code")!, q.get("state")!);
-          const done = await finishSignIn(account, isNew, sid, ip);
+          const done = await finishSignIn(account, isNew, sid, ip, req.cookies.get(INVITE_COOKIE)?.value);
           const to = back({ welcome: isNew ? "new" : "back", next, ...(done.creditedZat ? { c: String(done.creditedZat) } : {}) });
           return withCookie(NextResponse.redirect(to, 302), done.sid, true);
         } catch (e) {
@@ -256,6 +259,9 @@ async function handle(req: NextRequest, ctx: Ctx) {
       }
     }
     if (a === "me" && b === "stashes" && method === "GET") return out({ stashes: await myStashes(player.id) });
+    // Invites: your own link + how it's going, and who's behind a link (for the "@x invited you" welcome).
+    if (a === "me" && b === "invite" && method === "GET") return out(await myInvite(player));
+    if (a === "invite" && b && !c && method === "GET") return out({ inviter: await inviter(b) });
     // Profile photo: the raw image bytes (a 320×320 JPEG from the app's cropper).
     if (a === "me" && b === "avatar") {
       if (method === "POST") {
@@ -292,9 +298,15 @@ async function handle(req: NextRequest, ctx: Ctx) {
       const s = await loadStash(b);
       if (c === "guess" && method === "POST") {
         const { answer } = await body<{ answer: string }>(req);
-        return out(await guess(s, player, answer));
+        const r = await guess(s, player, answer);
+        after(() => rewardInvite(player).catch(() => {})); // a first play pays the friend who invited them
+        return out(r);
       }
-      if (c === "call" && method === "POST") return out(await makeCall(s, player, await body(req)));
+      if (c === "call" && method === "POST") {
+        const r = await makeCall(s, player, await body(req));
+        after(() => rewardInvite(player).catch(() => {}));
+        return out(r);
+      }
       if (c === "fund-check" && method === "POST") {
         const r = await checkFunding(s);
         return out({ stash: await toPublic(await loadStash(b), player.id), fundedZat: r.fundedZat });

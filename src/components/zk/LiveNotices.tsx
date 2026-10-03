@@ -69,7 +69,7 @@ export function LiveNotices() {
 
   const current = queue[0];
   useEffect(() => {
-    if (current) sfx(current.kind === "deposit" || current.kind === "win" ? "coin" : "notify");
+    if (current) sfx(current.kind === "deposit" || current.kind === "win" || (current.kind === "invite" && current.amountZat) ? "coin" : "notify");
   }, [current]);
 
   if (!current) return null;

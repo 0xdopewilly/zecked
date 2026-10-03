@@ -11,6 +11,7 @@ import { api, formatUsd, formatZec } from "@/lib/api";
 import type { BadgeId, Player, PublicStash } from "@/lib/types";
 import { ZAT } from "@/lib/types";
 import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar, Toast } from "@/components/zk";
+import { InviteCard } from "@/components/screens/InviteCard";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { isMuted, setMuted } from "@/lib/sfx";
 import { PUSH_COPY, usePush } from "@/components/zk/PushSetup";
@@ -1223,6 +1224,7 @@ export default function Profile() {
               </Link>
             )}
             <AccountCard player={player} />
+            <InviteCard signedIn={!!player.account?.signedIn} />
             <TierCard player={player} />
             <Stats player={player} />
             <Badges player={player} />

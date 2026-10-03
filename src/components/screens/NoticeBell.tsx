@@ -16,6 +16,7 @@ const LOOK: Record<Notice["kind"], { icon: IconName; bg: string; fg: string }> =
   refunded: { icon: "hourglass", bg: "var(--zk-grad-tile-purple)", fg: "var(--zk-text)" },
   deposit: { icon: "coin", bg: "var(--zk-grad-tile-mint)", fg: "var(--zk-mint-ink)" },
   win: { icon: "trophy", bg: "var(--zk-grad-tile-gold)", fg: "var(--zk-gold-ink)" },
+  invite: { icon: "sparkle", bg: "var(--zk-pink)", fg: "var(--zk-text)" },
 };
 
 function readSeen(): string | null {

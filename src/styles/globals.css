@@ -115,6 +115,10 @@ a { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   .zk-dock-item.is-pop { animation: none; }
 }
+/* Invite card share buttons (Profile): one row, two on small phones. */
+.zk-invite-share { display: grid; grid-template-columns: 1.35fr .75fr 1.2fr 1fr; gap: var(--zk-space-8); }
+@media (max-width: 370px) { .zk-invite-share { grid-template-columns: 1fr 1fr; } }
+
 /* Feed header: your avatar and the notices bell, sticker style. */
 .zk-hello-avatar { width: 46px; height: 46px; flex: none; }
 .zk-hello-avatar.is-empty { border-radius: 50%; background: var(--zk-surface-raised); border: 2.5px solid var(--zk-ink); }

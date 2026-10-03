@@ -29,4 +29,4 @@ export function redirectOrigin() {
 }
 
 /** App routes that must not be served by the website (they redirect to the app, keeping old links alive). */
-export const APP_ROUTE_PREFIXES = ["/feed", "/hide", "/s/", "/me", "/wallet", "/leaderboard", "/signin", "/how", "/practice", "/u/", "/sounds", "/install"];
+export const APP_ROUTE_PREFIXES = ["/feed", "/hide", "/s/", "/me", "/wallet", "/leaderboard", "/signin", "/how", "/practice", "/u/", "/sounds", "/install", "/i/"];

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { APP_ROUTE_PREFIXES, appUrl, legacyTarget, redirectOrigin, surface } from "@/lib/surface";
 
 const SID = "zk_sid";
+const INVITE_COOKIE = "zk_ref"; // = invites.ts (the proxy stays free of server-only imports)
 const SID_MAX_AGE = 60 * 60 * 24 * 180;
 
 /** 32 random bytes, base64url: the session id a new browser gets on its first page load. */
@@ -19,6 +20,16 @@ export function proxy(request: NextRequest) {
   const moved = legacyTarget(request.headers.get("host"));
   if (moved) return NextResponse.redirect(`${moved}${pathname}${search}`, 308);
   if (surface() !== "site") {
+    // An invite link (/i/<code>): remember who sent it, then show the feed with a "@x invited you" welcome.
+    const inv = pathname.match(/^\/i\/([a-z2-9]{6,12})\/?$/);
+    if (inv) {
+      const res = NextResponse.redirect(new URL(`/feed?invite=${inv[1]}`, request.url), 307);
+      res.cookies.set(INVITE_COOKIE, inv[1], { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 30 * 86400 });
+      if (!request.cookies.get(SID)?.value) {
+        res.cookies.set(SID, newSid(), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: SID_MAX_AGE });
+      }
+      return res;
+    }
     // First page load in a new browser: hand out the session id now, so the page's parallel API calls
     // all share one guest instead of racing to create several (and a late one clobbering a sign-in).
     const isPage = request.method === "GET" && !pathname.startsWith("/api/") && (request.headers.get("accept") || "").includes("text/html");

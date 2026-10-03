@@ -42,6 +42,7 @@ export interface PlayerRecord {
   depositUri?: string;
   mergedGuests?: string[];
   avatarV?: string; // profile photo key (see avatars.ts), accounts only
+  inviteCode?: string; // their invite link: /i/<code> (see invites.ts)
 }
 
 const ADJ = ["night", "quiet", "shadow", "ghost", "zero", "gold", "vault", "cipher", "silent", "lucky", "neon", "velvet", "hidden", "sly", "misty"];

@@ -144,3 +144,25 @@ a.zk-ended:hover { color: var(--zk-text); background: var(--zk-surface); }
   transform: rotate(-6deg);
 }
 .zk-ended-stamp.is-safe { border-color: var(--zk-purple-light); color: var(--zk-purple-light); }
+
+/* ---------- arrived through an invite link ---------- */
+.zk-invite-hello {
+  position: relative; margin: var(--zk-space-16) var(--zk-space-16) 0;
+  display: flex; align-items: center; gap: var(--zk-space-12);
+  padding: var(--zk-space-12) var(--zk-space-12) var(--zk-space-12) var(--zk-space-14);
+  border-radius: var(--zk-radius-2xl);
+  background: radial-gradient(90% 140% at 0% 0%, rgb(var(--zk-pink-rgb) / .3), transparent 60%), var(--zk-surface-raised);
+  border: 2.5px solid var(--zk-ink); box-shadow: 0 4px 0 var(--zk-ink);
+  animation: zk-vt-rise 320ms var(--zk-ease-out) both;
+}
+.zk-invite-cta {
+  flex: none; height: 40px; padding: 0 var(--zk-space-14); display: inline-flex; align-items: center;
+  border-radius: var(--zk-radius-md); background: var(--zk-grad-gold); color: var(--zk-gold-ink);
+  border: 2px solid var(--zk-ink); box-shadow: 0 3px 0 var(--zk-ink); font: var(--zk-type-btn-sm);
+}
+a.zk-invite-cta:hover { color: var(--zk-gold-ink); }
+.zk-invite-x {
+  position: absolute; top: -10px; right: -8px; width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  background: var(--zk-surface); color: var(--zk-text-muted); border: 2px solid var(--zk-ink);
+}

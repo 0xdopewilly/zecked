@@ -11,6 +11,7 @@ const TITLE: Record<Notice["kind"], string> = {
   refunded: "Your ZEC came back 🎁",
   deposit: "ZEC landed 🪙",
   win: "You zecked it! 🏆",
+  invite: "Your invite worked 🎉",
 };
 
 const KEY = (pid: string) => `notif:${pid}`;

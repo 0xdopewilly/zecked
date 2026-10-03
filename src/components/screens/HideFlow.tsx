@@ -2795,7 +2795,7 @@ function LiveStep({
     }
     onCopyLink(url);
   };
-  const half: CSSProperties = { padding: "0 var(--zk-space-8)" };
+  const half: CSSProperties = { padding: "0 var(--zk-space-6)" };
 
   return (
     <>
@@ -2861,9 +2861,16 @@ function LiveStep({
         </div>
         <div style={{ ...CTA, paddingTop: "var(--zk-space-14)" }}>
           <Button label="Share" icon="share" variant="primary" size="lg" onClick={() => void share()} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--zk-space-10)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--zk-space-8)" }}>
             <Button
-              label="Post on X"
+              label="WhatsApp"
+              variant="success"
+              size="md"
+              style={half}
+              onClick={() => open(`https://wa.me/?text=${enc(`${text} ${url}`)}`)}
+            />
+            <Button
+              label="X"
               variant="light"
               size="md"
               style={half}

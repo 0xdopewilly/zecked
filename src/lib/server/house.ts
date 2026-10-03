@@ -104,6 +104,20 @@ export async function welcomeGift(p: PlayerRecord, ip: string): Promise<number> 
   return zat;
 }
 
+/** Pays a small reward from the house balance (invites). Returns the zat paid, 0 if the house is empty. */
+export async function houseReward(pid: string, usd: number, label: string, houseLabel: string): Promise<number> {
+  if (!houseOn()) return 0;
+  await refreshHouse();
+  const zat = await zatFor(usd);
+  try {
+    await debit(HOUSE_ID, zat, "bonus", houseLabel);
+  } catch {
+    return 0; // the house is out of test ZEC; the owner tops it up
+  }
+  await credit(pid, zat, "bonus", label);
+  return zat;
+}
+
 type DropState = { lastId?: string; nextAt?: number };
 
 /** When the next house drop is due, for the feed ("Next drop in 1:24:09"). null = one is live now or the house is empty. */

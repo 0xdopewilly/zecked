@@ -974,6 +974,49 @@ function EndedRow({ stash }: { stash: PublicStash }) {
 const ENDED_STATUS = new Set(["zecked", "expired", "refunded", "void"]);
 const ENDED_SHOWN = 6;
 
+/** Arrived through a friend's invite link (/i/<code> → /feed?invite=<code>): who invited you, and the
+ *  way in. Shown to guests only; once read, the code leaves the address bar (the cookie keeps it). */
+let inviteCode: string | null | undefined;
+
+function InviteWelcome({ signedIn }: { signedIn: boolean | undefined }) {
+  const [from, setFrom] = useState<{ handle: string; avatarUrl: string | null } | null>(null);
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    // Read once per page load: the code leaves the address bar right away, and a second run of this
+    // effect (React's dev double-run, a remount) must still find it.
+    if (inviteCode === undefined) inviteCode = new URLSearchParams(window.location.search).get("invite");
+    const code = inviteCode;
+    if (!code) return;
+    if (window.location.search) window.history.replaceState(window.history.state, "", "/feed");
+    let alive = true;
+    api
+      .inviter(code)
+      .then(({ inviter }) => alive && inviter && setFrom(inviter))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!from || gone || signedIn) return null;
+  return (
+    <div className="zk-invite-hello" role="status">
+      <Avatar handle={from.handle} src={from.avatarUrl} size={44} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ font: "var(--zk-type-h4)" }}>
+          {from.handle} invited you <span aria-hidden="true">🎉</span>
+        </div>
+        <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: 2 }}>Sign up and get free test ZEC to play with.</div>
+      </div>
+      <Link href="/signin?next=/feed" className="zk-invite-cta" data-sfx="pop">
+        Sign up
+      </Link>
+      <button type="button" aria-label="Close" data-sfx="tap" className="zk-invite-x" onClick={() => setGone(true)}>
+        <Icon icon="close" size={13} stroke={2.8} />
+      </button>
+    </div>
+  );
+}
+
 /* ---------- memory across launches ---------- */
 
 // The last home you saw, so opening the app shows it straight away (then refreshes).
@@ -1508,6 +1551,9 @@ export default function Feed() {
         </div>
         <div style={at(1)}>
           <LivePulse ticker={ticker} />
+        </div>
+        <div style={at(2)}>
+          <InviteWelcome signedIn={player ? !!player.account?.signedIn : undefined} />
         </div>
 
         {!feedEmpty && (drop || dropAt) && (
