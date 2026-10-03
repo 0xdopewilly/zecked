@@ -1,5 +1,6 @@
 // Sessions + email-code sign-in (Google and passkeys live in google.ts and passkeys.ts). No passwords:
 // the first sign-in creates the account, and the guest's progress (XP, badges, pending wins) carries over.
+import { randomInt } from "node:crypto";
 import type { AuthStartResult } from "@/lib/types";
 import { networkName } from "@/lib/zcash/engine";
 import { kv } from "./kv";
@@ -119,7 +120,7 @@ export async function startEmailSignIn(rawEmail: string, ip: string): Promise<Au
   const email = normalizeEmail(rawEmail);
   await rateLimit(`code:${email}`, 5, 3600);
   await rateLimit(`ip:${ip}`, 25, 3600);
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = String(randomInt(100000, 1000000)); // crypto-random: Math.random is predictable
   const expiresAt = new Date(Date.now() + CODE_TTL * 1000).toISOString();
   await kv().set(`code:${email}`, { hash: sha256(`${SECRET}:${email}:${code}`), attempts: 0, expiresAt }, { exSeconds: CODE_TTL });
   const sent = await sendEmail(email, code);
