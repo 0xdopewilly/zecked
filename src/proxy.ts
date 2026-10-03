@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { APP_ROUTE_PREFIXES, appUrl, redirectOrigin, surface } from "@/lib/surface";
+import { APP_ROUTE_PREFIXES, appUrl, legacyTarget, redirectOrigin, surface } from "@/lib/surface";
 
 const SID = "zk_sid";
 const SID_MAX_AGE = 60 * 60 * 24 * 180;
@@ -15,6 +15,9 @@ export function proxy(request: NextRequest) {
   // A retired deployment (the old play-money demo) sends every link, old share links included, to the app.
   const forward = redirectOrigin();
   if (forward) return NextResponse.redirect(`${forward}${pathname}${search}`, 308);
+  // The old vercel.app address of this surface: same page on the real domain (zecked.com / app.zecked.com).
+  const moved = legacyTarget(request.headers.get("host"));
+  if (moved) return NextResponse.redirect(`${moved}${pathname}${search}`, 308);
   if (surface() !== "site") {
     // First page load in a new browser: hand out the session id now, so the page's parallel API calls
     // all share one guest instead of racing to create several (and a late one clobbering a sign-in).

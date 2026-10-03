@@ -11,7 +11,7 @@ import { InstallCapture } from "@/components/zk/InstallCapture";
 import { SPLASH_KEY } from "@/lib/splash";
 import { NavTracker } from "@/lib/nav";
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.vercel.app";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.com";
 
 // Self-hosted by Next (no render-blocking request to Google). The tokens read these CSS variables.
 const display = Bricolage_Grotesque({ subsets: ["latin"], axes: ["opsz"], variable: "--zk-ff-display", display: "swap" });

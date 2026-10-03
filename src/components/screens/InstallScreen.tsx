@@ -400,7 +400,7 @@ function AndroidSteps({ inst, again }: { inst: InstallInfo; again: boolean }) {
             </div>
           ) : (
             <div style={{ ...mockBar, gap: 12, width: "100%", maxWidth: 260, boxSizing: "border-box" }}>
-              <span style={mockUrl}>zecked-testnet.vercel.app</span>
+              <span style={mockUrl}>app.zecked.com</span>
               <Hot color="#111114">
                 <Glyph name="kebab" size={20} />
               </Hot>
@@ -444,7 +444,7 @@ function InAppSteps({ inst }: { inst: InstallInfo }) {
         <Step n={1} title={`Tap ${ios ? "•••" : "⋮"} at the top right`} hint={`The menu of ${inst.inApp === "this app" ? "this app’s" : `${inst.inApp}’s`} browser.`}>
           <div style={{ ...mockBar, gap: 12, width: "100%", maxWidth: 260, boxSizing: "border-box" }}>
             <Glyph name="close" size={18} />
-            <span style={mockUrl}>zecked-testnet.vercel.app</span>
+            <span style={mockUrl}>app.zecked.com</span>
             <Hot color="#111114">
               <Glyph name={ios ? "dots" : "kebab"} size={20} />
             </Hot>

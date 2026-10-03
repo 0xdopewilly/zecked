@@ -19,11 +19,15 @@ const CHALLENGE_TTL = 5 * 60;
 
 type StoredPasskey = { pid: string; publicKey: string; counter: number; transports?: string[]; backedUp?: boolean; createdAt: string };
 
-/** Relying party = the host the app is served from (override with ZECKED_RP_ID / ZECKED_ORIGIN). */
+/** Relying party = the host the app is served from. With ZECKED_RP_ID=zecked.com, passkeys belong to
+ *  zecked.com itself, so they work on app.zecked.com and any other zecked.com address. Other hosts (an
+ *  old vercel.app address, previews, localhost) keep their own. ZECKED_ORIGIN overrides the origin. */
 export function relyingParty(req: Request) {
   const url = new URL(req.url);
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
-  const rpID = process.env.ZECKED_RP_ID || host.split(":")[0];
+  const hostname = host.split(":")[0];
+  const root = process.env.ZECKED_RP_ID;
+  const rpID = root && (hostname === root || hostname.endsWith(`.${root}`)) ? root : hostname;
   const proto = req.headers.get("x-forwarded-proto") || url.protocol.replace(":", "") || "https";
   return { rpID, origin: process.env.ZECKED_ORIGIN || `${proto}://${host}` };
 }

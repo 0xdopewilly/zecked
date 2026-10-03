@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const host = (await headers()).get("host") || "zecked.vercel.app";
+  const host = (await headers()).get("host") || "app.zecked.com";
   const rec = await kv().get<StashRecord>(`stash:${id}`);
   const stash = rec ? await toPublic(rec) : null;
   return shareCard(stash, host.replace(/^www\./, ""));
