@@ -60,7 +60,7 @@ export async function shareCard(stash: PublicStash | null, host: string) {
   const zecked = stash?.status === "zecked";
   const ended = zecked || stash?.status === "refunded" || stash?.status === "void" || stash?.status === "expired";
   const headline = !stash
-    ? "Hide it. Crack it. Get Zecked."
+    ? "Hide ZEC behind a riddle. First to crack it keeps it."
     : isPred
       ? zecked
         ? `Someone called ${m!.home.code} vs ${m!.away.code} and zecked ${usd}. Call the next one.`
@@ -71,7 +71,7 @@ export async function shareCard(stash: PublicStash | null, host: string) {
         ? `Someone zecked ${amount}. Can you crack the next one?`
         : `Crack my riddle and zeck ${amount}. First one wins.`;
   // Live stashes: the prize is checkable. Ended ones say so (a zecked one gets the stamp colour).
-  const pill = !stash || stash.status === "live" ? { text: "LIVE · PRIZE VERIFIED", c: C.mint, rgb: "46,230,166" } : zecked ? { text: "ZECKED", c: C.pink, rgb: "255,77,154" } : ended ? { text: "ENDED", c: C.muted, rgb: "169,163,201" } : { text: "NOT LIVE YET", c: C.gold, rgb: "244,183,40" };
+  const pill = !stash ? { text: "LIVE ON ZCASH TESTNET", c: C.mint, rgb: "46,230,166" } : stash.status === "live" ? { text: "LIVE · PRIZE VERIFIED", c: C.mint, rgb: "46,230,166" } : zecked ? { text: "ZECKED", c: C.pink, rgb: "255,77,154" } : ended ? { text: "ENDED", c: C.muted, rgb: "169,163,201" } : { text: "NOT LIVE YET", c: C.gold, rgb: "244,183,40" };
   const bgGlow = isPred
     ? `radial-gradient(circle at 100% 0%, rgba(46,230,166,.35), transparent 55%), radial-gradient(circle at 0% 100%, rgba(61,184,255,.45), transparent 55%)`
     : `radial-gradient(circle at 95% 5%, rgba(255,77,154,.5), transparent 55%), radial-gradient(circle at 0% 100%, rgba(124,92,255,.6), transparent 55%)`;
@@ -84,7 +84,7 @@ export async function shareCard(stash: PublicStash | null, host: string) {
             <span style={{ color: C.gold }}>Z</span>
             <span>ECKED</span>
           </div>
-          <div style={{ display: "flex", fontFamily: "Display", fontSize: stash ? 60 : 76, lineHeight: 1.02, maxWidth: 680, letterSpacing: -1.5 }}>{headline}</div>
+          <div style={{ display: "flex", fontFamily: "Display", fontSize: stash ? 60 : 64, lineHeight: 1.02, maxWidth: 680, letterSpacing: -1.5 }}>{headline}</div>
           <div
             style={{
               display: "flex",
@@ -96,7 +96,7 @@ export async function shareCard(stash: PublicStash | null, host: string) {
               maxWidth: 680,
             }}
           >
-            <div style={{ display: "flex", fontSize: 18, color: isPred ? C.sky : C.pink, letterSpacing: 3 }}>{isPred ? "THE MATCH" : stash ? "THE RIDDLE" : "FREE TO PLAY"}</div>
+            <div style={{ display: "flex", fontSize: 18, color: isPred ? C.sky : C.pink, letterSpacing: 3 }}>{isPred ? "THE MATCH" : stash ? "THE RIDDLE" : "HOW IT WORKS"}</div>
             <div style={{ display: "flex", fontFamily: "Display", fontSize: 30, lineHeight: 1.2, marginTop: 8 }}>
               {isPred && m
                 ? `${m.home.name} vs ${m.away.name} · ${m.leagueName}`
@@ -104,7 +104,7 @@ export async function shareCard(stash: PublicStash | null, host: string) {
                   ? stash.riddle.text.length > 110
                     ? stash.riddle.text.slice(0, 108) + "…"
                     : stash.riddle.text
-                  : "Riddles and match calls with ZEC inside. First one to crack it keeps it."}
+                  : "Riddles and football calls with ZEC inside. Share the link. The winner is paid privately, in shielded Zcash."}
             </div>
             {/* Once it's over, the answer is public: the card shows it. */}
             {!isPred && ended && stash?.riddle?.answer ? (
@@ -120,6 +120,28 @@ export async function shareCard(stash: PublicStash | null, host: string) {
             <div style={{ width: 12, height: 12, borderRadius: 99, background: pill.c }} />
             {pill.text}
           </div>
+          {/* No stash: the brand card (homepage / app links) gets a mystery tile. */}
+          {!stash && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 300,
+                height: 280,
+                borderRadius: 44,
+                background: `linear-gradient(160deg, #FFD978 0%, ${C.gold} 55%, #E09A12 100%)`,
+                boxShadow: `0 14px 0 ${C.goldDeep}`,
+                color: "#3A2600",
+                transform: "rotate(4deg)",
+              }}
+            >
+              <div style={{ display: "flex", fontSize: 92 }}>🔐</div>
+              <div style={{ display: "flex", fontFamily: "Display", fontSize: 40, marginTop: 10 }}>Crack it.</div>
+              <div style={{ display: "flex", fontFamily: "Display", fontSize: 40 }}>Keep it.</div>
+            </div>
+          )}
           {stash && (
             <div
               style={{

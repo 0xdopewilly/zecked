@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Inter, Space_Mono } from "next/font/google";
 import "@/styles/globals.css";
-import { surface } from "@/lib/surface";
+import { appUrl, surface } from "@/lib/surface";
 import { SmoothScroll } from "@/components/site/SmoothScroll";
 import { Sfx } from "@/components/zk/Sfx";
 import { LiveNotices } from "@/components/zk/LiveNotices";
@@ -24,7 +24,8 @@ const STARTUP: [number, number, number][] = [
 ];
 
 export const metadata: Metadata = {
-  metadataBase: new URL(SITE),
+  // Link previews (og:image) must point at this deployment's own address, not the other surface.
+  metadataBase: new URL(surface() === "site" ? SITE : appUrl()),
   title: "ZECKED · Hide it. Crack it. Get Zecked.",
   description:
     "Hide ZEC behind a riddle or a match call. First to crack it keeps it, in a private wallet. Free to play. Built on Zcash.",
