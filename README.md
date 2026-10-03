@@ -2,46 +2,82 @@
 
 **Hide it. Crack it. Get Zecked.**
 
-ZECKED is a free-to-play social game on [Zcash](https://z.cash). Anyone can hide a little ZEC behind a challenge. The first person to beat it wins the ZEC, and it lands in their private wallet.
+ZECKED is a free-to-play game on [Zcash](https://z.cash). You hide ZEC behind a riddle or a football match prediction and share the link. The first person to crack the riddle or call the score keeps the ZEC, paid out in **shielded** Zcash, so nobody can see who won.
 
-- **Riddle stashes:** the first person to type the right answer takes it.
-- **Prediction stashes:** call a real football match (exact score or winner) before kickoff. Calls stay sealed until then. At full time the first correct call takes it, with results coming in automatically from a live sports feed.
+- **Play:** https://app.zecked.com (Zcash **testnet**: test ZEC, not real money)
+- **Website:** https://zecked.com
 
-Players never pay to play; the hider puts up the prize. Winners stay anonymous, because payouts are shielded.
+> **Status: testnet.** Zcash has no smart contracts, so the ZECKED server holds each stash between funding and payout. Mainnet stays switched off (`ZECKED_ALLOW_MAINNET`) until that custody has had a security review. The long-term plan is FROST threshold custody.
 
-> **Status: test mode.** Play ZEC only. The Zcash engine runs in `sim` (simulated) or `testnet` mode. Mainnet is switched off until a security review is done.
+## How it plays
+- **Riddle stashes:** the first exact answer wins. Answers are normalized for case, spacing, punctuation and a leading "a", "an" or "the", and hiders can accept alternatives with `|`. Each player gets 3 tries per stash every 10 minutes.
+- **Prediction stashes:** call a real football match (exact score, or winner/draw) before kickoff. Calls stay sealed until kickoff, the earliest correct call wins, and results come from a live feed. Postponed or abandoned matches refund the hider.
+- **Nobody pays to play.** The hider funds the prize. An uncracked stash goes back to the hider, who earns an "Uncrackable" badge.
+- **The house (@zecked)** drops a free riddle every few hours and gives new accounts a small test-ZEC welcome gift. When a friend you invited signs up and plays, you get a small reward.
 
-## Stack
-| Part | What | Where |
-|---|---|---|
-| App | Next.js 16 (App Router) + React 19, ported 1:1 from the Claude Design handoff (tokens, components, motion) | `src/app`, `src/components` |
-| Game server | Stash lifecycle, rate-limited riddle guesses, sealed calls, first-correct-wins, XP / tiers / badges, leaderboards, ticker | `src/lib/server/game.ts`, `players.ts` |
-| Storage | Upstash Redis (`KV_REST_API_URL` / `UPSTASH_REDIS_REST_URL`), falling back to an in-memory store | `src/lib/server/kv.ts` |
-| Sports feed | Live fixtures and results (ESPN public scoreboard), plus quick demo matches in local sim mode | `src/lib/server/sports.ts` |
-| Zcash engine | `sim`, or the `vault` HTTP service holding a testnet hot wallet (ZIP-321 funding with `ZK:<id>` memos, shielded payouts) | `src/lib/zcash/engine.ts`, `vault/` |
-| Share cards | 1200×630 OG images for X and Telegram | `src/app/s/[id]/opengraph-image.tsx` |
+## Where Zcash comes in
+| | |
+|---|---|
+| Shielded addresses | Every stash and every player gets its own unified address (Orchard/Ironwood + Sapling receivers, **no transparent receiver**) |
+| Funding | ZIP-321 payment URIs: scan the QR code from any Zcash wallet, or fund from your in-app balance |
+| Confirmation | A stash only goes live once the vault sees its ZEC arrive on-chain at the stash's own address |
+| Payouts | Winners, refunds and withdrawals are shielded sends |
+
+The wallet engine is [zingolib](https://github.com/zingolabs/zingolib) `zingo-cli` 6.0.0 (Ironwood / NU6.3), built with a small patch that reports which of our addresses each note was received by, so deposits are credited per address. Details in [`vault/README.md`](vault/README.md).
+
+## Architecture
+```
+Browser / installed PWA (Next.js 16, React 19)
+        │  HTTPS
+        ▼
+App + API on Vercel ──── Redis (players, stashes, sessions, leaderboards)
+        │  HTTPS + bearer token
+        ▼
+Vault service (Railway) ── zingo-cli ── lightwalletd (testnet.zec.rocks) ── Zcash testnet
+```
+
+| Part | Where |
+|---|---|
+| Screens (home feed, stash, hide flow, wallet, profile, leaderboard, install) | `src/components/screens` |
+| Design system (tokens, dock, vault, cards, sounds) | `src/components/zk`, `src/styles` |
+| Game server: stash lifecycle, guesses, sealed calls, first-correct-wins, XP / tiers / badges | `src/lib/server/game.ts`, `players.ts` |
+| Sign-in: passkeys (WebAuthn), email codes (Resend), Google | `src/lib/server/passkeys.ts`, `auth.ts`, `google.ts` |
+| House drops, welcome gift, invites | `src/lib/server/house.ts`, `invites.ts` |
+| Notifications: in-app notices, web push | `src/lib/server/notify.ts`, `push.ts` |
+| Live football results (ESPN public scoreboard) | `src/lib/server/sports.ts` |
+| Link previews (1200×630 share cards) | `src/lib/server/og.tsx` |
+| Service worker (offline app shell, per deployment) | `src/lib/sw-source.ts`, `src/app/sw.js` |
+| Zcash testnet wallet service | `vault/` |
 
 ## Run locally
 ```bash
 npm install
-npm run dev          # http://localhost:3100
+ZECKED_SURFACE=app npx next dev -p 3100     # http://localhost:3100
 ```
-Sim mode (local dev only) seeds a feed on first boot: riddles, real upcoming matches, and a demo match that kicks off every 8 minutes and plays out in about 6.
+With no settings, the app runs in **sim** mode: ZEC is simulated, storage is in memory, a demo feed is seeded, and email codes are shown on screen. Set `ZECKED_HOUSE=on` to try house drops and gifts locally. `ZECKED_SURFACE=site` serves the marketing website instead.
 
-## Environment
-| Var | Default | Purpose |
-|---|---|---|
-| `ZECKED_NETWORK` | `sim` | `sim` \| `testnet` \| `mainnet` |
-| `VAULT_URL`, `VAULT_TOKEN` | none | Vault service, required for `testnet` / `mainnet` |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | none | Upstash Redis (persistent storage) |
-| `ZECKED_MAX_USD` / `ZECKED_MIN_USD` | `100` / `1` | Stash size limits |
-| `NEXT_PUBLIC_SITE_URL` | none | Canonical URL for share links |
+## Settings
+| Var | Purpose |
+|---|---|
+| `ZECKED_SURFACE` | `app` (default) or `site` (the marketing website) |
+| `ZECKED_NETWORK` | `sim` (default), `testnet` or `mainnet` (also needs `ZECKED_ALLOW_MAINNET=yes`) |
+| `VAULT_URL`, `VAULT_TOKEN` | The vault service (testnet) |
+| `REDIS_URL` | Redis over TCP. `UPSTASH_REDIS_REST_URL` / `_TOKEN` also work. Without either, storage is in memory |
+| `ZECKED_SECRET` | Server secret for hashing sign-in codes |
+| `ZECKED_RP_ID` | Passkey relying party (e.g. `zecked.com`, so passkeys work on every subdomain) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Email sign-in codes |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Sign in with Google (callback: `<origin>/api/auth/google/callback`) |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push |
+| `ZECKED_ADMIN_TOKEN` | Owner endpoints (house status, forced drops, removing a profile photo) |
+| `ZECKED_DROP_HOURS`, `ZECKED_GIFT_USD`, `ZECKED_INVITE_USD`, `ZECKED_MIN_USD`, `ZECKED_MAX_USD` | Game tuning |
+| `ZECKED_APP_URL`, `NEXT_PUBLIC_SITE_URL`, `ZECKED_CANONICAL` | Public addresses, and forwarding from old ones |
 
-## Game rules (v1)
-- Free to enter. Hiders fund prizes, and nobody pays to play.
-- Riddles: 3 tries per player per 10 minutes. Answers are normalized (case, punctuation, and a leading "a", "an" or "the"). Hiders can accept alternatives with `|`.
-- Predictions lock at kickoff. The earliest correct call wins. Postponed or abandoned matches return the stash to the hider.
-- Uncracked stashes return to the hider (an "Uncrackable" badge). Winners have 7 days to claim.
-- Stash sizes are capped (default $100) while ZECKED custodies funds between funding and payout.
+## Safety notes
+- Testnet only, for now: the vault refuses non-testnet chains and addresses.
+- The vault never exports the seed or viewing keys, and never logs raw wallet output.
+- Stash sizes are capped (default $100).
+- Riddle guesses are rate-limited and checked against salted hashes. The answer is only shown to players once a stash ends.
+- Players are never shown each other's ids, and winners stay anonymous on public screens.
 
-See `docs/PRODUCT.md` and `docs/DESIGN-REVIEW.md`.
+## License
+[MIT](LICENSE) © 2026 Busari Ibraheem Ayoola. Built with open-source libraries including zingolib, Next.js, SimpleWebAuthn, web-push and qrcode.
