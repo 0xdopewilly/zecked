@@ -3,6 +3,7 @@
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
 import type {
   AppConfig,
+  GiftOpenResult,
   Notice,
   PublicProfile,
   Reaction,
@@ -15,9 +16,11 @@ import type {
   MyCall,
   Player,
   PredictionKind,
+  PublicGift,
   PublicStash,
   RunnerCall,
   TickerItem,
+  TournamentInfo,
   WinPayload,
   WinnerPick,
 } from "./types";
@@ -46,6 +49,7 @@ const TTL: [RegExp, number][] = [
   [/^\/config$/, 300_000],
   [/^\/matches/, 60_000],
   [/^\/leaderboard/, 60_000],
+  [/^\/tournament$/, 60_000],
   [/^\/players\//, 20_000],
   [/^\/me$/, 20_000],
   [/^\/me\/stashes$/, 20_000],
@@ -110,6 +114,7 @@ export const api = {
     usd: number;
     expiryHours: number;
     refundAddress?: string;
+    private?: boolean; // link-only: off the feed, the ticker and your public profile
   }) => req<{ stash: PublicStash }>("/stashes", { method: "POST", body: JSON.stringify(body) }),
   checkFunding: (id: string) =>
     req<{ stash: PublicStash; fundedZat: number }>(`/stashes/${id}/fund-check`, { method: "POST" }),
@@ -135,6 +140,19 @@ export const api = {
   leaderboard: (board: Leaderboard["board"], period: Leaderboard["period"]) =>
     req<Leaderboard>(`/leaderboard?board=${board}&period=${period}`),
   ticker: () => req<{ items: TickerItem[] }>("/ticker"),
+  /** The weekly tournament: this week's bounds and prizes, the top 3, your rank, last week's champions. */
+  tournament: () => req<TournamentInfo>("/tournament"),
+
+  // ---- gifts: ZEC for one person, opened from /g/<id> (accounts send, anyone can open) ----
+  createGift: (body: { usd: number; message?: string; lock?: { question: string; answer: string } }) =>
+    req<{ gift: PublicGift; wallet: WalletInfo }>("/gifts", { method: "POST", body: JSON.stringify(body) }),
+  gift: (id: string) => req<{ gift: PublicGift; myTries?: { left: number; resetsAt?: string } }>(`/gifts/${id}`),
+  /** Open a gift (`answer` when it's locked). Guests can open; the ZEC waits for them until they sign up. */
+  openGift: (id: string, answer?: string) => req<GiftOpenResult>(`/gifts/${id}/open`, { method: "POST", body: JSON.stringify({ answer }) }),
+  /** Sender only, while unopened: the ZEC comes back and the link stops working. */
+  cancelGift: (id: string) => req<{ gift: PublicGift; wallet: WalletInfo }>(`/gifts/${id}/cancel`, { method: "POST" }),
+  /** The gifts you sent, newest first. */
+  myGifts: () => req<{ gifts: PublicGift[] }>("/gifts"),
 
   // ---- accounts (email code sign-in) ----
   authStart: (email: string) => req<AuthStartResult>("/auth/email/start", { method: "POST", body: JSON.stringify({ email }) }),

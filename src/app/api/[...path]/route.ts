@@ -34,6 +34,8 @@ import { publicProfile, toggleReaction } from "@/lib/server/social";
 import { removePushSub, savePushSub } from "@/lib/server/push";
 import { houseAdmin, houseStatus, houseTopUpSim, maybeHouseDrop, welcomeGift } from "@/lib/server/house";
 import { INVITE_COOKIE, inviter, linkInvite, myInvite, rewardInvite } from "@/lib/server/invites";
+import { cancelGift, createGift, creditPendingGifts, getGift, maybeSweepGifts, openGift, ownerGifts } from "@/lib/server/gifts";
+import { creditPendingPrizes, maybeSettleTournament, settleNow, tournamentAdmin, tournamentInfo } from "@/lib/server/tournament";
 import { adminRemoveAvatar, readCapped, removeAvatar, serveAvatar, setAvatar } from "@/lib/server/avatars";
 import { HttpError } from "@/lib/server/util";
 import { networkName } from "@/lib/zcash/engine";
@@ -78,7 +80,7 @@ function safePath(raw: string | null | undefined) {
   return v.startsWith("/") && !v.startsWith("//") && !/[\\\u0000-\u001f]/.test(v) ? v : "/feed";
 }
 
-/** Every sign-in method ends here: first-account perks, pending wins credited, and a fresh session. */
+/** Every sign-in method ends here: first-account perks, pending wins/gifts/prizes credited, and a fresh session. */
 async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: string, ip: string, invite?: string) {
   let gift = 0;
   if (isNew) await kv().incr("stats:accounts");
@@ -86,7 +88,8 @@ async function finishSignIn(account: PlayerRecord, isNew: boolean, oldSid: strin
   if (isNew) await linkInvite(account, invite).catch((e) => console.error("invite", (e as Error).message));
   if (isNew && networkName() === "sim" && process.env.ZECKED_HOUSE !== "on") await credit(account.id, (gift = SIM_WELCOME_BONUS_ZAT), "bonus", "Test-mode welcome bonus 🎁");
   else if (isNew) gift = await welcomeGift(account, ip).catch(() => 0);
-  const creditedZat = (await creditPendingClaims(account)) + gift;
+  // Wins, gifts opened and tournament prizes earned as a guest all land now.
+  const creditedZat = (await creditPendingClaims(account)) + gift + (await creditPendingGifts(account)) + (await creditPendingPrizes(account));
   await destroySession(oldSid);
   const sid = await createSession(account.id);
   return { creditedZat, sid };
@@ -209,6 +212,14 @@ async function handle(req: NextRequest, ctx: Ctx) {
       }
     }
 
+    // ---- owner: the weekly tournament (a week's result, or settle one now for testing) ----
+    if (a === "admin" && b === "tournament") {
+      if (!isOwner(req)) return json({ error: "Not found" }, { status: 404 });
+      const week = req.nextUrl.searchParams.get("week") || undefined;
+      if (!c && method === "GET") return json(await tournamentAdmin(week));
+      if (c === "settle" && method === "POST") return json(await settleNow(week));
+    }
+
     // ---- push notifications ----
     if (a === "push" && b === "subscribe" && method === "POST") {
       const { subscription } = await body<{ subscription: unknown }>(req);
@@ -225,6 +236,20 @@ async function handle(req: NextRequest, ctx: Ctx) {
     // ---- notices ----
     if (a === "notifications" && method === "GET") {
       return out({ items: await notices(player.id, req.nextUrl.searchParams.get("after")), now: new Date().toISOString() });
+    }
+
+    // ---- gifts: ZEC for one person, opened from a link (/g/<id>). Not stashes: never in the feed or the ticker ----
+    if (a === "gifts" && !b) {
+      if (method === "GET") return out({ gifts: await ownerGifts(player) });
+      if (method === "POST") return out(await createGift(player, await body(req)), 201);
+    }
+    if (a === "gifts" && b) {
+      if (!c && method === "GET") return out(await getGift(b, player));
+      if (c === "open" && method === "POST") {
+        const { answer } = await body<{ answer?: string }>(req);
+        return out(await openGift(b, player, answer));
+      }
+      if (c === "cancel" && method === "POST") return out(await cancelGift(b, player));
     }
 
     // ---- wallet ----
@@ -281,13 +306,23 @@ async function handle(req: NextRequest, ctx: Ctx) {
       if (!["crackers", "hiders", "oracles"].includes(board) || !["today", "week", "all"].includes(period)) throw new HttpError(400, "Bad board");
       return out(await leaderboard(board, period, player.id));
     }
+    if (a === "tournament" && !b && method === "GET") {
+      // The first read after Monday 00:00 UTC pays last week's top 3 (after the response is sent).
+      after(() => maybeSettleTournament().catch((e) => console.error("tournament", (e as Error).message)));
+      return out(await tournamentInfo(player.id));
+    }
     if (a === "ticker" && method === "GET") return out({ items: await ticker() });
     if (a === "matches" && method === "GET") return out({ matches: await upcomingMatches(5, networkName() === "sim") });
 
     if (a === "stashes" && !b) {
       if (method === "GET") {
-        // Keep the feed alive: hide the next house riddle when one is due (after the response is sent).
-        after(() => maybeHouseDrop().catch((e) => console.error("house drop", (e as Error).message)));
+        // Housekeeping after the response is sent: the next house riddle when one is due, last week's
+        // tournament prizes, and gifts nobody opened go back to their senders.
+        after(async () => {
+          const names = ["house drop", "tournament", "gift sweep"];
+          const jobs = await Promise.allSettled([maybeHouseDrop(), maybeSettleTournament(), maybeSweepGifts()]);
+          jobs.forEach((r, i) => r.status === "rejected" && console.error(names[i], (r.reason as Error)?.message ?? r.reason));
+        });
         const [stashes, house] = await Promise.all([feed(req.nextUrl.searchParams.get("filter") || "all", player.id), houseStatus().catch(() => null)]);
         return out({ stashes, house });
       }

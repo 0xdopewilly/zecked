@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import type { Notice } from "@/lib/types";
+import { noticeHref, type Notice } from "@/lib/types";
 import { Icon, type IconName } from "@/components/zk/Icon";
 
 const SEEN_KEY = "zk:bell-seen";
@@ -17,6 +17,8 @@ const LOOK: Record<Notice["kind"], { icon: IconName; bg: string; fg: string }> =
   deposit: { icon: "coin", bg: "var(--zk-grad-tile-mint)", fg: "var(--zk-mint-ink)" },
   win: { icon: "trophy", bg: "var(--zk-grad-tile-gold)", fg: "var(--zk-gold-ink)" },
   invite: { icon: "sparkle", bg: "var(--zk-pink)", fg: "var(--zk-text)" },
+  gift: { icon: "sparkle", bg: "var(--zk-pink)", fg: "var(--zk-text)" },
+  tourney: { icon: "trophy", bg: "var(--zk-grad-tile-gold)", fg: "var(--zk-gold-ink)" },
 };
 
 function readSeen(): string | null {
@@ -96,7 +98,7 @@ export function NoticeBell({ hidden }: { hidden?: boolean }) {
 
   const go = (n: Notice) => {
     setOpen(false);
-    router.push(n.kind === "deposit" ? "/wallet" : n.stashId ? `/s/${n.stashId}` : "/me", { transitionTypes: ["nav-forward"] });
+    router.push(noticeHref(n), { transitionTypes: ["nav-forward"] });
   };
 
   const now = Date.now();

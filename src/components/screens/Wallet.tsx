@@ -1322,6 +1322,7 @@ const TX_LOOK: Record<WalletTxKind, { icon: IconName; color: string; bg: string;
   hide: { icon: "lock", color: "var(--zk-pink)", bg: "rgb(var(--zk-pink-rgb) / .12)" },
   withdraw: { icon: "arrowUp", color: "var(--zk-gold)", bg: "var(--zk-gold-tint)" },
   bonus: { icon: "sparkle", color: "var(--zk-orange)", bg: "var(--zk-surface-raised)" },
+  gift: { icon: "sparkle", color: "var(--zk-pink)", bg: "rgb(var(--zk-pink-rgb) / .12)" },
 };
 const TX_FALLBACK = { icon: "coin" as IconName, color: "var(--zk-gold)", bg: "var(--zk-gold-tint)", flip: false };
 
