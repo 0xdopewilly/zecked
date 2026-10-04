@@ -117,9 +117,8 @@ export interface Attributed {
 }
 
 /** One structured line on stdout (same shape as server.ts). Never includes raw engine output. */
-function log(msg: string, fields: Record<string, unknown> = {}): void {
-  const kv = Object.entries(fields).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
-  console.log(`[INFO] ${msg} t=${JSON.stringify(new Date().toISOString())}${kv ? " " + kv : ""}`);
+function log(msg: string, extra: Record<string, unknown> = {}): void {
+  console.log(JSON.stringify({ t: new Date().toISOString(), msg, ...extra }));
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
