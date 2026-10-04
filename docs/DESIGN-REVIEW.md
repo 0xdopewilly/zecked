@@ -1,6 +1,6 @@
-# Design Review: Claude Design handoff (2026-09-28)
+# Design Review: design handoff (2026-09-28)
 
-Source: `design/claude-design/design_handoff_zecked/` (12 screens, 20 components, `zk-tokens.css`, motion spec). Rendered previews are in `design/previews/`.
+Source: `design/handoff/design_handoff_zecked/` (12 screens, 20 components, `zk-tokens.css`, motion spec). Rendered previews are in `design/previews/`.
 
 **Verdict:** high fidelity and ready to build from. The tokens, component states, motion table and behaviour rules are all specified.
 
