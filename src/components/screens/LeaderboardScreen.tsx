@@ -5,8 +5,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "@/lib/api";
-import type { LeaderRow, Leaderboard } from "@/lib/types";
-import { Avatar, Button, Emblem, Icon, TabBar } from "@/components/zk";
+import type { LeaderRow, Leaderboard, TournamentInfo } from "@/lib/types";
+import { Avatar, Button, Countdown, Emblem, Icon, TabBar } from "@/components/zk";
 
 type Board = Leaderboard["board"];
 type Period = Leaderboard["period"];
@@ -410,6 +410,171 @@ function FirstOnBoard({ board, period }: { board: Board; period: Period }) {
   );
 }
 
+/* ---------- weekly tournament (crackers › week only) ---------- */
+
+const sticker: CSSProperties = {
+  borderRadius: "var(--zk-radius-xl)",
+  background: "radial-gradient(90% 120% at 100% 0%, rgb(var(--zk-gold-rgb) / .18), transparent 60%), linear-gradient(160deg, var(--zk-surface-purple), var(--zk-surface))",
+  border: "2.5px solid var(--zk-ink)",
+  boxShadow: "inset 0 1.5px 0 rgb(var(--zk-white-rgb) / .08), 0 3px 0 var(--zk-ink)",
+};
+
+const fmtUsd = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
+
+/** "2d 4h" · "4h 12m" · "12m" · "under a minute", from the seconds left. */
+function leftText(secs: number) {
+  const s = Math.max(0, Math.floor(secs));
+  if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor(s / 3600) % 24}h`;
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor(s / 60) % 60}m`;
+  if (s >= 60) return `${Math.floor(s / 60)}m`;
+  return "under a minute";
+}
+
+/** Seconds until `to`, refreshed every 30 s (the strip is coarse on purpose: days and hours, no seconds). */
+function useSecondsLeft(to: string) {
+  const target = Date.parse(to);
+  const calc = () => Math.max(0, Math.ceil((target - Date.now()) / 1000));
+  const [left, setLeft] = useState(calc);
+  useEffect(() => {
+    setLeft(calc());
+    const t = setInterval(() => setLeft(calc()), 30_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
+  return left;
+}
+
+/** "Week ends in 2d 4h · top 3 win $5 / $3 / $2 of test ZEC": a strip between the period row and the podium. */
+function TournamentStrip({ info, onWeekEnd }: { info: TournamentInfo | null | undefined; onWeekEnd: () => void }) {
+  const left = useSecondsLeft(info?.week.endsAt ?? "");
+  if (info === null) return null; // couldn't load: the board still works without it
+  const places = info ? info.prizesUsd.length : 3;
+  return (
+    <section
+      aria-label="Weekly tournament"
+      aria-busy={!info || undefined}
+      style={{
+        ...sticker,
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--zk-space-12)",
+        padding: "var(--zk-space-10) var(--zk-space-12)",
+        minHeight: 64,
+        boxSizing: "border-box",
+        animation: info ? undefined : "zk-glow 1.6s ease-in-out infinite",
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={
+          {
+            width: 40,
+            height: 40,
+            flex: "none",
+            borderRadius: "var(--zk-radius-md)",
+            background: "var(--zk-grad-tile-gold)",
+            boxShadow: "var(--zk-inset-gloss), 0 3px 0 var(--zk-gold-deep)",
+            color: "var(--zk-gold-ink)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transform: "rotate(-6deg)",
+          } as CSSProperties
+        }
+      >
+        <Icon icon="trophy" size={22} stroke={2.4} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ font: "var(--zk-fw-black) var(--zk-fs-13)/1.2 var(--zk-font-display)", letterSpacing: ".06em", textTransform: "uppercase", color: "var(--zk-gold)" }}>
+          Weekly tournament
+        </div>
+        {info ? (
+          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text)", textWrap: "pretty" }}>
+            Week ends in <Countdown to={info.week.endsAt} text={leftText(left)} tone="gold" size="sm" onDone={onWeekEnd} />
+            <span style={{ color: "var(--zk-text-muted)" }}>
+              {" · "}top {places} win {info.prizesUsd.map(fmtUsd).join(" / ")} of test ZEC
+            </span>
+          </div>
+        ) : (
+          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-faint)" }}>Most cracks this week wins test ZEC</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+const PAID: Record<"paid" | "owed" | "pending", string> = { paid: "paid", owed: "unclaimed", pending: "on its way" };
+
+/** Last week's top 3 with their prizes. Shown once a settled week exists. */
+function Champions({ last }: { last: NonNullable<TournamentInfo["last"]> }) {
+  return (
+    <section aria-label="Last week’s champions" style={{ ...sticker, marginTop: "var(--zk-space-14)", padding: "var(--zk-space-12)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--zk-space-8)", color: "var(--zk-gold)" }}>
+        <Icon icon="crown" size={18} filled stroke={1.6} />
+        <h2 style={{ margin: 0, font: "var(--zk-type-h4)", color: "var(--zk-text)" }}>Last week’s champions</h2>
+      </div>
+      {last.champions.length === 0 ? (
+        <p style={{ margin: "var(--zk-space-6) 0 0", font: "var(--zk-type-small)", color: "var(--zk-text-muted)" }}>No champions last week. This one’s wide open.</p>
+      ) : (
+        <ol
+          style={{
+            margin: "var(--zk-space-12) 0 0",
+            padding: 0,
+            listStyle: "none",
+            display: "grid",
+            gridTemplateColumns: `repeat(${Math.min(3, last.champions.length)}, minmax(0, 1fr))`,
+            gap: "var(--zk-space-8)",
+          }}
+        >
+          {last.champions.map((c) => {
+            const state = c.paidZat > 0 ? "paid" : c.paidZat < 0 ? "owed" : "pending";
+            return (
+              <li key={c.place} style={{ minWidth: 0 }}>
+                <Link
+                  href={profileHref(c.handle)}
+                  transitionTypes={["nav-forward"]}
+                  aria-label={`Number ${c.place}: ${atHandle(c.handle)}, ${c.score} ${c.score === 1 ? "crack" : "cracks"}, won ${fmtUsd(c.prizeUsd)} of test ZEC (${PAID[state]}). Open profile`}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: "var(--zk-text)", textDecoration: "none", WebkitTapHighlightColor: "transparent", minWidth: 0 }}
+                >
+                  <span style={{ position: "relative", display: "inline-flex" }}>
+                    <Avatar handle={c.handle} src={c.avatarUrl} size={c.place === 1 ? 48 : 40} />
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        right: -6,
+                        bottom: -4,
+                        minWidth: 18,
+                        height: 18,
+                        padding: "0 4px",
+                        boxSizing: "border-box",
+                        borderRadius: "var(--zk-radius-pill)",
+                        background: c.place === 1 ? "var(--zk-gold)" : "var(--zk-surface-raised)",
+                        color: c.place === 1 ? "var(--zk-gold-ink)" : "var(--zk-text)",
+                        border: "2px solid var(--zk-ink)",
+                        font: "var(--zk-fw-black) 11px/14px var(--zk-font-display)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {c.place}
+                    </span>
+                  </span>
+                  <span style={{ ...ellipsis, font: "var(--zk-fw-bold) var(--zk-fs-13)/1.35 var(--zk-font-body)", marginTop: "var(--zk-space-4)" }}>{atHandle(c.handle)}</span>
+                  <span style={{ font: "var(--zk-type-mono-xs)", color: "var(--zk-text-muted)" }}>{scoreLabel("crackers", c.score)}</span>
+                  <span style={{ font: "var(--zk-type-mono-sm)", color: "var(--zk-gold)" }}>+{fmtUsd(c.prizeUsd)}</span>
+                  {state !== "paid" ? <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-faint)" }}>{PAID[state]}</span> : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 /* ---------- you bar ---------- */
 
 function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; board: Board; ranked: boolean }) {
@@ -512,6 +677,23 @@ export default function LeaderboardScreen() {
     load(board, period);
   }, [board, period, load]);
 
+  // The weekly tournament rides on the crackers › week board: undefined = loading, null = couldn't load.
+  const tourneyOn = board === "crackers" && period === "week";
+  const [tourney, setTourney] = useState<TournamentInfo | null | undefined>(undefined);
+  const loadTourney = useCallback(() => {
+    api
+      .tournament()
+      .then(setTourney)
+      .catch(() => setTourney((t) => t ?? null));
+  }, []);
+  useEffect(() => {
+    if (tourneyOn && tourney === undefined) loadTourney();
+  }, [tourneyOn, tourney, loadTourney]);
+  const onWeekEnd = useCallback(() => {
+    loadTourney();
+    load("crackers", "week");
+  }, [loadTourney, load]);
+
   const lb = data[key];
   const error = errors[key];
   const rows = lb?.rows ?? [];
@@ -613,6 +795,8 @@ export default function LeaderboardScreen() {
           })}
         </div>
 
+        {tourneyOn ? <TournamentStrip info={tourney} onWeekEnd={onWeekEnd} /> : null}
+
         {error && !lb ? (
           <Card>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -658,6 +842,7 @@ export default function LeaderboardScreen() {
                 </ol>
               )
             )}
+            {tourneyOn && tourney?.last ? <Champions last={tourney.last} /> : null}
           </>
         )}
       </div>

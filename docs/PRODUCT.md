@@ -34,6 +34,13 @@
 - **Leaderboards:** Crackers / Hiders / Oracles × Today / Week / All-time
 - **Juice:** confetti, vault-door animations, streaks, a live win ticker, share cards
 
+## Tournament
+- **What it is:** the Crackers › Week board, with prizes. The week runs Monday 00:00:00 to Sunday 23:59:59 UTC; most cracks wins, ties go to whoever got their last crack in first.
+- **Prizes:** the top 3 get $5 / $3 / $2 of test ZEC from the house (`ZECKED_TOURNEY_USD`, default `5,3,2`; fewer entries = fewer paid places). Paid like invite rewards: a wallet credit, a "Weekly tournament 🏆" notice and a push. No XP, badges or ticker lines, so winners stay anonymous outside the board.
+- **Accounts only:** a guest in the top 3 gets "Sign up to collect your $3 prize" and is paid the moment they sign up.
+- **Settlement:** the first feed or `/api/tournament` read after Monday 00:00 UTC pays last week, exactly once (a per-week lock plus a per-player paid key). An empty house leaves the week "unpaid" and the next read retries after a top-up (budget ≈ $10 of test ZEC per week). Owner tools: `GET /api/admin/tournament?week=2026-41` and `POST /api/admin/tournament/settle?week=…`.
+- **On the board:** a strip under the period row ("Week ends in 2d 4h · top 3 win $5 / $3 / $2 of test ZEC") and, once a week has settled, a "Last week's champions" row with avatars, handles and prizes. The house and seeded demo players never win.
+
 ## Ground rules (v1)
 - **Free to enter.** Players never pay to play; the prize comes from the hider. There is no paid wagering in v1.
 - **Custody:** Zcash has no smart contracts, so the ZECKED server holds each stash until it resolves and then pays the winner. Stash sizes are capped (initially $100). Longer term, split keys (FROST) so no single party can move funds.
