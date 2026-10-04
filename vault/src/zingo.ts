@@ -78,6 +78,9 @@ export class ZingoEngine extends EventEmitter {
   ready = false;
   lastError?: string;
   startedAt?: number;
+  /** The last "Sync error: …" zingo-cli narrated on stderr (its background sync task died). It prints it only
+   *  at the next prompt, interleaved with whatever command runs then, so it is caught here, not per command. */
+  syncError?: { message: string; at: number };
 
   constructor(opts: EngineOptions) {
     super();
@@ -122,6 +125,8 @@ export class ZingoEngine extends EventEmitter {
     });
     child.stderr.on("data", (d: string) => {
       this.stderrBuf += d;
+      const m = /Sync error:[\s\S]*?(?=Please restart sync|$)/.exec(d) ?? /thread '.*' panicked at[^\n]*/.exec(d);
+      if (m) this.syncError = { message: m[0].replace(/\s+/g, " ").trim().slice(0, 600), at: Date.now() };
       // Keep memory bounded when idle: nothing is waiting on old stderr.
       if (!this.pending && this.stderrBuf.length > 1_000_000) this.stderrBuf = this.stderrBuf.slice(-100_000);
     });

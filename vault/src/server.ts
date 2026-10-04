@@ -151,6 +151,8 @@ const server = http.createServer(async (req, res) => {
     if (!authorized(req)) return send(res, 401, { error: "unauthorized", message: "missing or bad bearer token" });
 
     if (route === "GET /health") return send(res, 200, vault.health());
+    // Owner-only repair (the bearer token is the owner's): rebuild the wallet's chain data from its birthday.
+    if (route === "POST /rescan") return send(res, 202, vault.rescan(String((await readJson(req)).reason ?? "manual")));
     if (route === "POST /stash-address") return send(res, 200, await vault.stashAddress(await readJson(req)));
     if (route === "POST /user-address") return send(res, 200, await vault.userAddress(await readJson(req)));
     const dm = /^\/deposits\/([^/]+)$/.exec(url.pathname);

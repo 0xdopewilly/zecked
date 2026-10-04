@@ -49,6 +49,14 @@ export interface VaultStatus {
   /** When the chain tip last moved. A tip frozen for long means the server stopped following the chain (e.g. an un-upgraded node at a network upgrade). */
   tipAdvancedAt: string | null;
   tipStalled: boolean;
+  /** The engine's last sync-task death, if any ("Sync error: …"). The vault relaunches sync every tick, so a
+   *  deterministic one shows up here as the same message over and over while `height` stands still. */
+  lastSyncError: string | null;
+  /** A rescan rebuilds the wallet's chain data from its birthday (keys and addresses are kept): the fix for a
+   *  wallet whose saved state the engine can no longer sync (zingolib #2834). Manual: POST /rescan. */
+  rescanning: boolean;
+  lastRescanAt: string | null;
+  rescans: number;
 }
 
 interface ScanRange {
@@ -106,6 +114,12 @@ export interface Attributed {
   txids: string[];
   lastTxAt: string | null;
   transfers: Transfer[];
+}
+
+/** One structured line on stdout (same shape as server.ts). Never includes raw engine output. */
+function log(msg: string, fields: Record<string, unknown> = {}): void {
+  const kv = Object.entries(fields).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+  console.log(`[INFO] ${msg} t=${JSON.stringify(new Date().toISOString())}${kv ? " " + kv : ""}`);
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -242,6 +256,7 @@ export class Vault {
   private syncing = false;
   private lastFingerprint = "";
   private lightdAt = 0;
+  private syncErrorSeenAt = 0;
   private lastAdvanceAt = Date.now();
   private readonly payoutLocks = new Set<string>();
   private readonly minting = new Map<string, Promise<{ address: string; addressIndex?: number }>>();
@@ -268,6 +283,10 @@ export class Vault {
       lightd: null,
       tipAdvancedAt: null,
       tipStalled: false,
+      lastSyncError: null,
+      rescanning: false,
+      lastRescanAt: null,
+      rescans: 0,
       pools: {},
     };
   }
@@ -288,7 +307,7 @@ export class Vault {
 
   /** One pass of the background loop: keep the sync task running and refresh the cached status. */
   async syncTick(): Promise<void> {
-    if (this.syncing) return;
+    if (this.syncing || this.status.rescanning) return;
     this.syncing = true;
     try {
       const tip = await getLatestBlockHeight(this.lightwalletdUrl).catch(() => this.status.chainTip);
@@ -315,6 +334,15 @@ export class Vault {
       const height = scannedHeight(sync);
       this.status.height = height;
       this.status.synced = tip > 0 && height >= tip - 1;
+      const se = this.engine.syncError;
+      if (se && se.at > this.syncErrorSeenAt) {
+        this.syncErrorSeenAt = se.at;
+        this.status.lastSyncError = se.message;
+        log("sync task died", { error: se.message, height, tip });
+        // A shard-tree root conflict is permanent for this wallet file: only a rescan clears it. Once per 6 h.
+        const since = this.status.lastRescanAt ? Date.now() - Date.parse(this.status.lastRescanAt) : Infinity;
+        if (/shard tree|conflicts with existing root/i.test(se.message) && since > 6 * 3600_000) void this.rescan("auto: " + se.message.slice(0, 120));
+      }
       // Progress = caught up, or the scan ranges changed since the last look. The ChainTip range's end
       // follows the growing chain, so it is left out: otherwise a wedged scanner still looks like
       // progress every tick and the watchdog below never fires (seen 2026-10-04: stuck 31k blocks
@@ -351,6 +379,30 @@ export class Vault {
         this.engine.recycle(`no sync progress for ${Math.round(STALL_MS / 60_000)} min (height ${this.status.height}, tip ${this.status.chainTip})`);
       }
     }
+  }
+
+  /** Rebuilds the wallet's chain data from its birthday (zingo-cli `rescan`: keys, addresses and the seed stay;
+   *  notes and attribution are rediscovered). Runs in the background; /health shows `rescanning` meanwhile. */
+  rescan(reason: string): { started: boolean; reason: string } {
+    if (this.status.rescanning) return { started: false, reason: "already rescanning" };
+    if (!this.engine.ready) return { started: false, reason: "engine not ready" };
+    this.status.rescanning = true;
+    this.status.lastRescanAt = new Date().toISOString();
+    this.status.rescans += 1;
+    log("rescan started", { reason, height: this.status.height, tip: this.status.chainTip });
+    void (async () => {
+      try {
+        await this.engine.run(["rescan"], { timeoutMs: 45 * 60_000 });
+        this.lastAdvanceAt = Date.now();
+        log("rescan finished", { reason });
+      } catch (e) {
+        this.status.lastError = `rescan failed: ${(e as Error).message}`;
+        log("rescan failed", { reason, error: (e as Error).message });
+      } finally {
+        this.status.rescanning = false;
+      }
+    })();
+    return { started: true, reason };
   }
 
   private async defaultAddress(): Promise<string> {
