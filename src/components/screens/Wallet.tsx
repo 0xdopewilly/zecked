@@ -1369,7 +1369,9 @@ function TxRow({
   const failed = tx.status === "failed";
   // A withdrawal's line is what left your balance: the amount sent plus the network fee. Say so.
   const sentZat = tx.kind === "withdraw" && !credit ? Math.max(0, Math.abs(tx.amountZat) - feeZat) : null;
-  const expandable = !!tx.txid && !tx.stashId;
+  const expandable = !!tx.txid && !tx.stashId && !tx.giftId;
+  // A stash row opens the stash; a gift row (sent, opened, or came back) opens the gift.
+  const href = tx.stashId ? `/s/${tx.stashId}` : tx.giftId ? `/g/${tx.giftId}` : null;
   const rowStyle: CSSProperties = {
     width: "100%",
     display: "flex",
@@ -1383,7 +1385,7 @@ function TxRow({
     font: "inherit",
     color: "var(--zk-text)",
     textDecoration: "none",
-    cursor: expandable || tx.stashId ? "pointer" : "default",
+    cursor: expandable || href ? "pointer" : "default",
     WebkitTapHighlightColor: "transparent",
   };
   const content = (
@@ -1432,10 +1434,10 @@ function TxRow({
     </>
   );
   const wrap: CSSProperties = { borderBottom: last ? "none" : "1px solid var(--zk-border)" };
-  if (tx.stashId) {
+  if (href) {
     return (
       <div style={wrap}>
-        <Link href={`/s/${tx.stashId}`} style={rowStyle}>
+        <Link href={href} style={rowStyle}>
           {content}
         </Link>
       </div>
@@ -1701,11 +1703,11 @@ interface ToastState {
   icon?: string;
 }
 
-/** The two big buttons under the hero: sized so both fit side by side on a 320px phone. */
+/** The three buttons under the hero (Add ZEC · Gift · Withdraw): sized so all fit in one row on a 320px phone. */
 const ACTION_BTN: CSSProperties = {
-  padding: "0 var(--zk-space-10)",
+  padding: "0 var(--zk-space-6)",
   gap: "var(--zk-space-6)",
-  font: "var(--zk-fw-black) clamp(16px, 4.6vw, 18px)/var(--zk-lh-none) var(--zk-font-display)",
+  font: "var(--zk-fw-black) clamp(14px, 4.3vw, 17px)/var(--zk-lh-none) var(--zk-font-display)",
 };
 
 export default function Wallet() {
@@ -1901,10 +1903,10 @@ export default function Wallet() {
     body = (
       <>
         <Hero wallet={wallet} count={count} pop={heroPop} />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "var(--zk-space-10)", marginTop: "var(--zk-space-4)" }}>
+        {/* Three actions in one row: on a 320px phone each gets ~90px, so the labels stay short and the icons go. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "var(--zk-space-8)", marginTop: "var(--zk-space-4)" }}>
           <Button
             label="Add ZEC"
-            icon="plus"
             variant="secondary"
             size="md"
             sfx="whoosh"
@@ -1912,9 +1914,9 @@ export default function Wallet() {
             onClick={() => toggle("add")}
             style={ACTION_BTN}
           />
+          <Button label="Gift 🎁" variant="sky" size="md" sfx="whoosh" ariaLabel="Send a gift" href="/gift" style={ACTION_BTN} />
           <Button
             label="Withdraw"
-            icon="arrowUp"
             variant="primary"
             size="md"
             sfx="whoosh"

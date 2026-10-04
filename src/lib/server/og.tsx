@@ -3,7 +3,7 @@ import { ImageResponse } from "next/og";
 import type { PublicStash } from "@/lib/types";
 
 const fontCache = new Map<string, Promise<ArrayBuffer | null>>();
-function googleFont(family: string, weight: number): Promise<ArrayBuffer | null> {
+export function googleFont(family: string, weight: number): Promise<ArrayBuffer | null> {
   const key = `${family}:${weight}`;
   if (!fontCache.has(key)) {
     fontCache.set(
@@ -23,7 +23,7 @@ function googleFont(family: string, weight: number): Promise<ArrayBuffer | null>
   return fontCache.get(key)!;
 }
 
-const C = {
+export const C = {
   bg: "#0E0B1F",
   surface: "#1A1533",
   gold: "#F4B728",
