@@ -2,6 +2,7 @@
 
 ## The loop
 1. **Hide.** A player writes a challenge, picks an amount and an expiry, and funds the stash from their own Zcash wallet.
+   - *Challenge a friend:* a switch on the prize step, "Only people with the link can see this", makes the stash link-only: never in the feed, the ticker or the hider's public profile (it still shows in My stashes), but anyone with the link can crack it and the crack counts fully for their stats.
 2. **Share.** Every stash gets a link and a share card for X and Telegram.
 3. **Crack.** Anyone can play without an account. The first correct answer or call wins.
 4. **Claim.** The winner picks a destination: their own Zcash wallet, or a 60-second wallet setup. The ZEC arrives shielded.

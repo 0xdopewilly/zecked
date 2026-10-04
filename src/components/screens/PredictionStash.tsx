@@ -1477,7 +1477,12 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
     </main>
   );
 
-  const title = <span style={S.navLabel}>PREDICTION STASH</span>;
+  const title = (
+    <span style={{ ...S.navLabel, display: "inline-flex", alignItems: "center", gap: "var(--zk-space-6)" }}>
+      {stash.private ? <Icon icon="eyeOff" size={14} stroke={2.4} /> : null}
+      {stash.private ? "PRIVATE PREDICTION" : "PREDICTION STASH"}
+    </span>
+  );
   const nav = (center: ReactNode = title) => <Nav center={center} onBack={back} onShare={() => void share()} />;
   const findAnother = (variant: "primary" | "ghost" = "primary", pinned = true) => (
     <Button label="Find another stash" variant={variant} size="lg" href="/feed" style={pinned ? { marginTop: "auto" } : undefined} />

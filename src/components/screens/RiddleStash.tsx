@@ -407,7 +407,10 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       <button type="button" aria-label="Back" onClick={goBack} style={navBtn}>
         <Icon icon="back" size={22} stroke={2.4} />
       </button>
-      <span style={{ font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-pink)" }}>RIDDLE STASH</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--zk-space-6)", font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-pink)" }}>
+        {stash.private ? <Icon icon="eyeOff" size={14} stroke={2.4} /> : null}
+        {stash.private ? "PRIVATE RIDDLE" : "RIDDLE STASH"}
+      </span>
       <button type="button" aria-label="Share" onClick={() => void share()} style={navBtn}>
         <Icon icon="share" size={20} stroke={2.2} />
       </button>
