@@ -10,6 +10,7 @@ import { SwRegister } from "@/components/zk/PushSetup";
 import { InstallCapture } from "@/components/zk/InstallCapture";
 import { SPLASH_KEY } from "@/lib/splash";
 import { NavTracker } from "@/lib/nav";
+import { SideNav } from "@/components/zk/SideNav";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.com";
 
@@ -84,7 +85,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <LiveNotices />
             <SwRegister />
             <InstallCapture />
-            <div className="zk-app">{children}</div>
+            {/* Phones: just the app column (with its floating dock). Laptops: a sidebar beside it (globals.css). */}
+            <div className="zk-shell">
+              <SideNav />
+              <div className="zk-app">{children}</div>
+            </div>
           </>
         )}
       </body>

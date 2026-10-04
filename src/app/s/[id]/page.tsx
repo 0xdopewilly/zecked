@@ -136,14 +136,14 @@ export default function StashPage() {
           href={bannerHref}
           style={{
             position: "fixed",
-            left: "50%",
+            left: "var(--zk-col-x)",
             bottom: "calc(env(safe-area-inset-bottom, 0px) + 112px)",
             transform: "translateX(-50%)",
             zIndex: 60,
             display: "flex",
             alignItems: "center",
             gap: "var(--zk-space-8)",
-            maxWidth: "calc(min(100vw, 430px) - 2 * var(--zk-screen-pad))",
+            maxWidth: "calc(min(var(--zk-col-w), 430px) - 2 * var(--zk-screen-pad))",
             padding: "var(--zk-space-10) var(--zk-space-16)",
             borderRadius: 999,
             background: "var(--zk-grad-gold)",

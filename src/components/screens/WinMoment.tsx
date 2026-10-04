@@ -95,7 +95,7 @@ export function TopToast({ text, variant = "success", icon, zIndex = 60 }: { tex
     <div
       style={{
         position: "fixed",
-        left: 0,
+        left: "var(--zk-side-w)",
         right: 0,
         top: "calc(var(--zk-fixed-top) + var(--zk-space-10))",
         zIndex,
@@ -386,7 +386,7 @@ export function WinMoment({ win, kind, onClose }: WinMomentProps) {
         position: "fixed",
         top: 0,
         bottom: 0,
-        left: "50%",
+        left: "var(--zk-col-x)",
         transform: "translateX(-50%)",
         width: "100%",
         maxWidth: 430,

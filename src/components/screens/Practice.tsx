@@ -921,7 +921,7 @@ function PracticeWin({ seconds, tries, onClose, onAnother }: { seconds: number; 
         position: "fixed",
         top: 0,
         bottom: 0,
-        left: "50%",
+        left: "var(--zk-col-x)",
         transform: "translateX(-50%)",
         width: "100%",
         maxWidth: 430,

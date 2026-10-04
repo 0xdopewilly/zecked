@@ -121,6 +121,7 @@ function Sheet({ label, onClose, children }: { label: string; onClose: () => voi
       style={{
         position: "fixed",
         inset: 0,
+        paddingLeft: "var(--zk-side-w)",
         zIndex: 90,
         background: "rgb(var(--zk-black-rgb) / .6)",
         display: "flex",

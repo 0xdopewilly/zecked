@@ -62,9 +62,9 @@ function toastAcrossNavigation(text: string) {
   host.setAttribute("aria-live", "polite");
   Object.assign(host.style, {
     position: "fixed",
-    left: "50%",
+    left: "var(--zk-col-x)",
     top: "calc(var(--zk-fixed-top) + var(--zk-space-12))",
-    width: "min(394px, calc(100vw - 24px))",
+    width: "min(394px, calc(var(--zk-col-w) - 24px))",
     transform: "translateX(-50%)",
     zIndex: "86",
     pointerEvents: "none",
@@ -364,6 +364,7 @@ function SignOutSheet({
       style={{
         position: "fixed",
         inset: 0,
+        paddingLeft: "var(--zk-side-w)",
         zIndex: 90,
         background: "rgb(var(--zk-black-rgb) / .55)",
         display: "flex",

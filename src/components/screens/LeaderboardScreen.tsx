@@ -419,9 +419,9 @@ function YouBar({ you, board, ranked }: { you: NonNullable<Leaderboard["you"]>; 
     <div
       style={{
         position: "fixed",
-        left: "50%",
+        left: "var(--zk-col-x)",
         transform: "translateX(-50%)",
-        width: "min(calc(100vw - 28px), 380px)",
+        width: "min(calc(var(--zk-col-w) - 28px), 380px)",
         bottom: "calc(var(--zk-tabbar-h) + var(--zk-space-24))",
         display: "flex",
         alignItems: "center",

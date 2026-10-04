@@ -1451,9 +1451,9 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
         style={{
           position: "fixed",
           top: "calc(var(--zk-fixed-top) + var(--zk-space-10))",
-          left: "50%",
+          left: "var(--zk-col-x)",
           transform: "translateX(-50%)",
-          width: "calc(min(100vw, 430px) - 2 * var(--zk-space-12))",
+          width: "calc(min(var(--zk-col-w), 430px) - 2 * var(--zk-space-12))",
           zIndex: 80,
           display: "flex",
           flexDirection: "column",

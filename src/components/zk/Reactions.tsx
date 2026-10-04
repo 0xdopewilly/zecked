@@ -459,10 +459,10 @@ function ReactionBar({ stashId, counts: countsProp, mine: mineProp, onError, sty
           key={toast.n}
           style={{
             position: "fixed",
-            left: "50%",
+            left: "var(--zk-col-x)",
             top: "calc(var(--zk-fixed-top) + var(--zk-space-10))",
             transform: "translateX(-50%)",
-            width: "calc(min(100vw, 430px) - 2 * var(--zk-screen-pad))",
+            width: "calc(min(var(--zk-col-w), 430px) - 2 * var(--zk-screen-pad))",
             zIndex: 80,
             pointerEvents: "none",
           }}

@@ -1971,10 +1971,10 @@ export default function Wallet() {
           aria-live="polite"
           style={{
             position: "fixed",
-            left: "50%",
+            left: "var(--zk-col-x)",
             transform: "translateX(-50%)",
             top: "calc(var(--zk-fixed-top) + var(--zk-space-12))",
-            width: "min(394px, calc(100vw - 24px))",
+            width: "min(394px, calc(var(--zk-col-w) - 24px))",
             zIndex: 86,
             pointerEvents: "none",
           }}

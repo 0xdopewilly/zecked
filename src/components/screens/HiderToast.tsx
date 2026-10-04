@@ -54,8 +54,8 @@ export function HiderToast({ text, meta, onClose, onTap }: HiderToastProps) {
       style={{
         position: "fixed",
         top: "calc(var(--zk-fixed-top) + var(--zk-space-12))",
-        left: "50%",
-        width: "calc(min(100vw, 430px) - 2 * var(--zk-space-12))",
+        left: "var(--zk-col-x)",
+        width: "calc(min(var(--zk-col-w), 430px) - 2 * var(--zk-space-12))",
         zIndex: 85,
         transform: `translateX(-50%) translateY(${shown ? "0" : "calc(-100% - 60px)"})`,
         opacity: shown ? 1 : 0,

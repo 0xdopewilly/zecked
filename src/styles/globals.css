@@ -35,6 +35,64 @@ a { text-decoration: none; }
   .zk-app { box-shadow: 0 0 0 1px var(--zk-border), 0 30px 80px rgba(0,0,0,.6); }
 }
 
+/* The content column, for things fixed to the screen (toasts, sheets, bars): its width and its centre.
+   Phones and tablets: the 430px app column in the middle. Laptops: the main area beside the sidebar. */
+:root { --zk-col-w: min(100vw, 430px); --zk-col-x: 50%; --zk-side-w: 0px; }
+.zk-side { display: none; }
+
+/* ---------- Laptop / desktop (1024px+): sidebar + wide main area ---------- */
+@media (min-width: 1024px) {
+  :root { --zk-side-w: 248px; --zk-col-w: 600px; --zk-col-x: calc(var(--zk-side-w) + (100vw - var(--zk-side-w)) / 2); }
+  body { background: var(--zk-bg); }
+  .zk-shell { display: grid; grid-template-columns: var(--zk-side-w) minmax(0, 1fr); align-items: start; }
+  .zk-app { max-width: none; margin: 0; box-shadow: none; }
+
+  .zk-side {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; flex-direction: column; gap: var(--zk-space-8);
+    height: calc(100dvh - var(--zk-chrome-h)); padding: var(--zk-space-24) var(--zk-space-16);
+    background: linear-gradient(180deg, #120E2A 0%, #0B0919 100%);
+    border-right: 2px solid var(--zk-ink);
+    view-transition-name: zk-sidenav;
+  }
+  .zk-side-logo { display: flex; padding: var(--zk-space-4) var(--zk-space-10) var(--zk-space-20); }
+  .zk-side-items { display: flex; flex-direction: column; gap: var(--zk-space-4); }
+  .zk-side-item {
+    display: flex; align-items: center; gap: var(--zk-space-12);
+    height: 50px; padding: 0 var(--zk-space-12); border-radius: var(--zk-radius-lg);
+    color: var(--zk-text-muted); font: var(--zk-fw-bold) 16px/1 var(--zk-font-display);
+    border: 2px solid transparent; transition: background-color 140ms, color 140ms, transform 140ms;
+  }
+  .zk-side-item:hover { color: var(--zk-text); background: rgb(var(--zk-white-rgb) / .05); }
+  .zk-side-item:active { transform: scale(.98); }
+  .zk-side-icon { width: 36px; height: 36px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+  .zk-side-item[aria-current="page"] { color: var(--zk-text); background: var(--zk-surface-raised); border-color: var(--zk-ink); box-shadow: 0 3px 0 var(--zk-ink); }
+  .zk-side-item[aria-current="page"] .zk-side-icon { background: var(--zk-grad-tile-gold); color: var(--zk-gold-ink); border: 2px solid var(--zk-ink); }
+  .zk-side-hide {
+    margin-top: var(--zk-space-16); height: 54px;
+    display: flex; align-items: center; justify-content: center; gap: var(--zk-space-8);
+    border-radius: var(--zk-radius-pill); color: var(--zk-text);
+    background: linear-gradient(160deg, #FF8CC2 0%, var(--zk-pink) 55%, #E23585 100%);
+    border: 2.5px solid var(--zk-ink); box-shadow: inset 0 2px 0 rgb(var(--zk-white-rgb) / .35), 0 4px 0 var(--zk-ink);
+    font: var(--zk-fw-black) 17px/1 var(--zk-font-display);
+    transition: transform 140ms var(--zk-ease-out), box-shadow 140ms var(--zk-ease-out);
+  }
+  .zk-side-hide:hover { color: var(--zk-text); transform: translateY(-2px); }
+  .zk-side-hide:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--zk-ink); }
+  .zk-side-foot { margin-top: auto; }
+  .zk-side-me {
+    display: flex; align-items: center; gap: var(--zk-space-10); padding: var(--zk-space-10);
+    border-radius: var(--zk-radius-xl); color: var(--zk-text); background: rgb(var(--zk-white-rgb) / .04);
+    border: 1.5px solid var(--zk-border);
+  }
+  .zk-side-me:hover { color: var(--zk-text); background: rgb(var(--zk-white-rgb) / .07); }
+  .zk-side-handle { font: var(--zk-fw-bold) 15px/1.1 var(--zk-font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .zk-side-sub { font: var(--zk-fw-bold) 12px/1 var(--zk-font-mono); color: var(--zk-gold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+::view-transition-group(zk-sidenav) { animation: none; z-index: 100; }
+::view-transition-old(zk-sidenav) { display: none; }
+::view-transition-new(zk-sidenav) { animation: none; }
+
 /* A screen fills the column: flex column, safe-area aware. */
 .zk-screen {
   position: relative;
@@ -71,6 +129,8 @@ a { text-decoration: none; }
   box-shadow: inset 0 1.5px 0 rgb(var(--zk-white-rgb) / .1), 0 5px 0 var(--zk-ink), 0 18px 36px rgb(var(--zk-black-rgb) / .55);
   view-transition-name: zk-tabbar;
 }
+/* Laptops use the sidebar instead of the dock: nothing to keep clear at the bottom. (After the :root above.) */
+@media (min-width: 1024px) { :root { --zk-tabbar-h: 0px; } }
 .zk-dock-item {
   position: relative;
   width: 48px; height: 48px;
@@ -126,7 +186,7 @@ a { text-decoration: none; }
 @media (max-width: 350px) {
   .zk-hello-avatar { width: 40px; height: 40px; }
   .zk-hello-coin { display: none !important; }
-  :has(> .zk-hello-coin) { padding-left: 12px !important; }
+  .zk-hello-chip { padding-left: var(--zk-space-12); }
 }
 .zk-bell {
   position: relative; width: 40px; height: 40px; flex: none;
@@ -291,3 +351,12 @@ html[data-splash-exit] .zk-home-stagger > * { animation: zk-home-in 760ms var(--
 html[data-splash-exit] .zk-dock { animation: zk-dock-in 760ms var(--zk-ease-spring) 180ms both; }
 @keyframes zk-home-in { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
 @keyframes zk-dock-in { from { transform: translate(-50%, 160%); } to { transform: translate(-50%, 0); } }
+
+/* Laptop overrides that must come after the rules they replace (the dock, the ribbon, screen padding). */
+@media (min-width: 1024px) {
+  .zk-dock { display: none; }
+  .zk-testmode { max-width: none; }
+  /* Every screen keeps its full-width background; its content sits in a comfortable centred column. */
+  .zk-screen { padding-left: max(var(--zk-screen-pad), calc((100% - var(--zk-col-w)) / 2)); padding-right: max(var(--zk-screen-pad), calc((100% - var(--zk-col-w)) / 2)); }
+  .zk-screen.has-tabs { padding-bottom: var(--zk-space-48, 48px); }
+}

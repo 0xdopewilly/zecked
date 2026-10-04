@@ -3553,7 +3553,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
       aria-live="polite"
       style={{
         position: "fixed",
-        left: 0,
+        left: "var(--zk-side-w)",
         right: 0,
         top: "calc(var(--zk-fixed-top) + var(--zk-space-10))",
         zIndex: 80,

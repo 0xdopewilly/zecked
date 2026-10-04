@@ -13,10 +13,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { api, formatZec, type FeedFilter } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import { warmStash } from "@/lib/stashCache";
-import type { Player, PublicStash, TickerItem } from "@/lib/types";
+import type { LeaderRow, Player, PublicStash, TickerItem } from "@/lib/types";
 import { Avatar, Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
 import { formatDuration } from "@/components/zk/StashCard";
 import { InstallNudge } from "@/components/zk/Install";
+import { QrCode } from "@/components/zk/QrCode";
 import { NOTICES_EVENT, NoticeBell } from "@/components/screens/NoticeBell";
 import "@/styles/home.css";
 
@@ -108,7 +109,6 @@ const ERROR_COPY: Record<FeedError, { title: string; body: string }> = {
 };
 
 // Tap targets: the visual chip stays compact, an invisible slop grows the hit area to 44px.
-const HIT_SLOP_36: CSSProperties = { position: "absolute", inset: "-4px -2px" };
 const HIT_SLOP_38: CSSProperties = { position: "absolute", inset: "-4px -2px" }; // inside a 1px border
 
 /* ---------- ticker helpers ---------- */
@@ -149,67 +149,7 @@ function ago(iso: string, now: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** One line of live activity under the greeting ("Someone just zecked 0.02 ZEC · 2m ago"), a new one
- *  every few seconds. Always the same height, loaded or not, so nothing below it moves. */
-function LivePulse({ ticker }: { ticker: TickerState }) {
-  const { items } = ticker;
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    if (items.length < 2 || reducedMotion()) return;
-    const t = setInterval(() => {
-      if (!document.hidden) setI((n) => n + 1);
-    }, 4200);
-    return () => clearInterval(t);
-  }, [items.length]);
-  const t = items.length ? items[i % items.length] : null;
-  let line: ReactNode;
-  if (t) {
-    const [before, bold, after] = splitBold(t.text);
-    const look = tickerLook(t);
-    line = (
-      <span key={`${t.id}-${i}`} className="zk-pulse-line">
-        <span style={{ color: look.color, display: "flex", flex: "none" }}>
-          <Icon icon={look.icon} size={14} stroke={2.4} />
-        </span>
-        <span className="zk-pulse-text">
-          {before}
-          {bold && <b>{bold}</b>}
-          {after} <span style={{ color: "var(--zk-text-faint)" }}>· {ago(t.at, Date.now())}</span>
-        </span>
-      </span>
-    );
-  } else if (ticker.loaded) {
-    line = (
-      <span className="zk-pulse-line">
-        <span className="zk-pulse-text" style={{ color: "var(--zk-text-muted)" }}>
-          All quiet. New stashes land here live.
-        </span>
-      </span>
-    );
-  } else {
-    line = <span aria-hidden="true" style={{ width: 170, height: 10, borderRadius: "var(--zk-radius-sm)", background: "rgb(var(--zk-mint-rgb) / .14)" }} />;
-  }
-  return (
-    <div className="zk-pulse" aria-label="Live activity">
-      <span className="zk-pulse-dot" aria-hidden="true" />
-      {line}
-    </div>
-  );
-}
-
 /* ---------- header ---------- */
-
-const headerChip: CSSProperties = {
-  position: "relative",
-  height: 40,
-  borderRadius: "var(--zk-radius-pill)",
-  background: "var(--zk-surface-raised)",
-  border: "2px solid var(--zk-ink)",
-  boxShadow: "inset 0 1.5px 0 rgb(var(--zk-white-rgb) / .08), 0 3px 0 var(--zk-ink)",
-  display: "flex",
-  alignItems: "center",
-  gap: "var(--zk-space-6)",
-};
 
 /** Wallet balance for the header chip: "0.05", "0.0503", "12.3", "1.2k" (rounded down, never up). */
 function compactZec(zat: number): string {
@@ -222,172 +162,54 @@ function compactZec(zat: number): string {
 
 function Header({ player, scrolled }: { player: Player | null; scrolled: boolean }) {
   const streak = player?.stats.streak ?? 0;
-  const [tip, setTip] = useState(false);
-  const groupRef = useRef<HTMLDivElement>(null);
-
-  // The streak explainer closes on any outside tap, Escape, after a few seconds, or when the header hides.
-  useEffect(() => {
-    if (!tip) return;
-    const outside = (e: PointerEvent) => {
-      if (!groupRef.current?.contains(e.target as Node)) setTip(false);
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setTip(false);
-    };
-    const t = setTimeout(() => setTip(false), 6000);
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", esc);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [tip]);
-  const tipOpen = tip && !scrolled;
-
-  const coin = (
-    <span
-      className="zk-hello-coin"
-      style={{
-        width: 26,
-        height: 26,
-        borderRadius: "50%",
-        background: "var(--zk-grad-tile-gold)",
-        border: "2px solid var(--zk-ink)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--zk-gold-ink)",
-      }}
-    >
-      <Logo variant="mark" size={12} stroke="var(--zk-gold-ink)" />
-    </span>
-  );
-  const balanceStyle: CSSProperties = {
-    ...headerChip,
-    padding: "0 var(--zk-space-12) 0 var(--zk-space-4)",
-    font: "var(--zk-fw-bold) var(--zk-fs-14)/1 var(--zk-font-mono)",
-    color: "var(--zk-gold)",
-    textDecoration: "none",
-  };
-  // Signed in: your ZECKED wallet balance → /wallet. Guests: "Sign up" (they have no wallet yet).
   const signedIn = player?.account?.signedIn;
   const balanceZat = player?.balanceZat ?? 0;
   const handle = player?.handle.replace(/^@+/, "");
-
+  const coin = (
+    <span className="zk-hello-coin" aria-hidden="true">
+      <Logo variant="mark" size={12} stroke="var(--zk-gold-ink)" />
+    </span>
+  );
+  // Three things only: you (with your streak on your avatar), your ZEC, your notices.
   return (
-    <div style={{ position: "relative", padding: "0 var(--zk-screen-pad)", display: "flex", alignItems: "center", gap: "var(--zk-space-10)" }}>
-      {/* You: avatar + "Hey 👋 @you" → your profile. */}
-      <Link
-        href="/me"
-        transitionTypes={["tab"]}
-        aria-label={handle ? `Your profile, @${handle}` : "Your profile"}
-        style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "var(--zk-space-10)", color: "var(--zk-text)" }}
-      >
-        {player ? (
-          <Avatar handle={player.handle} src={player.avatarUrl} className="zk-hello-avatar" />
-        ) : (
-          <span aria-hidden="true" className="zk-hello-avatar is-empty" />
-        )}
-        <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-          <span style={{ font: "var(--zk-fw-semibold) var(--zk-fs-13)/1 var(--zk-font-body)", color: "var(--zk-text-muted)" }}>
-            Hey <span aria-hidden="true">👋</span>
-          </span>
-          {handle ? (
-            <span
-              style={{
-                font: "var(--zk-fw-black) clamp(17px, 5.2vw, 21px)/1.1 var(--zk-font-display)",
-                letterSpacing: "-.01em",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              @{handle}
+    <div className="zk-hello">
+      <Link href="/me" transitionTypes={["tab"]} aria-label={handle ? `Your profile, @${handle}` : "Your profile"} className="zk-hello-me">
+        <span className="zk-hello-pic">
+          {player ? <Avatar handle={player.handle} src={player.avatarUrl} className="zk-hello-avatar" /> : <span aria-hidden="true" className="zk-hello-avatar is-empty" />}
+          {streak > 0 && (
+            <span className="zk-hello-streak" title={`${streak}-day streak`}>
+              <Icon icon="flame" size={11} filled stroke={1.5} />
+              {streak}
+              <span className="zk-sr-only"> day streak</span>
             </span>
-          ) : (
-            <span aria-hidden="true" style={{ width: 110, height: 18, borderRadius: 6, background: "var(--zk-surface-raised)" }} />
           )}
         </span>
+        <span className="zk-hello-text">
+          <span className="zk-hello-hey">
+            Hey <span aria-hidden="true">👋</span>
+          </span>
+          {handle ? <span className="zk-hello-name">@{handle}</span> : <span aria-hidden="true" className="zk-hello-name is-empty" />}
+        </span>
       </Link>
-
-      <div ref={groupRef} style={{ display: "flex", gap: "var(--zk-space-8)", alignItems: "center", flex: "none" }}>
-        {/* A 0 streak says nothing: the chip shows up once you've played. */}
-        {streak > 0 && (
-          <button
-            type="button"
-            aria-expanded={tipOpen}
-            aria-controls="zk-streak-tip"
-            aria-label={`${streak} day streak. What’s this?`}
-            onClick={() => setTip((v) => !v)}
-            style={{
-              ...headerChip,
-              padding: "0 var(--zk-space-10)",
-              gap: 3,
-              font: "var(--zk-type-btn-sm)",
-              color: "var(--zk-text)",
-              cursor: "pointer",
-              touchAction: "manipulation",
-            }}
-          >
-            <Icon icon="flame" size={15} filled stroke={1.5} color="var(--zk-pink)" />
-            {streak}
-            <span aria-hidden="true" style={HIT_SLOP_36} />
-          </button>
-        )}
+      <div className="zk-hello-right">
         {!player ? (
-          <div aria-busy="true" aria-label="Loading your ZEC" style={balanceStyle}>
+          <div aria-busy="true" aria-label="Loading your ZEC" className="zk-hello-chip">
             {coin}
             <span style={{ color: "var(--zk-text-faint)" }}>…</span>
           </div>
         ) : signedIn ? (
-          <Link href="/wallet" transitionTypes={["tab"]} aria-label={`Your ZEC: ${formatZec(balanceZat, 8)} ZEC. Open your wallet`} style={balanceStyle}>
+          <Link href="/wallet" transitionTypes={["tab"]} aria-label={`Your ZEC: ${formatZec(balanceZat, 8)} ZEC. Open your wallet`} className="zk-hello-chip">
             {coin}
             {compactZec(balanceZat)}
-            <span aria-hidden="true" style={HIT_SLOP_36} />
           </Link>
         ) : (
-          <Link
-            href="/signin?next=/feed"
-            aria-label="Sign up to get your own ZECKED wallet"
-            style={{ ...balanceStyle, font: "var(--zk-type-btn-sm)", color: "var(--zk-gold)" }}
-          >
+          <Link href="/signin?next=/feed" aria-label="Sign up to get your own ZECKED wallet" className="zk-hello-chip is-signup">
             {coin}
             Sign up
-            <span aria-hidden="true" style={HIT_SLOP_36} />
           </Link>
         )}
         <NoticeBell hidden={scrolled} />
       </div>
-
-      {tipOpen && (
-        <div
-          id="zk-streak-tip"
-          role="status"
-          style={{
-            position: "absolute",
-            top: "calc(100% + var(--zk-space-10))",
-            right: "var(--zk-screen-pad)",
-            width: 236,
-            zIndex: 20,
-            padding: "var(--zk-space-12) var(--zk-space-14)",
-            borderRadius: "var(--zk-radius-lg)",
-            background: "var(--zk-surface-raised)",
-            border: "2.5px solid var(--zk-ink)",
-            boxShadow: "0 4px 0 var(--zk-ink), var(--zk-shadow-card)",
-            animation: "zk-vt-rise 180ms var(--zk-ease-out) both",
-          }}
-        >
-          <div style={{ font: "var(--zk-type-h4)" }}>
-            {streak}-day streak <span aria-hidden="true">🔥</span>
-          </div>
-          <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-4)" }}>
-            {streak === 1
-              ? "You played today. Crack a riddle or make a call tomorrow to make it 2."
-              : `You’ve played ${streak} days in a row. Crack a riddle or make a call every day to keep it going.`}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -851,6 +673,112 @@ function FeedItem({ stash, animate }: { stash: PublicStash; animate: boolean }) 
     <div ref={ref} className="zk-feed-item" style={{ flex: "none" }}>
       <StashCard stash={stash} href={`/s/${stash.id}`} markMine />
     </div>
+  );
+}
+
+/** "New here? Try a free practice riddle →": one line under the hero for first-timers, ✕ hides it for good. */
+function PracticeLink() {
+  return (
+    <div className="zk-practice-link">
+      <Link href="/practice" transitionTypes={["nav-forward"]} data-sfx="pop" className="zk-practice-go">
+        <span aria-hidden="true" className="zk-practice-key">
+          <Icon icon="key" size={15} stroke={2.6} />
+        </span>
+        <span>
+          First time? <b>Try a practice riddle</b>
+        </span>
+      </Link>
+      <button type="button" aria-label="No thanks, hide this" data-sfx="tap" className="zk-practice-x" onClick={dismissPractice}>
+        <Icon icon="close" size={12} stroke={2.8} />
+      </button>
+    </div>
+  );
+}
+
+/** Laptops (1280px+): a side column with what's happening, this week's top crackers, and a QR code to
+ *  play on your phone. Not rendered on smaller screens at all. */
+function useMinWidth(px: number) {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia(`(min-width: ${px}px)`);
+    const f = () => setOk(m.matches);
+    f();
+    m.addEventListener("change", f);
+    return () => m.removeEventListener("change", f);
+  }, [px]);
+  return ok;
+}
+
+function HomeRail({ ticker }: { ticker: TickerState }) {
+  const [top, setTop] = useState<LeaderRow[] | null>(null);
+  useEffect(() => {
+    api
+      .leaderboard("crackers", "week")
+      .then((b) => setTop(b.rows.slice(0, 5)))
+      .catch(() => setTop([]));
+  }, []);
+  const now = Date.now();
+  return (
+    <aside className="zk-home-rail" aria-label="Around ZECKED">
+      <section className="zk-rail-card">
+        <h2 className="zk-rail-title">
+          <span className="zk-pulse-dot" aria-hidden="true" /> Happening now
+        </h2>
+        {ticker.items.length ? (
+          <ul className="zk-rail-list">
+            {ticker.items.slice(0, 6).map((t) => {
+              const [before, bold, after] = splitBold(t.text);
+              const look = tickerLook(t);
+              return (
+                <li key={t.id}>
+                  <span style={{ color: look.color, display: "flex", flex: "none", marginTop: 2 }}>
+                    <Icon icon={look.icon} size={15} stroke={2.4} />
+                  </span>
+                  <span>
+                    {before}
+                    {bold && <b>{bold}</b>}
+                    {after} <span className="zk-rail-ago">· {ago(t.at, now)}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="zk-rail-empty">{ticker.loaded ? "All quiet. New stashes land here live." : "Loading…"}</p>
+        )}
+      </section>
+
+      <section className="zk-rail-card">
+        <h2 className="zk-rail-title">Top crackers this week</h2>
+        {top && top.length ? (
+          <ol className="zk-rail-top">
+            {top.map((r) => (
+              <li key={r.handle}>
+                <Link href={`/u/${r.handle.replace(/^@+/, "")}`} transitionTypes={["nav-forward"]}>
+                  <span className="zk-rail-rank">{r.rank}</span>
+                  <Avatar handle={r.handle} src={r.avatarUrl} house={r.isHouse} size={32} />
+                  <span className="zk-rail-handle">{r.handle}</span>
+                  <span className="zk-rail-score">{r.score}</span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="zk-rail-empty">{top ? "Nobody yet this week. Crack one and take #1." : "Loading…"}</p>
+        )}
+        <Link href="/leaderboard" transitionTypes={["tab"]} className="zk-rail-more">
+          Full leaderboard <Icon icon="arrowRight" size={14} stroke={2.6} />
+        </Link>
+      </section>
+
+      <section className="zk-rail-card zk-rail-phone">
+        <QrCode value={`${typeof window !== "undefined" ? window.location.origin : "https://app.zecked.com"}/feed`} size={128} label="Open ZECKED on your phone" />
+        <div>
+          <h2 className="zk-rail-title" style={{ margin: 0 }}>Play on your phone</h2>
+          <p className="zk-rail-empty" style={{ marginTop: 6 }}>Scan to open ZECKED, then add it to your Home Screen for drop alerts.</p>
+        </div>
+      </section>
+    </aside>
   );
 }
 
@@ -1464,8 +1392,7 @@ export default function Feed() {
     return () => io.disconnect();
   }, [feedEmpty]);
 
-  // Shown with the list (never over the loading skeletons), so it never pushes the cards down later.
-  const practiceCard = practice ? <PracticeCard /> : null;
+  const wide = useMinWidth(1280);
   const dropAt = house?.nextDropAt && Date.parse(house.nextDropAt) > Date.now() ? house.nextDropAt : null;
   const onDue = () => void loadFeed(filter, "poll");
 
@@ -1474,7 +1401,6 @@ export default function Feed() {
     body = (
       <>
         {error && <StaleBanner kind={error} onRetry={retry} />}
-        {practiceCard}
         {live.map((s) => (
           <FeedItem key={s.id} stash={s} animate={freshSet.has(s.id)} />
         ))}
@@ -1483,14 +1409,12 @@ export default function Feed() {
   } else if (list) {
     body = (
       <>
-        {practiceCard}
         {filter === "all" ? <NothingLive hasDrop={!!drop} /> : <FilterEmpty filter={filter as Exclude<FeedFilter, "all">} onAll={() => pick("all")} />}
       </>
     );
   } else if (error) {
     body = (
       <>
-        {practiceCard}
         <ErrorState kind={error} onRetry={retry} />
       </>
     );
@@ -1546,24 +1470,24 @@ export default function Feed() {
       {/* Everything below follows the finger on pull-to-refresh. On launch, each block rises in as the splash
           steps aside (globals.css: .zk-home-stagger). */}
       <div ref={listRef} className="zk-home-stagger">
-        <div style={{ ...at(0), paddingTop: "calc(var(--zk-top-inset) + var(--zk-space-18))" }}>
+        <div className="zk-home-head" style={at(0)}>
           <Header player={player} scrolled={scrolled} />
         </div>
+        {wide && <HomeRail ticker={ticker} />}
         <div style={at(1)}>
-          <LivePulse ticker={ticker} />
-        </div>
-        <div style={at(2)}>
           <InviteWelcome signedIn={player ? !!player.account?.signedIn : undefined} />
         </div>
 
         {!feedEmpty && (drop || dropAt) && (
-          <div className="zk-home-block" style={at(2)}>
+          <div className="zk-home-block" style={at(1)}>
             <HomeHero drop={drop} nextAt={dropAt} onDue={onDue} />
           </div>
         )}
-
-        {/* Phones in a browser tab: one tap to put ZECKED on the Home Screen (renders nothing once installed). */}
-        <InstallNudge style={{ ...at(3), margin: "var(--zk-space-20) var(--zk-space-16) 0" }} />
+        {!feedEmpty && practice && (
+          <div style={at(2)}>
+            <PracticeLink />
+          </div>
+        )}
 
         {feedEmpty ? (
           <div className="zk-home-block" style={at(2)}>
@@ -1614,6 +1538,12 @@ export default function Feed() {
                 </div>
               </section>
             )}
+
+            {/* Phones in a browser tab: one tap to put ZECKED on the Home Screen. At the end, out of the way
+                (renders nothing once installed, and laptops get the QR code in the side column instead). */}
+            <div className="zk-home-install">
+              <InstallNudge style={{ margin: "var(--zk-space-32) var(--zk-space-16) 0" }} />
+            </div>
           </div>
         )}
       </div>
