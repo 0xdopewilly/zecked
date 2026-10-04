@@ -6,6 +6,8 @@ import { kv } from "./kv";
 import { HttpError } from "./util";
 
 const KEY = (pid: string) => `push:${pid}`;
+/** Everyone with at least one device subscribed (for free-drop alerts), newest first. */
+export const PUSH_PLAYERS = "push:players";
 const MAX_DEVICES = 6;
 let configured: boolean | null = null;
 
@@ -31,12 +33,14 @@ export async function savePushSub(pid: string, raw: unknown) {
   const subs = ((await kv().get<PushSubscription[]>(KEY(pid))) || []).filter((x) => x.endpoint !== sub.endpoint);
   subs.push(sub);
   await kv().set(KEY(pid), subs.slice(-MAX_DEVICES));
+  await kv().zadd(PUSH_PLAYERS, Date.now(), pid);
   return { ok: true, devices: Math.min(subs.length, MAX_DEVICES) };
 }
 
 export async function removePushSub(pid: string, endpoint: string) {
   const subs = ((await kv().get<PushSubscription[]>(KEY(pid))) || []).filter((x) => x.endpoint !== endpoint);
   await kv().set(KEY(pid), subs);
+  if (!subs.length) await kv().zrem(PUSH_PLAYERS, pid);
   return { ok: true };
 }
 
@@ -58,5 +62,9 @@ export async function sendPush(pid: string, payload: PushPayload) {
         }),
     ),
   );
-  if (gone.length) await kv().set(KEY(pid), subs.filter((s) => !gone.includes(s.endpoint)));
+  if (gone.length) {
+    const left = subs.filter((s) => !gone.includes(s.endpoint));
+    await kv().set(KEY(pid), left);
+    if (!left.length) await kv().zrem(PUSH_PLAYERS, pid);
+  }
 }

@@ -10,6 +10,7 @@ import { claimHandle, getPlayer, savePlayer, type PlayerRecord } from "./players
 import { zecUsd } from "./price";
 import { nowIso } from "./util";
 import { balanceOf, credit, debit, syncDeposits, walletInfo } from "./wallet";
+import { dropAlert } from "./alerts";
 
 export const HOUSE_ID = "house";
 /** Off in sim mode (it has its own seed and bonus) unless ZECKED_HOUSE=on, for local testing. */
@@ -150,6 +151,7 @@ export async function maybeHouseDrop(force = false): Promise<StashRecord | null>
     const s = await createStash(house, { type: "riddle", riddle: r, usd, expiryHours: 24 });
     await fundFromBalance(s, house);
     await kv().set("house:drop", { lastId: s.id, nextAt: Date.now() + DROP_EVERY_MS } satisfies DropState);
+    await dropAlert(s).catch((e) => console.error("drop alert", (e as Error).message));
     return s;
   } finally {
     await kv().del("house:droplock");

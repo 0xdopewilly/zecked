@@ -124,6 +124,7 @@ export const api = {
   me: () => req<{ player: Player }>("/me"),
   setHandle: (handle: string) =>
     req<{ player: Player }>("/me", { method: "PATCH", body: JSON.stringify({ handle }) }),
+  setDropAlerts: (on: boolean) => req<{ player: Player }>("/me", { method: "PATCH", body: JSON.stringify({ dropAlerts: on }) }),
   myStashes: () => req<{ stashes: PublicStash[] }>("/me/stashes"),
   myInvite: () => req<{ code: string | null; url: string | null; joined: number; rewarded: number; earnedZat: number; rewardUsd: number }>("/me/invite"),
   inviter: (code: string) => req<{ inviter: { handle: string; avatarUrl: string | null } | null }>(`/invite/${encodeURIComponent(code)}`),

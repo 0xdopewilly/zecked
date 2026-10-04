@@ -21,7 +21,7 @@ import {
   ticker,
   toPublic,
 } from "@/lib/server/game";
-import { isAccount, leaderboard, setHandle, toPublicPlayer, type PlayerRecord } from "@/lib/server/players";
+import { isAccount, leaderboard, patchPlayer, setHandle, toPublicPlayer, type PlayerRecord } from "@/lib/server/players";
 import { createSession, destroySession, sessionPlayer, startEmailSignIn, verifyEmailSignIn } from "@/lib/server/auth";
 import { googleCallback, googleStart } from "@/lib/server/google";
 import { passkeyLoginOptions, passkeyLoginVerify, passkeyRegisterOptions, passkeyRegisterVerify, relyingParty } from "@/lib/server/passkeys";
@@ -250,7 +250,10 @@ async function handle(req: NextRequest, ctx: Ctx) {
     if (a === "me" && !b) {
       if (method === "GET") return out({ player: await pub(player) });
       if (method === "PATCH") {
-        const { handle: h } = await body<{ handle: string }>(req);
+        const { handle: h, dropAlerts } = await body<{ handle?: string; dropAlerts?: boolean }>(req);
+        if (typeof dropAlerts === "boolean" && h === undefined) {
+          return out({ player: await pub(await patchPlayer(player, (x) => void (x.dropAlerts = dropAlerts))) });
+        }
         try {
           return out({ player: await pub(await setHandle(player, h || "")) });
         } catch (e) {

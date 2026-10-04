@@ -173,6 +173,7 @@ export interface Player {
     via?: ("email" | "google" | "passkey")[]; // how this account signs in
   };
   balanceZat: number; // in-app ZECKED wallet balance (0 for guests)
+  dropAlerts?: boolean; // push me when a free house drop goes live (default on)
 }
 
 // ---------- in-app wallet ----------

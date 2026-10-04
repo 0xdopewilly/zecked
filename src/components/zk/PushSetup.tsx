@@ -2,6 +2,7 @@
 // Push notification UI: <SwRegister /> (mounted once in the app layout) and <PushPrompt />, a friendly
 // "get pinged when someone cracks it" card with the right words for each device state.
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { Button } from "@/components/zk/Button";
 import { Icon } from "@/components/zk/Icon";
 import { disablePush, enablePush, pushState, registerServiceWorker, type PushState } from "@/lib/push";
@@ -9,11 +10,25 @@ import { sfx } from "@/lib/sfx";
 
 export function SwRegister() {
   useEffect(() => {
-    const go = () => void registerServiceWorker();
+    const go = () => void registerServiceWorker().then(syncPush);
     if (document.readyState === "complete") go();
     else window.addEventListener("load", go, { once: true });
   }, []);
   return null;
+}
+
+/** Once a day, re-send this device's push subscription (it can rotate, and it keeps the free-drop alert
+ *  list complete for devices subscribed before that list existed). */
+async function syncPush(reg: ServiceWorkerRegistration | null) {
+  try {
+    if (!reg || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const last = Number(localStorage.getItem("zk:push-sync") || 0);
+    if (Date.now() - last < 86_400_000) return;
+    const sub = await reg.pushManager?.getSubscription();
+    if (!sub) return;
+    await api.pushSubscribe(sub.toJSON());
+    localStorage.setItem("zk:push-sync", String(Date.now()));
+  } catch {}
 }
 
 export const PUSH_COPY: Record<PushState, string> = {

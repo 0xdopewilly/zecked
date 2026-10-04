@@ -43,6 +43,7 @@ export interface PlayerRecord {
   mergedGuests?: string[];
   avatarV?: string; // profile photo key (see avatars.ts), accounts only
   inviteCode?: string; // their invite link: /i/<code> (see invites.ts)
+  dropAlerts?: boolean; // push when a free house drop goes live (default on)
 }
 
 const ADJ = ["night", "quiet", "shadow", "ghost", "zero", "gold", "vault", "cipher", "silent", "lucky", "neon", "velvet", "hidden", "sly", "misty"];
@@ -101,6 +102,7 @@ export function toPublicPlayer(p: PlayerRecord, balanceZat = 0): Player {
     pendingClaims: p.pendingClaims,
     shielded: p.shielded,
     account: { signedIn: isAccount(p), email: p.email ? maskEmail(p.email) : undefined, via },
+    dropAlerts: p.dropAlerts !== false,
     balanceZat: isAccount(p) ? balanceZat : 0,
   };
 }

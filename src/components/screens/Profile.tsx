@@ -588,11 +588,20 @@ function AccountCard({ player }: { player: Player }) {
 const settingRow: CSSProperties = { display: "flex", alignItems: "center", gap: "var(--zk-space-12)", minHeight: 60, padding: "var(--zk-space-8) 0" };
 
 /** iOS-style switch: a 52×32 track inside a 44px-tall tap area. */
-/** Push pings on this device: a switch when possible, otherwise a one-line "how to" (e.g. iPhone: add to Home Screen). */
-function NotificationsRow() {
+/** Push pings on this device: a switch when possible, otherwise a one-line "how to" (e.g. iPhone: add to Home Screen).
+ *  With pings on, a second switch for the free-drop alerts. */
+function NotificationsRow({ player, onSaved }: { player: Player; onSaved: (p: Player) => void }) {
   const { state, busy, turnOn, turnOff } = usePush();
+  const [drops, setDrops] = useState(player.dropAlerts !== false);
   if (!state) return null;
   const canToggle = state === "on" || state === "off";
+  const setDropAlerts = (v: boolean) => {
+    setDrops(v);
+    api
+      .setDropAlerts(v)
+      .then(({ player }) => onSaved(player))
+      .catch(() => setDrops(!v));
+  };
   return (
     <div style={{ borderTop: "1px solid var(--zk-border)" }}>
       <div style={settingRow}>
@@ -605,6 +614,18 @@ function NotificationsRow() {
         </div>
         {canToggle && <Switch label="Notifications" on={state === "on"} onChange={(v) => !busy && void (v ? turnOn() : turnOff())} />}
       </div>
+      {state === "on" && (
+        <div style={{ ...settingRow, paddingTop: 0 }}>
+          <div style={{ width: 40, flex: "none" }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "var(--zk-type-h4)" }}>Free drop alerts</div>
+            <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", marginTop: "var(--zk-space-2)", textWrap: "pretty" }}>
+              A ping when the house hides a free riddle. At most one every 4 hours.
+            </div>
+          </div>
+          <Switch label="Free drop alerts" on={drops} onChange={setDropAlerts} />
+        </div>
+      )}
     </div>
   );
 }
@@ -747,7 +768,7 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
             }}
           />
         </div>
-        <NotificationsRow />
+        <NotificationsRow player={player} onSaved={onSaved} />
         <InstallRow />
         {signedIn && (
           <div style={{ borderTop: "1px solid var(--zk-border)" }}>
