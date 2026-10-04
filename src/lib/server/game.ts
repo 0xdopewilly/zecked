@@ -84,6 +84,8 @@ export interface StashRecord {
   correctCalls?: number;
   refund?: { txid?: string; at: string; reason: string; internal?: boolean };
   seeded?: boolean;
+  /** Link-only: never indexed into the feed, no ticker lines, off the hider's public profile (still in /me). */
+  private?: boolean;
 }
 
 interface CallRecord {
@@ -147,6 +149,7 @@ export async function createStash(
     usd: number;
     expiryHours?: number;
     refundAddress?: string;
+    private?: boolean;
   },
   opts: { seeded?: boolean; now?: number } = {}
 ): Promise<StashRecord> {
@@ -215,9 +218,11 @@ export async function createStash(
     refundAddress,
     funding: { ...funding, amountZat: amountZat + NETWORK_FEE_ZAT },
     seeded: opts.seeded,
+    private: body.private && !opts.seeded ? true : undefined,
   };
   await saveStash(s);
-  await kv().zadd(K.index, now, id);
+  // Private stashes are never indexed: not in the feed, and never crowding the feed's 150-row window.
+  if (!s.private) await kv().zadd(K.index, now, id);
   await kv().rpush(K.byPlayer(hider.id), id);
   return s;
 }
@@ -248,7 +253,7 @@ async function goLive(s: StashRecord) {
     touchPlay(hider);
     await savePlayer(hider);
     await bumpBoard("hiders", hider.id, 1);
-    if (!s.seeded) {
+    if (!s.seeded && !s.private) {
       const m = s.prediction ? await getMatch(s.prediction.matchId) : null;
       await tick_(
         s.type === "riddle"
@@ -325,7 +330,7 @@ async function uncrackable(s: StashRecord, reason: string) {
     hider.xp += XP.uncrackable;
     grant(hider, "uncrackable");
     await savePlayer(hider);
-    if (!s.seeded) await tick_(`${hider.handle}'s stash was UNCRACKABLE 🛡️`, "hidden");
+    if (!s.seeded && !s.private) await tick_(`${hider.handle}'s stash was UNCRACKABLE 🛡️`, "hidden");
   }
 }
 
@@ -429,7 +434,7 @@ async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinP
   await savePlayer(p);
   await bumpBoard("crackers", pid, 1);
   // Winners stay anonymous, in the ticker too.
-  if (!s.seeded) await tick_(`Someone just zecked ${zecStr(s.amountZat)} ZEC 🔓`, "zecked");
+  if (!s.seeded && !s.private) await tick_(`Someone just zecked ${zecStr(s.amountZat)} ZEC 🔓`, "zecked");
   if (!s.seeded && s.hiderId !== pid) {
     await notify(s.hiderId, {
       kind: "zecked",
@@ -659,6 +664,7 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     whale: usd >= WHALE_USD,
     testMode: s.network !== "mainnet",
     isMine,
+    private: s.private || undefined,
   };
   if (s.riddle) {
     const tries = triesN || 0;
@@ -778,9 +784,10 @@ async function loadFeedRows() {
   const dayAgo = Date.now() - 86400_000;
   const visible = fresh.filter(
     (s) =>
-      s.status === "live" ||
-      s.status === "locked" ||
-      ((s.status === "zecked" || s.status === "refunded") && Date.parse(s.zeckedAt || s.refund?.at || s.createdAt) > dayAgo)
+      !s.private &&
+      (s.status === "live" ||
+        s.status === "locked" ||
+        ((s.status === "zecked" || s.status === "refunded") && Date.parse(s.zeckedAt || s.refund?.at || s.createdAt) > dayAgo))
   );
   return Promise.all(visible.map(async (s) => ({ s, pub: await toPublic(s, undefined, rate) })));
 }
@@ -824,7 +831,8 @@ export async function hiddenBy(pid: string, viewerId: string): Promise<PublicSta
   const ids = (await kv().lrange<string>(K.byPlayer(pid), 0, -1)).reverse().slice(0, 40);
   const recs = (await Promise.all(ids.map(getStash))).filter(Boolean) as StashRecord[];
   const rate = await zecUsd();
-  const shown = recs.filter((s) => s.status === "live" || s.status === "locked" || s.status === "zecked" || s.status === "refunded");
+  // Private (link-only) stashes stay off the public profile, the owner's too (they live in /me).
+  const shown = recs.filter((s) => !s.private && (s.status === "live" || s.status === "locked" || s.status === "zecked" || s.status === "refunded"));
   const rank = (s: StashRecord) => (s.status === "live" || s.status === "locked" ? 0 : 1);
   shown.sort((a, b) => rank(a) - rank(b) || b.createdAt.localeCompare(a.createdAt));
   return Promise.all(shown.slice(0, 20).map((s) => toPublic(s, viewerId, rate)));
