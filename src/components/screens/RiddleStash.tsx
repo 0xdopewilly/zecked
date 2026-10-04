@@ -1065,7 +1065,11 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: "var(--zk-type-h4)", fontSize: "var(--zk-fs-18)" }}>This is your stash</div>
               <div style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-medium)", color: "var(--zk-text-muted)" }}>
-                {cracking > 0 ? "People are on it. First one to crack it wins." : "Share it. First one to crack it wins."}
+                {stash.private
+                  ? "Share it. Only people with the link can see it."
+                  : cracking > 0
+                    ? "People are on it. First one to crack it wins."
+                    : "Share it. First one to crack it wins."}
               </div>
             </div>
           </div>

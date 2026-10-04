@@ -1782,7 +1782,9 @@ export function PredictionStash({ initial, onWin }: PredictionStashProps) {
           <div style={S.label}>YOUR STASH</div>
           <div style={{ font: "var(--zk-fw-black) var(--zk-fs-40)/1 var(--zk-font-display)", color: "var(--zk-gold)" }}>{pred.calls}</div>
           <div style={{ font: "var(--zk-type-body-strong)", marginTop: "calc(-1 * var(--zk-space-4))" }}>{pred.calls === 1 ? "call sealed so far" : "calls sealed so far"}</div>
-          <p style={{ ...S.muted, maxWidth: 300 }}>You can’t call your own stash. Share it so more people take a shot.</p>
+          <p style={{ ...S.muted, maxWidth: 300 }}>
+            {stash.private ? "Only people with the link can call it. Send it to your friend." : "You can’t call your own stash. Share it so more people take a shot."}
+          </p>
           <Button label="Share your stash" variant="secondary" size="md" icon="share" onClick={() => void share()} />
         </div>
       ) : (
