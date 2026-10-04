@@ -39,18 +39,29 @@ export function Chip({
   ariaLabel,
   style,
 }: ChipProps) {
+  // Hover is React state (mouse only). The pressed look is CSS :active (.zk-chip in globals.css), so it
+  // shows in the same frame as the touch; the looks it needs come in as custom properties below.
   const [hover, setHover] = useState(false);
-  const [press, setPress] = useState(false);
 
   const info = variant === "info";
   const sm = size === "sm";
   const forced = disabled ? "disabled" : state && state !== "default" ? state : null;
-  const st: ChipState = forced || (press ? "pressed" : hover ? "hover" : "default");
+  const st: ChipState = forced || (hover ? "hover" : "default");
   const on = !!active;
   const dis = st === "disabled";
   const interactive = !info && !dis;
 
+  const bg = info
+    ? "var(--zk-surface-raised)"
+    : on
+      ? "var(--zk-gold)"
+      : st === "hover" || st === "pressed"
+        ? "var(--zk-surface-raised)"
+        : "var(--zk-surface)";
   const css: CSSProperties = {
+    ["--zk-c-bg" as string]: bg,
+    ["--zk-c-bg-p" as string]: on ? "var(--zk-gold)" : "var(--zk-surface-raised)",
+    ["--zk-c-sh" as string]: on && st !== "pressed" ? "var(--zk-shadow-chip-active)" : "none",
     flex: "none",
     height: info ? "auto" : sm ? "var(--zk-h-chip-sm)" : "var(--zk-h-chip)",
     padding: info ? "var(--zk-space-8) var(--zk-space-12)" : sm ? "0 var(--zk-space-14)" : "0 var(--zk-space-16)",
@@ -60,17 +71,10 @@ export function Chip({
     display: "inline-flex",
     alignItems: "center",
     gap: "var(--zk-space-6)",
-    background: info
-      ? "var(--zk-surface-raised)"
-      : on
-        ? "var(--zk-gold)"
-        : st === "hover" || st === "pressed"
-          ? "var(--zk-surface-raised)"
-          : "var(--zk-surface)",
     color: on ? "var(--zk-gold-ink)" : "var(--zk-text)",
     border: `1px solid ${on || info ? "transparent" : "var(--zk-border)"}`,
-    boxShadow: on && st !== "pressed" ? "var(--zk-shadow-chip-active)" : "none",
-    transform: st === "pressed" && interactive ? "translateY(2px)" : "none",
+    ...(info ? { background: bg } : null),
+    ...(st === "pressed" && interactive ? { transform: "translateY(2px)", boxShadow: "none" } : null),
     opacity: dis ? ".4" : "1",
     font:
       info || sm
@@ -105,6 +109,8 @@ export function Chip({
   return (
     <button
       type="button"
+      className="zk-chip"
+      data-state={forced ?? undefined}
       aria-pressed={on}
       aria-label={ariaLabel}
       disabled={dis}
@@ -114,19 +120,8 @@ export function Chip({
       onPointerEnter={(e: PointerEvent<HTMLElement>) => {
         if (interactive && e.pointerType === "mouse") setHover(true);
       }}
-      onPointerLeave={() => {
-        setHover(false);
-        setPress(false);
-      }}
-      onPointerDown={(e: PointerEvent<HTMLElement>) => {
-        if (interactive && (e.pointerType !== "mouse" || e.button === 0)) setPress(true);
-      }}
-      onPointerUp={() => setPress(false)}
-      onPointerCancel={() => {
-        setHover(false);
-        setPress(false);
-      }}
-      onBlur={() => setPress(false)}
+      onPointerLeave={() => setHover(false)}
+      onPointerCancel={() => setHover(false)}
       style={css}
     >
       {content}

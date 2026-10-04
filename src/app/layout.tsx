@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import dynamic from "next/dynamic";
 import { Bricolage_Grotesque, Inter, Space_Mono } from "next/font/google";
 import "@/styles/globals.css";
 import { appUrl, surface } from "@/lib/surface";
-import { SmoothScroll } from "@/components/site/SmoothScroll";
 import { Sfx } from "@/components/zk/Sfx";
 import { LiveNotices } from "@/components/zk/LiveNotices";
 import { LaunchSplash } from "@/components/zk/LaunchSplash";
@@ -13,6 +13,10 @@ import { NavTracker } from "@/lib/nav";
 import { SideNav } from "@/components/zk/SideNav";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://zecked.com";
+
+// The website's smooth scrolling (Lenis + motion, ~15KB gz) is only rendered on the site surface: loaded
+// on demand so it never ships with the app's first screen.
+const SmoothScroll = dynamic(() => import("@/components/site/SmoothScroll").then((m) => m.SmoothScroll));
 
 // Self-hosted by Next (no render-blocking request to Google). The tokens read these CSS variables.
 const display = Bricolage_Grotesque({ subsets: ["latin"], axes: ["opsz"], variable: "--zk-ff-display", display: "swap" });
@@ -56,6 +60,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  // Android: the on-screen keyboard shrinks the layout instead of covering it, so the field you're
+  // typing in and the button under it stay in view (iOS ignores this and does its own thing).
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

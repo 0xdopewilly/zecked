@@ -276,9 +276,10 @@ a { text-decoration: none; }
 html[data-nav="back"]::view-transition-old(.zk-vt-fade) { animation: 400ms var(--zk-ease-ios) both zk-vt-over-out; z-index: 1; box-shadow: -10px 0 36px rgb(var(--zk-black-rgb) / .5); }
 ::view-transition-new(.zk-vt-pop),
 html[data-nav="back"]::view-transition-new(.zk-vt-fade) { animation: 400ms var(--zk-ease-ios) both zk-vt-under-in; }
-/* tab: switching tabs. A quick crossfade, the new screen rising a touch. */
-::view-transition-old(.zk-vt-tab) { animation: 120ms ease-out both zk-vt-fade-out; }
-::view-transition-new(.zk-vt-tab) { animation: 300ms var(--zk-ease-out) 30ms both zk-vt-rise; }
+/* tab: switching tabs. No view transition (lib/nav.ts declines it and marks html[data-nav=tab] while the
+   new screen mounts): the screen's blocks rise in as they appear. Per block rather than on the route: a
+   transform on the route would carry the fixed dock and notch cover along with it. */
+html[data-nav="tab"] .zk-route > main > :not(.zk-dock):not(.zk-notch-cover) { animation: 300ms var(--zk-ease-out) both zk-vt-rise; }
 /* fade: everything else */
 ::view-transition-old(.zk-vt-fade) { animation: 140ms ease-out both zk-vt-fade-out; }
 ::view-transition-new(.zk-vt-fade) { animation: 220ms ease-out 60ms both zk-vt-fade-in; }
@@ -290,6 +291,18 @@ html[data-nav="back"]::view-transition-new(.zk-vt-fade) { animation: 400ms var(-
 @keyframes zk-vt-fade-out { to { opacity: 0; } }
 @keyframes zk-vt-fade-in { from { opacity: 0; } }
 @keyframes zk-vt-rise { from { opacity: 0; transform: translateY(12px) scale(.99); } }
+
+/* Press feedback (Button, Chip) is CSS :active, so it lands in the frame the finger does rather than
+   after a React render; hover (mouse only) stays in React. Each control sets its looks as custom
+   properties inline; a forced state (style-guide pages) or a disabled control carries data-state. */
+.zk-btn { background: var(--zk-b-bg); box-shadow: var(--zk-b-sh); transform: var(--zk-b-tf, none); }
+.zk-btn:not([data-state]):active { background: var(--zk-b-bg-p, var(--zk-b-bg)); box-shadow: var(--zk-b-sh-p); transform: var(--zk-b-tf-p); }
+.zk-chip { background: var(--zk-c-bg); box-shadow: var(--zk-c-sh, none); transform: none; }
+.zk-chip:not([data-state]):active { background: var(--zk-c-bg-p, var(--zk-c-bg)); box-shadow: none; transform: translateY(2px); }
+
+/* Backgrounded (another app, the lock screen): the rotating sunbursts, ping dots and every other looping
+   animation stop drawing until the app is back (Sfx.tsx toggles the attribute on visibilitychange). */
+:root[data-hidden] *, :root[data-hidden] *::before, :root[data-hidden] *::after { animation-play-state: paused !important; }
 
 /* Anchors: the tab bar and the test-mode ribbon never move between two screens that both have them. */
 ::view-transition-group(zk-tabbar), ::view-transition-group(zk-ribbon) { animation: none; z-index: 100; }

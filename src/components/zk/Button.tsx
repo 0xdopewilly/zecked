@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from "react";
 import { Icon, type IconProp } from "@/components/zk/Icon";
 import type { Sound } from "@/lib/sfx";
 
@@ -70,13 +70,15 @@ export function Button({
   style,
   sfx = "pop",
 }: ButtonProps) {
+  // Hover is React state (mouse only). The pressed look is CSS :active (.zk-btn in globals.css), so it
+  // shows in the same frame as the touch instead of after a render; the looks it needs come in as
+  // custom properties below. A forced state or a disabled button turns :active off via data-state.
   const [hover, setHover] = useState(false);
-  const [press, setPress] = useState(false);
 
   const v = V[variant] || V.primary;
   const s = S[size] || S.lg;
   const forced = disabled ? "disabled" : state && state !== "default" ? state : null;
-  const st: ButtonState = forced || (press ? "pressed" : hover ? "hover" : "default");
+  const st: ButtonState = forced || (hover ? "hover" : "default");
   const dis = st === "disabled";
   const ghost = variant === "ghost";
 
@@ -84,9 +86,16 @@ export function Button({
   const fg = dis ? "var(--zk-text-faint)" : v.fg;
   const bd = dis && !ghost ? "1.5px solid transparent" : v.bd || "1.5px solid transparent";
   const sh = dis ? "none" : st === "hover" ? v.shH : st === "pressed" ? v.shP : v.sh;
-  const tf = dis ? "none" : st === "hover" ? "translateY(-1px)" : st === "pressed" ? (v.dy ? `translateY(${v.dy}px)` : "scale(.98)") : "none";
+  const tfPressed = v.dy ? `translateY(${v.dy}px)` : "scale(.98)";
+  const tf = dis ? "none" : st === "hover" ? "translateY(-1px)" : st === "pressed" ? tfPressed : "none";
 
   const css: CSSProperties = {
+    ["--zk-b-bg" as string]: bg,
+    ["--zk-b-sh" as string]: sh,
+    ["--zk-b-tf" as string]: tf,
+    ["--zk-b-bg-p" as string]: v.bgP || bg,
+    ["--zk-b-sh-p" as string]: v.shP,
+    ["--zk-b-tf-p" as string]: tfPressed,
     height: s.h,
     width: full === false ? "auto" : "100%",
     padding: `0 ${s.px}`,
@@ -97,11 +106,8 @@ export function Button({
     justifyContent: "center",
     gap: "var(--zk-space-8)",
     borderRadius: s.r,
-    background: bg,
     color: fg,
     border: bd,
-    boxShadow: sh,
-    transform: tf,
     font: s.font,
     letterSpacing: ".01em",
     whiteSpace: "nowrap",
@@ -118,26 +124,13 @@ export function Button({
   };
 
   const handlers = {
+    className: "zk-btn",
+    "data-state": forced ?? undefined,
     onPointerEnter: (e: PointerEvent<HTMLElement>) => {
       if (e.pointerType === "mouse") setHover(true);
     },
-    onPointerLeave: () => {
-      setHover(false);
-      setPress(false);
-    },
-    onPointerDown: (e: PointerEvent<HTMLElement>) => {
-      if (!dis && (e.pointerType !== "mouse" || e.button === 0)) setPress(true);
-    },
-    onPointerUp: () => setPress(false),
-    onPointerCancel: () => {
-      setHover(false);
-      setPress(false);
-    },
-    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
-      if (!dis && (e.key === " " || e.key === "Enter")) setPress(true);
-    },
-    onKeyUp: () => setPress(false),
-    onBlur: () => setPress(false),
+    onPointerLeave: () => setHover(false),
+    onPointerCancel: () => setHover(false),
   };
 
   const content = (
