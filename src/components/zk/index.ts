@@ -28,6 +28,9 @@ export type { TeamBadgeProps } from "./TeamBadge";
 export { TabBar } from "./TabBar";
 export type { TabBarProps, TabId } from "./TabBar";
 
+export { Switch } from "./Switch";
+export type { SwitchProps } from "./Switch";
+
 // Written by another agent in parallel.
 export { Emblem, TIER_LABEL } from "./Emblem";
 export type { EmblemProps } from "./Emblem";

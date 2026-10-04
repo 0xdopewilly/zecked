@@ -1,16 +1,23 @@
 "use client";
 // App-wide live notices: polls /api/notifications and slides each new one in from the top with a
-// sound ("your stash got ZECKED", "your ZEC came back", "ZEC landed"). Tap opens the stash or wallet.
+// sound ("your stash got ZECKED", "your ZEC came back", "ZEC landed"). Tap opens the stash, wallet or leaderboard.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, clearApiCache } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
-import type { Notice } from "@/lib/types";
+import { noticeHref, type Notice } from "@/lib/types";
 import { HiderToast } from "@/components/screens/HiderToast";
 import { NOTICES_EVENT } from "@/components/screens/NoticeBell";
 
 const SEEN_KEY = "zk:notice-seen";
 const POLL_MS = 12_000;
+/** The small line under the toast text: where a tap goes. */
+const META: Partial<Record<Notice["kind"], string>> = {
+  zecked: "Tap to see it",
+  deposit: "Tap to open your wallet",
+  gift: "Tap to open your wallet",
+  tourney: "Tap to see the leaderboard",
+};
 
 function readSeen() {
   try {
@@ -69,7 +76,10 @@ export function LiveNotices() {
 
   const current = queue[0];
   useEffect(() => {
-    if (current) sfx(current.kind === "deposit" || current.kind === "win" || (current.kind === "invite" && current.amountZat) ? "coin" : "notify");
+    if (!current) return;
+    // A notice that carries ZEC plays the coin; anything else a soft ping.
+    const coin = current.kind === "deposit" || current.kind === "win" || (["invite", "gift", "tourney"].includes(current.kind) && !!current.amountZat);
+    sfx(coin ? "coin" : "notify");
   }, [current]);
 
   if (!current) return null;
@@ -77,8 +87,8 @@ export function LiveNotices() {
     <HiderToast
       key={current.id}
       text={current.text}
-      meta={current.kind === "zecked" ? "Tap to see it" : current.kind === "deposit" ? "Tap to open your wallet" : undefined}
-      onTap={() => router.push(current.kind === "deposit" ? "/wallet" : current.stashId ? `/s/${current.stashId}` : "/me")}
+      meta={META[current.kind]}
+      onTap={() => router.push(noticeHref(current))}
       onClose={() => setQueue((q) => q.slice(1))}
     />
   );

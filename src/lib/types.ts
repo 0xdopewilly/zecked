@@ -80,6 +80,7 @@ export interface PublicStash {
   whale: boolean;
   testMode: boolean;
   isMine: boolean; // viewer is the hider
+  private?: boolean; // link-only: never in the feed, the ticker or the hider's public profile (still in /me)
   riddle?: {
     text: string;
     hint?: string; // present only once unlocked
@@ -177,7 +178,7 @@ export interface Player {
 }
 
 // ---------- in-app wallet ----------
-export type WalletTxKind = "deposit" | "win" | "refund" | "hide" | "withdraw" | "bonus";
+export type WalletTxKind = "deposit" | "win" | "refund" | "hide" | "withdraw" | "bonus" | "gift";
 
 export interface WalletTx {
   id: string;
@@ -186,6 +187,7 @@ export interface WalletTx {
   at: string;
   label: string; // "Won a riddle stash", "Hid a stash", "Withdrew to u1…9x4q"
   stashId?: string;
+  giftId?: string; // a gift sent or opened: the Wallet row opens /g/<id>
   txid?: string;
   status: "done" | "pending" | "failed";
   payoutKey?: string; // server-side: vault payout key for reconciling pending withdrawals
@@ -201,6 +203,39 @@ export interface WalletInfo {
   minWithdrawZat: number;
   withdrawFeeZat: number;
   network: "sim" | "testnet" | "mainnet";
+}
+
+// ---------- gifts (/g/[id]) ----------
+export type GiftStatus = "open" | "claimed" | "returned" | "cancelled";
+
+/** A gift as the app sees it. Never the answer hashes or salt; the amount is visible before opening. */
+export interface PublicGift {
+  id: string;
+  from: { handle: string; avatarUrl?: string | null };
+  amountZat: number;
+  usd: number; // what the sender picked
+  message?: string;
+  locked: boolean; // opens only with the sender's answer
+  question?: string; // when locked
+  status: GiftStatus;
+  isMine: boolean; // viewer is the sender
+  isYours: boolean; // viewer opened it
+  credited: boolean; // opened and in the opener's wallet (false: a guest holds it until they sign up)
+  createdAt: string;
+  expiresAt: string; // unopened by then → back to the sender
+  openedBy?: string; // "@handle", sender's view, only when the opener is an account
+  returnReason?: "expired" | "cancelled";
+  testMode: boolean;
+}
+
+export interface GiftOpenResult {
+  opened: boolean;
+  verdict?: string; // "Nope. Not that 😏", "Someone already opened this gift."
+  triesLeft: number;
+  resetsAt?: string;
+  gift: PublicGift;
+  credited: boolean; // in your wallet now (guests: held until sign-up)
+  creditedZat: number;
 }
 
 export interface AuthStartResult {
@@ -233,6 +268,27 @@ export interface Leaderboard {
   period: "today" | "week" | "all";
   rows: LeaderRow[];
   you?: LeaderRow & { deltaThisWeek?: number };
+}
+
+// ---------- weekly tournament ----------
+/** Most cracks Monday to Monday (UTC) wins. Ranking = the crackers › week board; ties go to the earlier last crack. */
+export interface TournamentInfo {
+  week: { key: string; startsAt: string; endsAt: string }; // the current week: Mon 00:00 UTC → next Mon 00:00 UTC
+  prizesUsd: number[]; // per place, e.g. [5, 3, 2] (ZECKED_TOURNEY_USD)
+  top: LeaderRow[]; // the current top 3, tie-broken
+  you?: { rank: number; score: number };
+  /** Last week, once settled. Absent until the first settlement exists. */
+  last?: { key: string; endedAt: string; champions: TournamentChampion[] };
+}
+
+export interface TournamentChampion {
+  place: number; // 1-based
+  handle: string;
+  avatarUrl?: string | null;
+  tier: TierId;
+  score: number; // cracks that week
+  prizeUsd: number;
+  paidZat: number; // 0 = not paid yet (house empty, retried), -1 = owed to a guest until they sign up
 }
 
 export interface TickerItem {
@@ -278,10 +334,17 @@ export interface PublicProfile {
 export interface Notice {
   id: string;
   at: string;
-  kind: "zecked" | "refunded" | "deposit" | "win" | "invite";
+  kind: "zecked" | "refunded" | "deposit" | "win" | "invite" | "gift" | "tourney";
   text: string;
   stashId?: string;
   amountZat?: number;
+}
+
+/** Where a tap on a notice goes (the push payload, the bell and the live toast all use this). */
+export function noticeHref(n: Pick<Notice, "kind" | "stashId">): string {
+  if (n.kind === "deposit" || n.kind === "gift") return "/wallet";
+  if (n.kind === "tourney") return "/leaderboard";
+  return n.stashId ? `/s/${n.stashId}` : "/me";
 }
 
 export const ZAT = 100_000_000;
