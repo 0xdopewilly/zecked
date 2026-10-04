@@ -12,7 +12,7 @@
 //      one note can never be credited twice.
 import { ZingoEngine, EngineError } from "./zingo.ts";
 import { Store, type PayoutRecord, type AddressRecord } from "./store.ts";
-import { getLatestBlockHeight } from "./lightwalletd.ts";
+import { getLatestBlockHeight, getLightdInfo } from "./lightwalletd.ts";
 import { buildPaymentUri, parsePaymentUri, MAX_MONEY_ZAT } from "./zip321.ts";
 
 export class HttpError extends Error {
@@ -42,6 +42,13 @@ export interface VaultStatus {
   lastSyncAt: string | null;
   lastError: string | null;
   pools: Record<string, number>;
+  /** True while VAULT_SENDS_PAUSED is set: payouts, refunds and withdrawals are refused (402 sends_paused). */
+  sendsPaused: boolean;
+  /** What the lightwalletd reports about itself (vendor, version, consensusBranchId…), refreshed every few minutes. */
+  lightd: { vendor?: string; version?: string; consensusBranchId?: string; chainName?: string } | null;
+  /** When the chain tip last moved. A tip frozen for long means the server stopped following the chain (e.g. an un-upgraded node at a network upgrade). */
+  tipAdvancedAt: string | null;
+  tipStalled: boolean;
 }
 
 interface ScanRange {
@@ -106,6 +113,8 @@ const KEY_RE = /^[A-Za-z0-9_:.-]{1,128}$/;
 /** Statuses that represent value that exists or is on its way. calculated/failed never count. */
 const COUNTED = new Set(["confirmed", "mempool", "transmitted"]);
 const STALL_MS = Number(process.env.SYNC_STALL_MS ?? 10 * 60_000);
+/** A chain tip that hasn't moved for this long is reported as stalled (testnet blocks come every 12-75 s; 25 s after NU7). */
+const TIP_STALL_MS = Number(process.env.TIP_STALL_MS ?? 10 * 60_000);
 
 export function memoTag(stashId: string): string {
   return `ZK:${stashId}`;
@@ -232,6 +241,7 @@ export class Vault {
   private status: VaultStatus;
   private syncing = false;
   private lastFingerprint = "";
+  private lightdAt = 0;
   private lastAdvanceAt = Date.now();
   private readonly payoutLocks = new Set<string>();
   private readonly minting = new Map<string, Promise<{ address: string; addressIndex?: number }>>();
@@ -254,6 +264,10 @@ export class Vault {
       engineReady: false,
       lastSyncAt: null,
       lastError: null,
+      sendsPaused: !!process.env.VAULT_SENDS_PAUSED,
+      lightd: null,
+      tipAdvancedAt: null,
+      tipStalled: false,
       pools: {},
     };
   }
@@ -278,7 +292,15 @@ export class Vault {
     this.syncing = true;
     try {
       const tip = await getLatestBlockHeight(this.lightwalletdUrl).catch(() => this.status.chainTip);
+      if (tip !== this.status.chainTip || !this.status.tipAdvancedAt) this.status.tipAdvancedAt = new Date().toISOString();
       this.status.chainTip = tip;
+      this.status.tipStalled = Date.now() - Date.parse(this.status.tipAdvancedAt) > TIP_STALL_MS;
+      this.status.sendsPaused = !!process.env.VAULT_SENDS_PAUSED;
+      if (!this.status.lightd || Date.now() - this.lightdAt > 5 * 60_000) {
+        this.lightdAt = Date.now();
+        const info = await getLightdInfo(this.lightwalletdUrl).catch(() => null);
+        if (info) this.status.lightd = { vendor: info.vendor, version: info.version, consensusBranchId: info.consensusBranchId, chainName: info.chainName };
+      }
       if (!this.engine.ready) return;
       await this.engine.run(["sync", "run"], { timeoutMs: 60_000 });
       // Give a just-launched sync a few seconds to reach the tip before sampling it.
@@ -293,8 +315,13 @@ export class Vault {
       const height = scannedHeight(sync);
       this.status.height = height;
       this.status.synced = tip > 0 && height >= tip - 1;
-      // Progress = caught up, or the scan ranges changed since the last look.
-      const fingerprint = JSON.stringify(sync.scan_ranges ?? []);
+      // Progress = caught up, or the scan ranges changed since the last look. The ChainTip range's end
+      // follows the growing chain, so it is left out: otherwise a wedged scanner still looks like
+      // progress every tick and the watchdog below never fires (seen 2026-10-04: stuck 31k blocks
+      // behind for days).
+      const fingerprint = JSON.stringify(
+        (sync.scan_ranges ?? []).map((r) => (r.priority === "ChainTip" ? { ...r, end_block: 0 } : r)),
+      );
       if (this.status.synced || fingerprint !== this.lastFingerprint) {
         this.lastFingerprint = fingerprint;
         this.lastAdvanceAt = Date.now();
@@ -483,6 +510,11 @@ export class Vault {
   }
 
   async payout(body: Record<string, unknown>): Promise<{ txid: string; key: string; duplicate?: boolean }> {
+    // Emergency brake (e.g. a network upgrade the engine or the lightwalletd isn't ready for): refuse before any
+    // state is written. The app treats 402 as "definitely not sent": withdrawals re-credit, claims stay claimable.
+    if (process.env.VAULT_SENDS_PAUSED) {
+      throw new HttpError(402, "sends_paused", "External sends are paused for the Zcash network upgrade. Your ZEC is safe; try again later.", { paused: true });
+    }
     const stashId = body.stashId === undefined || body.stashId === null ? undefined : assertId(body.stashId, "stashId");
     let key: string;
     if (body.key === undefined || body.key === null) {

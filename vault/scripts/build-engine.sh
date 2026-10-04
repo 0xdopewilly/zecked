@@ -5,6 +5,7 @@
 #   bin/zingo-cli          clearnet build (the default engine):
 #                          --no-default-features --features clearnet-test-mode
 #                          + engine/zingo-cli-received-by-address.patch
+#                          + engine/nu7/ (NU7 testnet backport, see engine/nu7/README.md)
 #   bin/zingo-cli-mixnet   stock build (sends over the Nym mixnet) + the same patch, BUILD_MIXNET=1 only
 #   bin/nym-proxy          the mixnet proxy the stock build spawns,               BUILD_MIXNET=1 only
 #
@@ -22,6 +23,8 @@ PROTOC_VERSION="${PROTOC_VERSION:-36.2}"
 VAULT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${ENGINE_OUT:-$VAULT_DIR/bin}"
 PATCH="$VAULT_DIR/engine/zingo-cli-received-by-address.patch"
+NU7_DIR="$VAULT_DIR/engine/nu7"
+NU7_PATCH="$NU7_DIR/zingolib-nu7.patch"
 export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
 mkdir -p "$OUT"
 
@@ -58,12 +61,46 @@ if git apply --reverse --check "$PATCH" 2>/dev/null; then
 else
   git apply "$PATCH"
 fi
+
+# --- NU7 (testnet activation height 4465026, branch id 0x77190AD9) -------------
+# zingolib_v6.0.0 pins zcash_protocol 0.10.4, which knows no NU7 height and uses the
+# placeholder branch id 0xFFFFFFFF behind --cfg zcash_unstable="nu7". From testnet
+# block 4465026 an unpatched engine would sign with the NU6.3 branch id (every send
+# rejected) and could not even parse post-activation transactions. engine/nu7/ holds
+# a vendored zcash_protocol 0.10.4 with upstream's NU7 values (zcash_protocol
+# 0.11.0-pre.0) backported, wired in with [patch.crates-io], plus the nu7 cfg and one
+# match arm in zingolib/src/config.rs. Mainnet keeps no NU7 height.
+rm -rf "$SRC/vendor/zcash_protocol"
+mkdir -p "$SRC/vendor"
+cp -R "$NU7_DIR/zcash_protocol" "$SRC/vendor/zcash_protocol"
+if git apply --reverse --check "$NU7_PATCH" 2>/dev/null; then
+  echo "nu7 patch already applied"
+else
+  git apply "$NU7_PATCH"
+fi
+# The vendored crate refuses to compile without this cfg; fail early with a clear message.
+if ! grep -qF 'zcash_unstable=\"nu7\"' .cargo/config.toml; then
+  echo "error: .cargo/config.toml lacks --cfg zcash_unstable=\"nu7\" after applying $NU7_PATCH" >&2
+  exit 1
+fi
 # The pinned toolchain from rust-toolchain.toml (1.97.1 + clippy, rustfmt).
 rustup toolchain install 2>/dev/null || rustup show active-toolchain
 
-# Do not set RUSTFLAGS: zingolib's .cargo/config.toml enables the Ironwood
-# (NU6.3) code paths with --cfg zcash_unstable="nu6.3", and RUSTFLAGS would
-# override it.
+# Do not set RUSTFLAGS: zingolib's .cargo/config.toml (as patched above) enables
+# the Ironwood (NU6.3) and NU7 code paths with --cfg zcash_unstable="nu6.3" and
+# --cfg zcash_unstable="nu7"; a RUSTFLAGS environment variable would override
+# both. If that ever happens the vendored zcash_protocol stops the build with a
+# compile_error! instead of producing a pre-NU7 engine.
+
+# Optional self-test of the NU7 backport (ENGINE_SELFTEST=1): compiles only the small
+# zcash_protocol crate and runs its unit tests, which pin the testnet activation
+# height 4465026, the branch id 0x77190AD9 and "mainnet has no NU7 height". It runs
+# inside the vendored crate (excluded from the workspace, so `-p` cannot test it) and
+# still picks up zingolib's .cargo/config.toml rustflags (nu6.3 + nu7 cfgs).
+if [ "${ENGINE_SELFTEST:-0}" = "1" ]; then
+  (cd vendor/zcash_protocol && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$SRC/target}/nu7-selftest" \
+     cargo test --lib -j "$JOBS" -- nu7 nu_ordering branch_id_for_height)
+fi
 
 # --- 1) clearnet engine (default) --------------------------------------------
 cargo build --release -p zingo-cli -j "$JOBS" --no-default-features --features clearnet-test-mode

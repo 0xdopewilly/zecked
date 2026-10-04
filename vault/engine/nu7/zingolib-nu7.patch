@@ -1,0 +1,54 @@
+diff --git a/.cargo/config.toml b/.cargo/config.toml
+index aa239be..6f02923 100644
+--- a/.cargo/config.toml
++++ b/.cargo/config.toml
+@@ -5,5 +5,11 @@
+ # librustzcash and zebra forks we patch in (see the [patch.crates-io] block in
+ # Cargo.toml). Enabling the cfg here means every `cargo` invocation in this repo
+ # builds the Ironwood code paths, without needing a RUSTFLAGS prefix each time.
++#
++# ZECKED NU7 backport (vault/engine/nu7): the `nu7` cfg un-gates NetworkUpgrade::Nu7 /
++# BranchId::Nu7 in zcash_protocol (vendored copy with testnet height 4465026 and branch
++# id 0x77190AD9) and the matching `Nu7 => TxVersion::V6`, `valid_in_branch` and Ironwood
++# builder arms in zcash_primitives 0.30.0. Without it the engine signs post-activation
++# testnet transactions with the NU6.3 branch id and the network rejects them.
+ [build]
+-rustflags = ["--cfg", "zcash_unstable=\"nu6.3\""]
++rustflags = ["--cfg", "zcash_unstable=\"nu6.3\"", "--cfg", "zcash_unstable=\"nu7\""]
+diff --git a/Cargo.toml b/Cargo.toml
+index 3e03fb6..a51800d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -17,7 +17,9 @@ members = [
+ # 0.30, which pins the same release candidate 0.29 did). Members still consume
+ # netutils through the `zingo-netutils` path dependency below, resolved in
+ # THIS lockfile with `nym` off. See docs/adr/0011-nym-mixnet-transmission.md.
+-exclude = ["zingo-netutils"]
++# vendor/zcash_protocol is the ZECKED NU7 backport copied in by vault/scripts/build-engine.sh;
++# excluded so it stays a plain path dependency (used only through [patch.crates-io] below).
++exclude = ["zingo-netutils", "vendor/zcash_protocol"]
+ resolver = "2"
+ 
+ [workspace.dependencies]
+@@ -155,3 +157,7 @@ opt-level = 3
+ # 0.3.0. The generated code on that rev predates the proto change, which is why the
+ # workspace dependency enables `rebuild-proto`.
+ lightwallet-protocol = { git = "https://github.com/zingolabs/lightwallet-protocol-rust", rev = "9bdfdc77eb283f2a3d26c27100cc2ac90148cd93" }
++# ZECKED NU7 backport: zcash_protocol 0.10.4 with the NU7 testnet activation height (4465026)
++# and ZIP 259 consensus branch id (0x77190AD9) from zcash_protocol 0.11.0-pre.0. Copied from
++# ZECKED/vault/engine/nu7/zcash_protocol by vault/scripts/build-engine.sh. Mainnet keeps no NU7 height.
++zcash_protocol = { path = "vendor/zcash_protocol" }
+diff --git a/zingolib/src/config.rs b/zingolib/src/config.rs
+index 89e282e..616b15c 100644
+--- a/zingolib/src/config.rs
++++ b/zingolib/src/config.rs
+@@ -141,6 +141,9 @@ pub(crate) mod consealed {
+                     NetworkUpgrade::Nu6_1 => activation_heights.nu6_1().map(BlockHeight::from_u32),
+                     NetworkUpgrade::Nu6_2 => activation_heights.nu6_2().map(BlockHeight::from_u32),
+                     NetworkUpgrade::Nu6_3 => activation_heights.nu6_3().map(BlockHeight::from_u32),
++                    // ZECKED NU7 backport: the variant exists under --cfg zcash_unstable="nu7".
++                    #[cfg(zcash_unstable = "nu7")]
++                    NetworkUpgrade::Nu7 => activation_heights.nu7().map(BlockHeight::from_u32),
+                 },
+             }
+         }

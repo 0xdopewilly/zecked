@@ -296,7 +296,14 @@ async function refund(s: StashRecord, reason: string) {
     try {
       txid = (await zcash().payout(s.id, s.refundAddress, s.amountZat, `ZECKED refund · ${reason}`)).txid;
     } catch (e) {
-      console.error("refund failed", s.id, e);
+      // The on-chain send failed (vault paused for a network upgrade, server trouble): the ZEC goes back to
+      // the hider's in-app balance instead, so a refund is never lost. They can withdraw it later.
+      console.error("refund failed", s.id, (e as Error).message);
+      if (hider) {
+        await credit(hider.id, s.amountZat, "refund", `Stash returned · ${reason}`, { stashId: s.id });
+        s.refund = { at: nowIso(), reason, internal: true };
+        return;
+      }
     }
   }
   s.refund = { txid, at: nowIso(), reason };

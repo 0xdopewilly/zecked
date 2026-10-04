@@ -6,8 +6,11 @@
 #
 # Stage 1 compiles zingo-cli from zingolib tag zingolib_v6.0.0 with
 # --no-default-features --features clearnet-test-mode plus the ZECKED
-# received-by-address patch, by running the same scripts/build-engine.sh used
-# for local builds. Measured: 6m40s compile on 4 jobs once sources are
+# received-by-address patch and the NU7 testnet backport in engine/nu7/
+# (testnet activation 4465026, consensus branch id 0x77190AD9; mainnet
+# unchanged), by running the same scripts/build-engine.sh used for local
+# builds. No build args changed for NU7: `COPY engine/ engine/` below already
+# ships engine/nu7/ into the builder stage. Measured: 6m40s compile on 4 jobs once sources are
 # downloaded (~17 min fully cold on a slow link); peak ~2.3 GB RAM at JOBS=4.
 # To skip compiling, pass --build-arg ZINGO_CLI_URL=<prebuilt binary URL> (and ZINGO_CLI_SHA256).
 

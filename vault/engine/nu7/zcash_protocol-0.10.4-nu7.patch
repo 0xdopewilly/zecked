@@ -1,0 +1,196 @@
+diff -ruN pristine/zcash_protocol/CHANGELOG.md patchset/engine/nu7/zcash_protocol/CHANGELOG.md
+--- pristine/zcash_protocol/CHANGELOG.md	2026-10-03 18:18:32.417792560 -0700
++++ patchset/engine/nu7/zcash_protocol/CHANGELOG.md	2026-10-03 18:21:21.467632654 -0700
+@@ -1,3 +1,19 @@
++# ZECKED vendored copy of zcash_protocol 0.10.4
++
++This directory is `zcash_protocol` 0.10.4 exactly as published on crates.io, plus
++one backport from `zcash_protocol` 0.11.0-pre.0 (librustzcash, 2026-09-30), kept
++behind the same `--cfg zcash_unstable="nu7"` flag that upstream 0.10.x used:
++
++- `TestNetwork` activates `NetworkUpgrade::Nu7` at height `4465026`
++  (`MainNetwork` still has no NU7 height).
++- `BranchId::Nu7` maps to and from consensus branch id `0x77190AD9` (ZIP 259)
++  instead of the placeholder `0xFFFFFFFF`.
++- `src/lib.rs` refuses to compile without the `nu7` cfg.
++- Unit tests `nu7_branch_id_is_zip259_value`, `nu7_activates_on_testnet_only`,
++  `nu_ordering_testnet` pin those values.
++
++Nothing else is changed. See `../README.md`. The upstream changelog follows.
++
+ # Changelog
+ All notable changes to this library will be documented in this file.
+ 
+diff -ruN pristine/zcash_protocol/src/consensus.rs patchset/engine/nu7/zcash_protocol/src/consensus.rs
+--- pristine/zcash_protocol/src/consensus.rs	2026-10-03 18:18:32.418925739 -0700
++++ patchset/engine/nu7/zcash_protocol/src/consensus.rs	2026-10-03 18:21:21.467199061 -0700
+@@ -500,6 +500,8 @@
+             NetworkUpgrade::Nu6_1 => Some(BlockHeight(3_146_400)),
+             NetworkUpgrade::Nu6_2 => Some(BlockHeight(3_364_600)),
+             NetworkUpgrade::Nu6_3 => Some(BlockHeight(3_428_143)),
++            // ZECKED NU7 backport: mainnet has no NU7 activation height yet
++            // (librustzcash zcash_protocol 0.11.0-pre.0, 2026-09-30). Must stay None.
+             #[cfg(zcash_unstable = "nu7")]
+             NetworkUpgrade::Nu7 => None,
+         }
+@@ -533,8 +535,10 @@
+             NetworkUpgrade::Nu6_1 => Some(BlockHeight(3_536_500)),
+             NetworkUpgrade::Nu6_2 => Some(BlockHeight(4_052_000)),
+             NetworkUpgrade::Nu6_3 => Some(BlockHeight(4_134_000)),
++            // ZECKED NU7 backport from librustzcash zcash_protocol 0.11.0-pre.0
++            // (2026-09-30): NU7 activates on the public test network at 4465026.
+             #[cfg(zcash_unstable = "nu7")]
+-            NetworkUpgrade::Nu7 => None,
++            NetworkUpgrade::Nu7 => Some(BlockHeight(4_465_026)),
+         }
+     }
+ }
+@@ -733,6 +737,9 @@
+     /// The consensus rules to be deployed by [`NetworkUpgrade::Nu6_3`].
+     Nu6_3,
+     /// The consensus rules to be deployed by [`NetworkUpgrade::Nu7`].
++    ///
++    /// The consensus branch identifier is `0x77190AD9` (ZIP 259; ZECKED NU7 backport
++    /// from zcash_protocol 0.11.0-pre.0, replacing the `0xFFFFFFFF` placeholder).
+     #[cfg(zcash_unstable = "nu7")]
+     Nu7,
+ }
+@@ -757,7 +764,7 @@
+             0x5437_f330 => Ok(BranchId::Nu6_2),
+             0x37a5_165b => Ok(BranchId::Nu6_3),
+             #[cfg(zcash_unstable = "nu7")]
+-            0xffff_ffff => Ok(BranchId::Nu7),
++            0x7719_0ad9 => Ok(BranchId::Nu7),
+             _ => Err("Unknown consensus branch ID"),
+         }
+     }
+@@ -778,7 +785,7 @@
+             BranchId::Nu6_2 => 0x5437_f330,
+             BranchId::Nu6_3 => 0x37a5_165b,
+             #[cfg(zcash_unstable = "nu7")]
+-            BranchId::Nu7 => 0xffff_ffff,
++            BranchId::Nu7 => 0x7719_0ad9,
+         }
+     }
+ }
+@@ -1160,4 +1167,99 @@
+             BranchId::Nu6_3,
+         );
+     }
++
++    // ---- ZECKED NU7 backport tests: the values upstream set in 0.11.0-pre.0 ----
++
++    #[test]
++    fn nu_ordering_testnet() {
++        use super::TEST_NETWORK;
++        for i in 1..UPGRADES_IN_ORDER.len() {
++            let nu_a = UPGRADES_IN_ORDER[i - 1];
++            let nu_b = UPGRADES_IN_ORDER[i];
++            match (
++                TEST_NETWORK.activation_height(nu_a),
++                TEST_NETWORK.activation_height(nu_b),
++            ) {
++                (Some(a), Some(b)) if a < b => (),
++                (Some(_), None) => (),
++                (None, None) => (),
++                _ => panic!(
++                    "{} should not be before {} in UPGRADES_IN_ORDER (testnet)",
++                    nu_a, nu_b
++                ),
++            }
++        }
++    }
++
++    #[cfg(zcash_unstable = "nu7")]
++    #[test]
++    fn nu7_branch_id_is_zip259_value() {
++        const NU7_BRANCH_ID: u32 = 0x7719_0ad9;
++        assert_eq!(u32::from(BranchId::Nu7), NU7_BRANCH_ID);
++        assert_eq!(BranchId::try_from(NU7_BRANCH_ID), Ok(BranchId::Nu7));
++        // The old placeholder must no longer decode to anything.
++        assert!(BranchId::try_from(0xffff_ffff).is_err());
++        assert_eq!(NetworkUpgrade::Nu7.branch_id(), BranchId::Nu7);
++        assert_eq!(BranchId::Nu7.network_upgrade(), Some(NetworkUpgrade::Nu7));
++        // NU6.3 is untouched.
++        assert_eq!(u32::from(BranchId::Nu6_3), 0x37a5_165b);
++    }
++
++    #[cfg(zcash_unstable = "nu7")]
++    #[test]
++    fn nu7_activates_on_testnet_only() {
++        use super::TEST_NETWORK;
++        const TESTNET_NU7_ACTIVATION: BlockHeight = BlockHeight(4_465_026);
++
++        assert_eq!(MAIN_NETWORK.activation_height(NetworkUpgrade::Nu7), None);
++        assert_eq!(
++            TEST_NETWORK.activation_height(NetworkUpgrade::Nu7),
++            Some(TESTNET_NU7_ACTIVATION)
++        );
++
++        // Mainnet keeps signing with the NU6.3 branch id at any height.
++        assert_eq!(
++            BranchId::for_height(&MAIN_NETWORK, BlockHeight(5_000_000)),
++            BranchId::Nu6_3
++        );
++        assert_eq!(
++            BranchId::for_height(&MAIN_NETWORK, BlockHeight(u32::MAX)),
++            BranchId::Nu6_3
++        );
++
++        // Testnet: NU6.3 up to the block before activation, NU7 from activation on.
++        assert_eq!(
++            BranchId::for_height(&TEST_NETWORK, BlockHeight(4_465_025)),
++            BranchId::Nu6_3
++        );
++        assert_eq!(
++            u32::from(BranchId::for_height(&TEST_NETWORK, BlockHeight(4_465_025))),
++            0x37a5_165b
++        );
++        assert_eq!(
++            BranchId::for_height(&TEST_NETWORK, TESTNET_NU7_ACTIVATION),
++            BranchId::Nu7
++        );
++        assert_eq!(
++            u32::from(BranchId::for_height(&TEST_NETWORK, TESTNET_NU7_ACTIVATION)),
++            0x7719_0ad9
++        );
++        assert!(TEST_NETWORK.is_nu_active(NetworkUpgrade::Nu7, TESTNET_NU7_ACTIVATION));
++        assert!(!TEST_NETWORK.is_nu_active(NetworkUpgrade::Nu7, BlockHeight(4_465_025)));
++
++        // Epoch bounds: the testnet NU6.3 epoch now ends at NU7 activation; mainnet's does not.
++        assert_eq!(
++            BranchId::Nu6_3.height_bounds(&TEST_NETWORK),
++            Some((BlockHeight(4_134_000), Some(TESTNET_NU7_ACTIVATION)))
++        );
++        assert_eq!(
++            BranchId::Nu7.height_bounds(&TEST_NETWORK),
++            Some((TESTNET_NU7_ACTIVATION, None))
++        );
++        assert_eq!(
++            BranchId::Nu6_3.height_bounds(&MAIN_NETWORK),
++            Some((BlockHeight(3_428_143), None))
++        );
++        assert_eq!(BranchId::Nu7.height_bounds(&MAIN_NETWORK), None);
++    }
+ }
+diff -ruN pristine/zcash_protocol/src/lib.rs patchset/engine/nu7/zcash_protocol/src/lib.rs
+--- pristine/zcash_protocol/src/lib.rs	2026-10-03 18:18:32.419111297 -0700
++++ patchset/engine/nu7/zcash_protocol/src/lib.rs	2026-10-03 18:21:21.467461656 -0700
+@@ -14,6 +14,17 @@
+ // Catch documentation errors caused by code changes.
+ #![deny(rustdoc::broken_intra_doc_links)]
+ 
++// ZECKED vendored copy (ZECKED/vault/engine/nu7/zcash_protocol): zcash_protocol 0.10.4 with
++// the NU7 testnet activation height (4465026) and ZIP 259 consensus branch id (0x77190AD9)
++// backported from zcash_protocol 0.11.0-pre.0. The backport sits behind the same
++// `zcash_unstable = "nu7"` cfg as upstream's NU7 code, so a build that forgot the cfg would
++// silently produce a pre-NU7 wallet engine whose sends get rejected after activation.
++// Refuse to compile instead.
++#[cfg(not(zcash_unstable = "nu7"))]
++compile_error!(
++    "ZECKED vendored zcash_protocol needs --cfg zcash_unstable=\"nu7\" (zingolib/.cargo/config.toml, applied by vault/scripts/build-engine.sh); see vault/engine/nu7/README.md"
++);
++
+ #[cfg_attr(any(test, feature = "test-dependencies"), macro_use)]
+ extern crate alloc;
+ 
