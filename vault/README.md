@@ -14,13 +14,13 @@ A small always-on HTTP service that holds ZECKED's **testnet** hot wallet. The V
 Vercel app ──HTTPS──► vault  (node src/server.ts; Railway, or local + tunnel)
                         │  one long-lived child process, stdin/stdout pipes
                         ▼
-                      zingo-cli  (zingolib 6.0.0, Ironwood / NU6.3, + ZECKED patch)
+                      zingo-cli  (zingolib 6.0.0, Ironwood / NU6.3 + NU7 params, + ZECKED patches)
                         │  gRPC over TLS
                         ▼
-                      testnet.zec.rocks:443  (lightwalletd, Zebra 6.3.0)
+                      testnet.zec.rocks:443  (lightwalletd v0.5.4; NU7 live on testnet since block 4,465,026)
 ```
 
-- **Engine:** `zingo-cli` from [zingolib](https://github.com/zingolabs/zingolib) tag `zingolib_v6.0.0` ("Zingo CLI 0.1.1", `zl_6.0.0`). It is built from source with the Ironwood (NU6.3) code paths, as `--no-default-features --features clearnet-test-mode`, plus one small patch (`engine/zingo-cli-received-by-address.patch`; see Attribution).
+- **Engine:** `zingo-cli` from [zingolib](https://github.com/zingolabs/zingolib) tag `zingolib_v6.0.0` ("Zingo CLI 0.1.1", `zl_6.0.0`). It is built from source with the Ironwood (NU6.3) code paths, as `--no-default-features --features clearnet-test-mode`, plus two small patches: `engine/zingo-cli-received-by-address.patch` (see Attribution) and the NU7 set in `engine/nu7/`, which vendors `zcash_protocol` 0.10.4 with the NU7 testnet parameters (activation height 4,465,026, consensus branch `0x77190AD9`) and builds with `--cfg zcash_unstable="nu7"`, so the engine follows the chain past NU7 activation (see `engine/nu7/README.md`).
 - **Transport:** clearnet. Sync and broadcast go straight to lightwalletd over TLS, and the indexer sees the vault's IP address, which is fine for testnet. The stock 6.x build forces sends over the Nym mixnet, and that failed on most tries from the dev machine (`no proven exit`). It can still be built as `ZINGO_TRANSPORT=mixnet` (`BUILD_MIXNET=1`).
 - The vault keeps **one** interactive zingo-cli session open. Only one process ever touches the wallet file, and commands are queued one at a time. If the child crashes, it restarts with backoff; recovery takes about 2 s.
 - Wallet data lives in `VAULT_DATA_DIR` (`vault/.data` locally, `/data` in the container; dir 700, files 600): `zingo-wallet.dat`, `vault-state.json` (stash and user address maps, payout records), and the logs. **The seed phrase never leaves the wallet file.** The service refuses to run `recovery_info`, `export_ufvk`, `delete` or `clear`, and never logs raw engine output.
@@ -181,11 +181,11 @@ On the dev machine, port 8787 is taken by another app, so `.env` sets `PORT=8788
 `scripts/build-engine.sh` is what the Dockerfile runs, step for step:
 
 1. It installs rustup (minimal profile) and protoc 36.2 into `$HOME` if they're missing.
-2. It clones `zingolib_v6.0.0` into `~/src/zingolib` and applies `engine/zingo-cli-received-by-address.patch`. The patch step is idempotent.
+2. It clones `zingolib_v6.0.0` into `~/src/zingolib`, applies `engine/zingo-cli-received-by-address.patch`, copies `engine/nu7/zcash_protocol` into `vendor/` and applies `engine/nu7/zingolib-nu7.patch`. The patch steps are idempotent, and the build fails if the NU7 cfg is missing.
 3. It installs the pinned toolchain from `rust-toolchain.toml` (1.97.1).
 4. It runs `cargo build --release -p zingo-cli --no-default-features --features clearnet-test-mode`, then installs and strips `bin/zingo-cli`.
 
-Needs: `build-essential`, `git`, `curl` (and `unzip` if protoc has to be downloaded). Don't set `RUSTFLAGS`, because zingolib's `.cargo/config.toml` enables Ironwood with `--cfg zcash_unstable="nu6.3"` and `RUSTFLAGS` would override it. `BUILD_MIXNET=1` also builds `bin/zingo-cli-mixnet` and `bin/nym-proxy`.
+Needs: `build-essential`, `git`, `curl` (and `unzip` if protoc has to be downloaded). Don't set `RUSTFLAGS`, because zingolib's `.cargo/config.toml` enables Ironwood and NU7 with `--cfg zcash_unstable="nu6.3"` and `--cfg zcash_unstable="nu7"`, and `RUSTFLAGS` would override it. `BUILD_MIXNET=1` also builds `bin/zingo-cli-mixnet` and `bin/nym-proxy`.
 
 ### Environment variables
 
