@@ -63,8 +63,10 @@ async function healthReport() {
   } catch {
     vault = { ok: false };
   }
-  const ok = kvOk && vault.ok && !vault.tipStalled;
-  return json({ ok, network: networkName(), kv: kvOk, vault }, { status: ok ? 200 : 503 });
+  // A wallet hundreds of blocks behind the tip can't see deposits or confirm stashes: that's an outage too.
+  const behind = !!(vault.chainTip && vault.height && vault.chainTip - vault.height > 500);
+  const ok = kvOk && vault.ok && !vault.tipStalled && !behind;
+  return json({ ok, network: networkName(), kv: kvOk, vault: { ...vault, behind } }, { status: ok ? 200 : 503 });
 }
 
 async function withPlayer(req: NextRequest) {
