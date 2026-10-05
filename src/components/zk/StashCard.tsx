@@ -443,6 +443,33 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
           WHALE STASH
         </div>
       )}
+      {/* Link-only stash: an ink sticker in the top-left slot (only ever rendered in My stashes, where YOURS is off). */}
+      {stash.private && !(mine && markMine) && (
+        <div
+          style={{
+            position: "absolute",
+            left: "var(--zk-space-14)",
+            top: -11,
+            transform: "rotate(-4deg)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--zk-space-4)",
+            padding: "var(--zk-space-4) var(--zk-space-10)",
+            borderRadius: "var(--zk-radius-md)",
+            background: "var(--zk-ink)",
+            border: "2px solid var(--zk-border-strong)",
+            color: "var(--zk-text-muted)",
+            font: "var(--zk-type-btn-sm)",
+            fontSize: "var(--zk-fs-12)",
+            boxShadow: "0 3px 0 var(--zk-ink)",
+            zIndex: 2,
+            pointerEvents: "none",
+          }}
+        >
+          <Icon icon="eyeOff" size={13} stroke={2.6} />
+          PRIVATE
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)", opacity: cracked ? 0.45 : 1 }}>
         {/* Header: tile, kind + sub, status pill */}

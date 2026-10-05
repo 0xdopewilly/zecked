@@ -84,6 +84,8 @@ export interface StashRecord {
   correctCalls?: number;
   refund?: { txid?: string; at: string; reason: string; internal?: boolean };
   seeded?: boolean;
+  /** Link-only: never indexed into the feed, no ticker lines, off the hider's public profile (still in /me). */
+  private?: boolean;
 }
 
 interface CallRecord {
@@ -98,6 +100,7 @@ interface CallRecord {
 const K = {
   stash: (id: string) => `stash:${id}`,
   index: "stashes",
+  unlisted: "stashes:private", // private (link-only) stashes: swept for settlement like the index, never shown
   byPlayer: (pid: string) => `pstash:${pid}`,
   tries: (id: string) => `stash:${id}:tries`,
   myTries: (id: string, pid: string) => `tries:${id}:${pid}`,
@@ -147,6 +150,7 @@ export async function createStash(
     usd: number;
     expiryHours?: number;
     refundAddress?: string;
+    private?: boolean;
   },
   opts: { seeded?: boolean; now?: number } = {}
 ): Promise<StashRecord> {
@@ -215,9 +219,12 @@ export async function createStash(
     refundAddress,
     funding: { ...funding, amountZat: amountZat + NETWORK_FEE_ZAT },
     seeded: opts.seeded,
+    private: body.private === true && !opts.seeded ? true : undefined,
   };
   await saveStash(s);
-  await kv().zadd(K.index, now, id);
+  // Private stashes never enter the feed index (so they can't crowd its 150-row window); they go in their
+  // own zset so the feed sweep still settles them (expiry refunds, prediction payouts) on time.
+  await kv().zadd(s.private ? K.unlisted : K.index, now, id);
   await kv().rpush(K.byPlayer(hider.id), id);
   return s;
 }
@@ -248,7 +255,7 @@ async function goLive(s: StashRecord) {
     touchPlay(hider);
     await savePlayer(hider);
     await bumpBoard("hiders", hider.id, 1);
-    if (!s.seeded) {
+    if (!s.seeded && !s.private) {
       const m = s.prediction ? await getMatch(s.prediction.matchId) : null;
       await tick_(
         s.type === "riddle"
@@ -325,7 +332,7 @@ async function uncrackable(s: StashRecord, reason: string) {
     hider.xp += XP.uncrackable;
     grant(hider, "uncrackable");
     await savePlayer(hider);
-    if (!s.seeded) await tick_(`${hider.handle}'s stash was UNCRACKABLE 🛡️`, "hidden");
+    if (!s.seeded && !s.private) await tick_(`${hider.handle}'s stash was UNCRACKABLE 🛡️`, "hidden");
   }
 }
 
@@ -429,7 +436,7 @@ async function award(s: StashRecord, pid: string, kind: StashType): Promise<WinP
   await savePlayer(p);
   await bumpBoard("crackers", pid, 1);
   // Winners stay anonymous, in the ticker too.
-  if (!s.seeded) await tick_(`Someone just zecked ${zecStr(s.amountZat)} ZEC 🔓`, "zecked");
+  if (!s.seeded && !s.private) await tick_(`Someone just zecked ${zecStr(s.amountZat)} ZEC 🔓`, "zecked");
   if (!s.seeded && s.hiderId !== pid) {
     await notify(s.hiderId, {
       kind: "zecked",
@@ -659,6 +666,7 @@ export async function toPublic(s: StashRecord, viewerId?: string, rate?: number)
     whale: usd >= WHALE_USD,
     testMode: s.network !== "mainnet",
     isMine,
+    private: s.private || undefined,
   };
   if (s.riddle) {
     const tries = triesN || 0;
@@ -770,17 +778,30 @@ let feedCache: { at: number; rows: { s: StashRecord; pub: PublicStash }[] } | nu
 let feedInflight: Promise<{ s: StashRecord; pub: PublicStash }[]> | null = null;
 
 async function loadFeedRows() {
-  const ids = (await kv().zrevrange(K.index, 0, 149)).map((r) => r.member);
+  const [listed, unlisted] = await Promise.all([kv().zrevrange(K.index, 0, 149), kv().zrevrange(K.unlisted, 0, 149)]);
+  const ids = listed.map((r) => r.member);
   const recs = (await Promise.all(ids.map(getStash))).filter(Boolean) as StashRecord[];
-  await Promise.all(recs.map((s) => tickStash(s)));
+  // Private stashes ride the same sweep (this is the only thing that settles stashes nobody opens) but never
+  // reach the rows below. Once settled they leave their zset, so it only ever holds the unsettled ones.
+  const privIds = unlisted.map((r) => r.member);
+  const privRecs = (await Promise.all(privIds.map(getStash))).filter(Boolean) as StashRecord[];
+  await Promise.all([...recs, ...privRecs].map((s) => tickStash(s)));
+  const privFresh = await Promise.all(privIds.map(getStash));
+  await Promise.all(
+    privIds.map((id, i) => {
+      const s = privFresh[i];
+      return !s || ["zecked", "refunded", "void", "expired"].includes(s.status) ? kv().zrem(K.unlisted, id) : undefined;
+    })
+  );
   const fresh = (await Promise.all(recs.map((s) => getStash(s.id)))).filter(Boolean) as StashRecord[];
   const rate = await zecUsd();
   const dayAgo = Date.now() - 86400_000;
   const visible = fresh.filter(
     (s) =>
-      s.status === "live" ||
-      s.status === "locked" ||
-      ((s.status === "zecked" || s.status === "refunded") && Date.parse(s.zeckedAt || s.refund?.at || s.createdAt) > dayAgo)
+      !s.private &&
+      (s.status === "live" ||
+        s.status === "locked" ||
+        ((s.status === "zecked" || s.status === "refunded") && Date.parse(s.zeckedAt || s.refund?.at || s.createdAt) > dayAgo))
   );
   return Promise.all(visible.map(async (s) => ({ s, pub: await toPublic(s, undefined, rate) })));
 }
@@ -821,10 +842,12 @@ export async function myStashes(pid: string): Promise<PublicStash[]> {
 
 /** A player's publicly visible stashes (what they hid): live ones first, then finished; never unfunded. */
 export async function hiddenBy(pid: string, viewerId: string): Promise<PublicStash[]> {
-  const ids = (await kv().lrange<string>(K.byPlayer(pid), 0, -1)).reverse().slice(0, 40);
+  // Wide window: private (link-only) hides are dropped below, and a run of them must not starve the public list.
+  const ids = (await kv().lrange<string>(K.byPlayer(pid), 0, -1)).reverse().slice(0, 80);
   const recs = (await Promise.all(ids.map(getStash))).filter(Boolean) as StashRecord[];
   const rate = await zecUsd();
-  const shown = recs.filter((s) => s.status === "live" || s.status === "locked" || s.status === "zecked" || s.status === "refunded");
+  // Private (link-only) stashes stay off the public profile, the owner's too (they live in /me).
+  const shown = recs.filter((s) => !s.private && (s.status === "live" || s.status === "locked" || s.status === "zecked" || s.status === "refunded"));
   const rank = (s: StashRecord) => (s.status === "live" || s.status === "locked" ? 0 : 1);
   shown.sort((a, b) => rank(a) - rank(b) || b.createdAt.localeCompare(a.createdAt));
   return Promise.all(shown.slice(0, 20).map((s) => toPublic(s, viewerId, rate)));

@@ -34,7 +34,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { Button, Chip, Confetti, Icon, Input, LiveBadge, Logo, TeamBadge, Toast } from "@/components/zk";
+import { Button, Chip, Confetti, Icon, Input, LiveBadge, Logo, Switch, TeamBadge, Toast } from "@/components/zk";
 import type { ToastVariant } from "@/components/zk";
 import { api, formatUsd, formatZec } from "@/lib/api";
 import { useAppBack } from "@/lib/nav";
@@ -319,6 +319,8 @@ interface Draft {
   kind: PredictionKind;
   usd: number;
   expiryHours: number;
+  /** Link-only: off the feed, the ticker and the public profile. Friends get the link. */
+  private: boolean;
 }
 
 interface Flow {
@@ -353,6 +355,7 @@ const INITIAL_DRAFT: Draft = {
   kind: "exact",
   usd: DEFAULT_USD,
   expiryHours: 24,
+  private: false,
 };
 const INITIAL_FLOW: Flow = { step: "type", dir: "none", draft: INITIAL_DRAFT, stash: null, stashKey: null, resumed: false };
 
@@ -427,6 +430,7 @@ function loadSaved(): SavedDraft | null {
         matchId: typeof d.matchId === "string" ? d.matchId : null,
         usd: Number.isFinite(Number(d.usd)) ? Number(d.usd) : DEFAULT_USD,
         expiryHours: EXPIRIES.some((x) => x.hours === Number(d.expiryHours)) ? Number(d.expiryHours) : 24,
+        private: !!d.private,
       },
       stashId: typeof v.stashId === "string" ? v.stashId : null,
       stashKey: typeof v.stashKey === "string" ? v.stashKey : null,
@@ -2030,6 +2034,28 @@ function AmountStep({
       <div
         style={{
           display: "flex",
+          gap: "var(--zk-space-12)",
+          alignItems: "center",
+          padding: "var(--zk-space-12) var(--zk-space-14)",
+          borderRadius: "var(--zk-radius-lg)",
+          border: "1.5px solid var(--zk-border-strong)",
+          background: "var(--zk-surface)",
+        }}
+      >
+        <span style={{ color: draft.private ? "var(--zk-gold)" : "var(--zk-text-muted)", display: "flex", flex: "none" }}>
+          <Icon icon={draft.private ? "eyeOff" : "eye"} size={20} />
+        </span>
+        <label htmlFor="hide-private" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2, cursor: "pointer" }}>
+          <span style={{ font: "var(--zk-type-body-strong)", color: "var(--zk-text)" }}>Only people with the link can see this</span>
+          <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
+            {draft.private ? "Off the feed and your profile. Send the link to a friend." : "Off by default: everyone on ZECKED can find it."}
+          </span>
+        </label>
+        <Switch id="hide-private" on={draft.private} label="Only people with the link can see this" onChange={(on) => patch({ private: on })} />
+      </div>
+      <div
+        style={{
+          display: "flex",
           gap: "var(--zk-space-10)",
           alignItems: "flex-start",
           padding: "var(--zk-space-12) var(--zk-space-14)",
@@ -2814,7 +2840,7 @@ function LiveStep({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-14)", alignItems: "center", textAlign: "center" }}>
-          <LiveBadge size="md" label="Live · prize verified" />
+          <LiveBadge size="md" label={stash.private ? "Live · link only" : "Live · prize verified"} />
           <h1
             style={{
               margin: 0,
@@ -2822,10 +2848,10 @@ function LiveStep({
               letterSpacing: "var(--zk-track-tight)",
             }}
           >
-            Your stash is LIVE 🎉
+            {stash.private ? "Your private stash is LIVE 🎉" : "Your stash is LIVE 🎉"}
           </h1>
           <p style={{ margin: 0, font: "var(--zk-type-body)", fontSize: "var(--zk-fs-15)", color: "var(--zk-text-muted)", maxWidth: 300 }}>
-            Now go stir up trouble. Share it where your people hang out.
+            {stash.private ? "Only people with your link can see this one. Send it to your friend." : "Now go stir up trouble. Share it where your people hang out."}
           </p>
           {paidFromWallet ? (
             <span
@@ -3330,12 +3356,14 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
             },
             usd: d.usd,
             expiryHours: d.expiryHours,
+            ...(d.private ? { private: true } : {}),
           }
         : {
             type: "prediction",
             prediction: { matchId: d.matchId ?? "", kind: d.kind },
             usd: d.usd,
             expiryHours: pickedMatch ? hoursUntilFullTime(pickedMatch.kickoff) : 24,
+            ...(d.private ? { private: true } : {}),
           };
     // Prediction expiry drifts with the clock, so it is not part of the "same stash?" key.
     const key = JSON.stringify({ ...body, expiryHours: d.type === "riddle" ? body.expiryHours : 0 });

@@ -407,7 +407,10 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
       <button type="button" aria-label="Back" onClick={goBack} style={navBtn}>
         <Icon icon="back" size={22} stroke={2.4} />
       </button>
-      <span style={{ font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-pink)" }}>RIDDLE STASH</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--zk-space-6)", font: "var(--zk-type-label)", letterSpacing: "var(--zk-track-label)", color: "var(--zk-pink)" }}>
+        {stash.private ? <Icon icon="eyeOff" size={14} stroke={2.4} /> : null}
+        {stash.private ? "PRIVATE RIDDLE" : "RIDDLE STASH"}
+      </span>
       <button type="button" aria-label="Share" onClick={() => void share()} style={navBtn}>
         <Icon icon="share" size={20} stroke={2.2} />
       </button>
@@ -1062,7 +1065,11 @@ export function RiddleStash({ data, onWin }: RiddleStashProps) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: "var(--zk-type-h4)", fontSize: "var(--zk-fs-18)" }}>This is your stash</div>
               <div style={{ font: "var(--zk-type-caption)", fontWeight: "var(--zk-fw-medium)", color: "var(--zk-text-muted)" }}>
-                {cracking > 0 ? "People are on it. First one to crack it wins." : "Share it. First one to crack it wins."}
+                {stash.private
+                  ? "Share it. Only people with the link can see it."
+                  : cracking > 0
+                    ? "People are on it. First one to crack it wins."
+                    : "Share it. First one to crack it wins."}
               </div>
             </div>
           </div>
