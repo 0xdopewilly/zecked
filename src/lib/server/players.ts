@@ -202,17 +202,55 @@ export function grant(p: PlayerRecord, badge: BadgeId): BadgeId[] {
 
 // ---------- leaderboards ----------
 type Board = Leaderboard["board"];
-function periodKeys() {
-  const d = new Date();
-  const day = d.toISOString().slice(0, 10);
-  // ISO-ish week key: year + week number (Mon-based)
+
+/** The Monday 00:00:00 UTC that starts the ISO week holding `d`. */
+function isoMonday(d: Date) {
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const dow = (t.getUTCDay() + 6) % 7;
-  t.setUTCDate(t.getUTCDate() - dow + 3);
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
+  return t;
+}
+
+/** The board's week key for a date: `wk:<ISO year>-<ISO week>` (Monday-based, UTC). The weekly tournament ranks this key. */
+export function weekKey(d = new Date()) {
+  const t = isoMonday(d);
+  t.setUTCDate(t.getUTCDate() + 3); // the Thursday decides the ISO year
   const week1 = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
   const wk = 1 + Math.round(((t.getTime() - week1.getTime()) / 86400_000 - 3 + ((week1.getUTCDay() + 6) % 7)) / 7);
-  return { today: `day:${day}`, week: `wk:${t.getUTCFullYear()}-${wk}`, all: "all" };
+  return `wk:${t.getUTCFullYear()}-${wk}`;
 }
+
+export interface WeekBounds {
+  key: string; // e.g. "wk:2026-41"
+  startsAt: string; // Monday 00:00:00.000Z
+  endsAt: string; // the next Monday 00:00:00.000Z (exclusive: the week runs Mon 00:00:00 → Sun 23:59:59 UTC)
+}
+
+/** The week (Mon 00:00 UTC → next Mon 00:00 UTC) holding `d`, with its board key. */
+export function weekBounds(d = new Date()): WeekBounds {
+  const start = isoMonday(d);
+  const end = new Date(start.getTime() + 7 * 86400_000);
+  return { key: weekKey(start), startsAt: start.toISOString(), endsAt: end.toISOString() };
+}
+
+/** The week for a key ("wk:2026-41", "2026-41" or "2026-W41"), or null when it isn't one. */
+export function weekBoundsForKey(raw: string): WeekBounds | null {
+  const m = /^(?:wk:)?(\d{4})-W?(\d{1,2})$/i.exec(raw.trim());
+  if (!m) return null;
+  const year = Number(m[1]);
+  const wk = Number(m[2]);
+  if (wk < 1 || wk > 53) return null;
+  const monday1 = isoMonday(new Date(Date.UTC(year, 0, 4))); // ISO week 1 holds January 4th
+  const b = weekBounds(new Date(monday1.getTime() + (wk - 1) * 7 * 86400_000));
+  return b.key === `wk:${year}-${wk}` ? b : null;
+}
+
+function periodKeys(d = new Date()) {
+  return { today: `day:${d.toISOString().slice(0, 10)}`, week: weekKey(d), all: "all" };
+}
+
+/** When a player got their latest crack of a week (epoch ms): the tournament's tie-break (earlier wins). */
+export const lastCrackKey = (week: string, playerId: string) => `lb:last:${week}:${playerId}`;
+const LAST_CRACK_TTL_S = 21 * 86400;
 
 export async function bumpBoard(board: Board, playerId: string, by = 1) {
   const k = periodKeys();
@@ -220,12 +258,35 @@ export async function bumpBoard(board: Board, playerId: string, by = 1) {
     kv().zincr(`lb:${board}:${k.today}`, playerId, by),
     kv().zincr(`lb:${board}:${k.week}`, playerId, by),
     kv().zincr(`lb:${board}:${k.all}`, playerId, by),
+    board === "crackers" && by > 0 ? kv().set(lastCrackKey(k.week, playerId), Date.now(), { exSeconds: LAST_CRACK_TTL_S }) : Promise.resolve(true),
   ]);
+}
+
+export type ScoredRow = { member: string; score: number };
+
+/** Orders a week's crackers the tournament way: most cracks first, ties to whoever got their LAST crack in
+ *  first. Only tied neighbours cost a read (one pipelined round trip on ioredis). Returns a new array. */
+export async function rankCrackersWeek(week: string, rows: ScoredRow[]): Promise<(ScoredRow & { lastAt?: number })[]> {
+  const tied = new Set<string>();
+  rows.forEach((r, i) => {
+    if ((i > 0 && rows[i - 1].score === r.score) || (i < rows.length - 1 && rows[i + 1].score === r.score)) tied.add(r.member);
+  });
+  if (!tied.size) return rows.map((r) => ({ ...r }));
+  const ids = [...tied];
+  const times = await Promise.all(ids.map((id) => kv().get<number>(lastCrackKey(week, id))));
+  const lastAt = new Map(ids.map((id, i) => [id, Number(times[i]) || Number.MAX_SAFE_INTEGER]));
+  const never = Number.MAX_SAFE_INTEGER;
+  return rows
+    .map((r, i) => ({ ...r, lastAt: lastAt.get(r.member), i }))
+    .sort((a, b) => b.score - a.score || (a.lastAt ?? never) - (b.lastAt ?? never) || a.i - b.i)
+    .map(({ i: _i, ...r }) => r);
 }
 
 export async function leaderboard(board: Board, period: Leaderboard["period"], viewerId?: string): Promise<Leaderboard> {
   const k = periodKeys()[period];
-  const rows = await kv().zrevrange(`lb:${board}:${k}`, 0, 499);
+  let rows = await kv().zrevrange(`lb:${board}:${k}`, 0, 499);
+  // The crackers › week board is the weekly tournament: show it in prize order (ties broken within the top 50).
+  if (board === "crackers" && period === "week" && rows.length > 1) rows = [...(await rankCrackersWeek(k, rows.slice(0, 50))), ...rows.slice(50)];
   const top = rows.slice(0, 50);
   const players = await Promise.all(top.map((r) => getPlayer(r.member)));
   const out: LeaderRow[] = top.map((r, i) => ({
