@@ -1122,7 +1122,8 @@ function WithdrawPanel({
       /* clipboard blocked: fall through to a manual paste */
     }
     onToast("Couldn’t read your clipboard. Long-press the box to paste.", "error");
-    requestAnimationFrame(() => addrWrap.current?.querySelector<HTMLInputElement>("input")?.focus());
+    // Straight away, not a frame later: iOS only opens the keyboard for a focus() inside the gesture.
+    addrWrap.current?.querySelector<HTMLInputElement>("input")?.focus();
   };
 
   const send = async () => {

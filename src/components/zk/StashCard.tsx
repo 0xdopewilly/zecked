@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -38,9 +39,14 @@ const ENDED: readonly StashStatus[] = ["zecked", "expired", "refunded", "void"];
 
 // On the narrowest cards (320px phones) the status pill uses its short label so "PREDICTION" still fits
 // beside it. A container query, so it follows the card's width wherever the card is used.
+// The pressed look is CSS :active (same frame as the touch, no render): the card sinks and drops its
+// shadow, the Fund-it pill sinks with it. Not while the finger is on the hider's handle (its own tap).
 const CARD_CSS =
-  ".zk-sc{container-type:inline-size}.zk-sc-short{display:none}" +
+  ".zk-sc{container-type:inline-size;box-shadow:var(--zk-sc-sh,none);transform:var(--zk-sc-tf,none)}.zk-sc-short{display:none}" +
   ".zk-sc-who:hover .zk-sc-who-name{text-decoration:underline;text-underline-offset:2px}" +
+  ".zk-sc-fund{box-shadow:0 4px 0 var(--zk-gold-deep)}" +
+  ".zk-sc[data-press]:active:not(:has(.zk-sc-who:active)){transform:translateY(2px) scale(.99);box-shadow:none}" +
+  ".zk-sc[data-press]:active:not(:has(.zk-sc-who:active)) .zk-sc-fund{box-shadow:var(--zk-shadow-btn-gold-pressed)}" +
   "@container (max-width:279px){.zk-sc-short{display:contents}.zk-sc-long{display:none}}";
 const URGENT_MS = 30 * 60 * 1000;
 const TEASER_MAX = 70;
@@ -186,10 +192,10 @@ const CENTER_LABEL_STYLE: CSSProperties = {
   color: "var(--zk-text-muted)",
 };
 
-export function StashCard({ stash, href, onClick, markMine = false, linkHider = true }: StashCardProps) {
+function StashCardImpl({ stash, href, onClick, markMine = false, linkHider = true }: StashCardProps) {
   const router = useRouter();
+  // Hover is React state (mouse only); the pressed look is CSS :active (CARD_CSS), no render needed.
   const [hover, setHover] = useState(false);
-  const [press, setPress] = useState(false);
   const now = useNow();
   const warmT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(warmT.current), []);
@@ -202,13 +208,7 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
   const needsFunding = mine && status === "awaiting_funding";
   const link = href ? (needsFunding ? `/hide?resume=${encodeURIComponent(stash.id)}` : href) : undefined;
   const interactive = !!link || !!onClick;
-  const st: "default" | "hover" | "pressed" | "cracked" = cracked
-    ? "cracked"
-    : press
-      ? "pressed"
-      : hover
-        ? "hover"
-        : "default";
+  const st: "default" | "hover" | "cracked" = cracked ? "cracked" : hover ? "hover" : "default";
 
   // ---------- Header ----------
   const kind = riddle ? "RIDDLE" : "PREDICTION";
@@ -321,9 +321,10 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
     : st === "hover"
       ? "rgb(var(--zk-purple-rgb) / .5)"
       : "var(--zk-border)";
-  const sh =
-    st === "hover" ? "var(--zk-shadow-card-hover)" : st === "pressed" || st === "cracked" ? "none" : "var(--zk-shadow-card)";
-  const tf = st === "hover" ? "translateY(-2px)" : st === "pressed" ? "translateY(2px) scale(.99)" : "none";
+  // A tighter resting shadow than the token's 24px blur: every card is rasterized again for each screen
+  // transition snapshot, and the blur radius is what that costs.
+  const sh = st === "hover" ? "var(--zk-shadow-card-hover)" : st === "cracked" ? "none" : "0 6px 14px rgb(var(--zk-black-rgb) / .28)";
+  const tf = st === "hover" ? "translateY(-2px)" : "none";
 
   const handleClick = () => {
     if (onClick && !cracked) onClick();
@@ -338,14 +339,7 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
   const onEnter = (e: PointerEvent<HTMLElement>) => {
     if (!cracked && e.pointerType === "mouse") setHover(true);
   };
-  const onLeave = () => {
-    setHover(false);
-    setPress(false);
-  };
-  const onDown = () => {
-    if (!cracked && interactive) setPress(true);
-  };
-  const onUp = () => setPress(false);
+  const onLeave = () => setHover(false);
 
   // Instant opening: start loading the stash as the finger lands (the stash screen picks the request up).
   // A touch that turns into a scroll gets a pointercancel within a few frames, so wait that long first:
@@ -364,16 +358,17 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
   const card = (
     <article
       className="zk-sc"
+      data-press={interactive && !cracked ? "" : undefined}
       onClick={handleClick}
       onKeyDown={handleKey}
       onPointerEnter={onEnter}
       onPointerLeave={onLeave}
-      onPointerDown={onDown}
-      onPointerUp={onUp}
-      onPointerCancel={onUp}
+      onPointerCancel={onLeave}
       role={!link && onClick ? "button" : undefined}
       tabIndex={!link && onClick ? 0 : undefined}
       style={{
+        ["--zk-sc-sh" as string]: sh,
+        ["--zk-sc-tf" as string]: tf,
         flex: "none",
         position: "relative",
         background: "var(--zk-surface)",
@@ -383,8 +378,6 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
         flexDirection: "column",
         gap: "var(--zk-space-14)",
         border: `1.5px solid ${bd}`,
-        boxShadow: sh,
-        transform: tf,
         cursor: interactive ? "pointer" : "default",
         transition: "transform var(--zk-dur-fast) var(--zk-ease-out),box-shadow var(--zk-dur-fast) var(--zk-ease-out)",
         WebkitTapHighlightColor: "transparent",
@@ -595,6 +588,7 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
               <span>Add the ZEC to go live</span>
             </div>
             <span
+              className="zk-sc-fund"
               style={{
                 flex: "none",
                 display: "inline-flex",
@@ -606,7 +600,6 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
                 background: "var(--zk-grad-gold)",
                 color: "var(--zk-gold-ink)",
                 font: "var(--zk-type-btn-sm)",
-                boxShadow: st === "pressed" ? "var(--zk-shadow-btn-gold-pressed)" : "0 4px 0 var(--zk-gold-deep)",
               }}
             >
               <Icon icon="coin" size={16} stroke={2.4} />
@@ -738,6 +731,10 @@ export function StashCard({ stash, href, onClick, markMine = false, linkHider = 
     </Link>
   );
 }
+
+/** Memoised: the feed polls every few seconds and hands back the same stash object when nothing about it
+ *  changed, so an unchanged card skips its render (it still ticks its own clock every 30s). */
+export const StashCard = memo(StashCardImpl);
 
 /** Centre column of the match strip: kickoff countdown, live minute + score, or the result. */
 function MatchCenter({ match, finalScore, now }: { match: Match; finalScore?: string; now: number }) {

@@ -965,6 +965,22 @@ function writeHome(v: Omit<HomeSnap, "at">) {
   } catch {}
 }
 
+/** A fresh feed read, keeping the previous object for every stash that hasn't changed (same id, same
+ *  content), and the previous array itself when nothing at all changed. Cards are memoised on the
+ *  object, so a poll that brings nothing new re-renders nothing. ~16 small objects every 8s: cheap. */
+function shareUnchanged(prev: PublicStash[] | undefined, next: PublicStash[]): PublicStash[] {
+  if (!prev) return next;
+  const byId = new Map(prev.map((s) => [s.id, s]));
+  let same = prev.length === next.length;
+  const out = next.map((s, i) => {
+    const old = byId.get(s.id);
+    const keep = old !== undefined && JSON.stringify(old) === JSON.stringify(s) ? old : s;
+    if (keep !== prev[i]) same = false;
+    return keep;
+  });
+  return same ? prev : out;
+}
+
 /** Tells the launch splash the home has something to show (it waits a moment for it). */
 function markReady() {
   const w = window as Window & { __zkReady?: boolean };
@@ -1095,7 +1111,10 @@ export default function Feed() {
             if (why !== "enter" && !document.hidden) sfx("notify");
           }
         }
-        setLists((p) => ({ ...p, [f]: stashes }));
+        setLists((p) => {
+          const next = shareUnchanged(p[f], stashes);
+          return next === p[f] ? p : { ...p, [f]: next };
+        });
         setErrors((p) => (p[f] ? { ...p, [f]: undefined } : p));
       } catch (e) {
         setErrors((p) => ({ ...p, [f]: errorKind(e) }));
@@ -1251,9 +1270,11 @@ export default function Feed() {
       ind.style.transform = `translate3d(0, ${d / 2 - 22}px, 0) scale(${0.6 + 0.4 * k})`;
       if (!busy) icon.style.transform = `rotate(${d * 3}deg)`;
     };
+    // mem.scrollY (kept by the scroll listener) instead of window.scrollY: reading scrollY here forces a
+    // layout on every touch, which showed up as a 14ms stall on each tap on slow phones.
     const onStart = (e: TouchEvent) => {
       tracking = false;
-      if (busy || e.touches.length !== 1 || window.scrollY > 0) return;
+      if (busy || e.touches.length !== 1 || mem.scrollY > 0) return;
       y0 = e.touches[0].clientY;
       x0 = e.touches[0].clientX;
       tracking = true;
@@ -1272,7 +1293,7 @@ export default function Feed() {
           return;
         }
       }
-      if (window.scrollY > 0) {
+      if (mem.scrollY > 0) {
         tracking = false;
         paint(0, true);
         return;

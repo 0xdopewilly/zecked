@@ -12,11 +12,19 @@ import type { BadgeId, Player, PublicStash } from "@/lib/types";
 import { ZAT } from "@/lib/types";
 import { BADGE_META, Badge, Button, Emblem, Icon, Input, StashCard, TIER_LABEL, TabBar, Toast } from "@/components/zk";
 import { InviteCard } from "@/components/screens/InviteCard";
-import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { isMuted, setMuted } from "@/lib/sfx";
 import { PUSH_COPY, usePush } from "@/components/zk/PushSetup";
 import { useInstall } from "@/lib/install";
-import { AvatarPhoto } from "@/components/screens/AvatarPicker";
+import dynamic from "next/dynamic";
+
+// Loaded on demand, not with the screen: the photo picker (canvas cropper) only matters once you tap your
+// avatar, and the passkey library only when you add one. Until the picker's code is here (one short
+// request, cached by the service worker after that), a same-size blank holds its place: no layout shift.
+const AvatarPhoto = dynamic(() => import("@/components/screens/AvatarPicker").then((m) => m.AvatarPhoto), {
+  ssr: false,
+  loading: () => <span style={{ display: "inline-flex", width: "clamp(44px, 13.4vw, 52px)", height: "clamp(44px, 13.4vw, 52px)" }} />,
+});
+const webauthn = () => import("@simplewebauthn/browser");
 
 const ALL_BADGES: BadgeId[] = [
   "first-crack",
@@ -719,7 +727,11 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
   const [canPasskey, setCanPasskey] = useState(false);
   useEffect(() => {
     setSoundOn(!isMuted());
-    setCanPasskey(browserSupportsWebAuthn());
+    let alive = true;
+    void webauthn().then((m) => alive && setCanPasskey(m.browserSupportsWebAuthn()));
+    return () => {
+      alive = false;
+    };
   }, []);
   const via = player.account?.via || [];
   const signedIn = !!player.account?.signedIn;
@@ -731,7 +743,7 @@ function SettingsCard({ player, onSaved }: { player: Player; onSaved: (p: Player
     setAdding(true);
     setNote(null);
     try {
-      const optionsJSON = await api.passkeyRegisterOptions();
+      const [{ startRegistration }, optionsJSON] = await Promise.all([webauthn(), api.passkeyRegisterOptions()]);
       const response = await startRegistration({ optionsJSON });
       const r = await api.passkeyRegisterVerify(response);
       onSaved(r.player);

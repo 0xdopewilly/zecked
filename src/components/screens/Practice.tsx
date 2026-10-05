@@ -234,8 +234,12 @@ export default function Practice() {
   const wrongLayout = !!wrong && !out && !solved;
   const hintReady = triesLeft < MAX_TRIES;
 
+  // Synchronously, inside the tap: iOS only opens the keyboard for a focus() that happens during the
+  // gesture (a frame later is too late). The frame-later fallback is for an input that this same tap mounts.
   const focusInput = () => {
-    requestAnimationFrame(() => inputWrap.current?.querySelector<HTMLInputElement>("input")?.focus());
+    const el = inputWrap.current?.querySelector<HTMLInputElement>("input");
+    if (el) el.focus();
+    else requestAnimationFrame(() => inputWrap.current?.querySelector<HTMLInputElement>("input")?.focus());
   };
 
   const closeRules = () => {

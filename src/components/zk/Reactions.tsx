@@ -104,6 +104,9 @@ export function ReactionSummary({ counts, max = 3, fit = false, style }: { count
   const ref = useRef<HTMLSpanElement>(null);
   const [fits, setFits] = useState(true);
   const key = top.map((r) => `${r.e}${r.n}`).join("");
+  // Measured from the ResizeObserver callback (which runs once on observe, after layout) rather than
+  // synchronously in the effect: with a card per stash, a measurement here per card forced a layout each,
+  // interleaved with the cards' own writes. Until the first callback the box is clipped anyway.
   useIsoLayoutEffect(() => {
     const el = ref.current;
     if (!fit || !el) return;
@@ -111,8 +114,10 @@ export function ReactionSummary({ counts, max = 3, fit = false, style }: { count
       const first = el.firstElementChild as HTMLElement | null;
       setFits(!!first && first.offsetWidth <= el.clientWidth + 0.5);
     };
-    check();
-    if (typeof ResizeObserver === "undefined") return;
+    if (typeof ResizeObserver === "undefined") {
+      check();
+      return;
+    }
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
