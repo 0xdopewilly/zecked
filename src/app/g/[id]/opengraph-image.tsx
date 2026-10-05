@@ -15,5 +15,5 @@ export default async function Image({ params }: { params: Promise<{ id: string }
   const g = /^[0-9A-Za-z]{4,12}$/.test(id) ? await kv().get<GiftRecord>(`gifts:${id}`) : null;
   if (!g) return giftCard(null, host);
   const from = await getPlayer(g.fromId);
-  return giftCard({ id: g.id, fromHandle: from?.handle || "@someone", locked: !!g.lock, status: g.status, testMode: g.network !== "mainnet" }, host);
+  return giftCard({ id: g.id, fromHandle: from?.handle || "@someone", locked: !!g.lock, status: g.status === "open" && Date.parse(g.expiresAt) <= Date.now() ? "returned" : g.status, testMode: g.network !== "mainnet" }, host);
 }

@@ -217,7 +217,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
       if (!isOwner(req)) return json({ error: "Not found" }, { status: 404 });
       const week = req.nextUrl.searchParams.get("week") || undefined;
       if (!c && method === "GET") return json(await tournamentAdmin(week));
-      if (c === "settle" && method === "POST") return json(await settleNow(week));
+      if (c === "settle" && method === "POST") return json(await settleNow(week, req.nextUrl.searchParams.get("force") === "1"));
     }
 
     // ---- push notifications ----

@@ -11,7 +11,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const from = (await getPlayer(g.fromId))?.handle || "A friend";
   const title = "You’ve got a ZECKED gift 🎁";
   const description =
-    g.status !== "open"
+    (g.status !== "open" || Date.parse(g.expiresAt) <= Date.now())
       ? `${from} sent a ZECKED gift. It has already been ${g.status === "claimed" ? "opened" : "returned"}.`
       : g.lock
         ? `${from} sent you ZEC on ZECKED. Answer ${from}’s question to open it.`

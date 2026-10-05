@@ -143,24 +143,31 @@ async function payOut(result: TournamentResult) {
       if (v) c.paidZat = v;
       continue;
     }
-    const p = await getPlayer(c.pid);
-    const usd = fmtUsd(c.prizeUsd);
-    if (!p || !isAccount(p)) {
-      // A guest (or a player who is gone): the prize waits for them to sign up (creditPendingPrizes).
-      await kv().rpush(K.owed(c.pid), { key: result.key, place: c.place, prizeUsd: c.prizeUsd, score: c.score } satisfies OwedPrize);
-      await kv().set(K.paid(result.key, c.pid), -1);
-      c.paidZat = -1;
-      if (p) await notify(c.pid, { kind: "tourney", text: `You finished ${ordinal(c.place)} this week 🏆 Sign up to collect your ${usd} prize` }).catch(() => {});
-      continue;
-    }
-    const zat = await houseReward(c.pid, c.prizeUsd, `Weekly tournament ${ordinal(c.place)} 🏆`, `Tournament prize → ${p.handle}`);
-    if (!zat) {
-      await kv().del(K.paid(result.key, c.pid)); // the house is empty: retry on a later read, once the owner tops up
+    try {
+      const p = await getPlayer(c.pid);
+      const usd = fmtUsd(c.prizeUsd);
+      if (!p || !isAccount(p)) {
+        // A guest (or a player who is gone): the prize waits for them to sign up (creditPendingPrizes).
+        await kv().rpush(K.owed(c.pid), { key: result.key, place: c.place, prizeUsd: c.prizeUsd, score: c.score } satisfies OwedPrize);
+        await kv().set(K.paid(result.key, c.pid), -1);
+        c.paidZat = -1;
+        if (p) await notify(c.pid, { kind: "tourney", text: `You finished ${ordinal(c.place)} this week 🏆 Sign up to collect your ${usd} prize` }).catch(() => {});
+        continue;
+      }
+      const zat = await houseReward(c.pid, c.prizeUsd, `Weekly tournament ${ordinal(c.place)} 🏆`, `Tournament prize → ${p.handle}`);
+      if (!zat) {
+        await kv().del(K.paid(result.key, c.pid)); // the house is empty: retry on a later read, once the owner tops up
+        break;
+      }
+      await kv().set(K.paid(result.key, c.pid), zat);
+      c.paidZat = zat;
+      await notify(c.pid, { kind: "tourney", text: `You finished ${ordinal(c.place)} this week 🏆 +${usd} of test ZEC`, amountZat: zat }).catch(() => {});
+    } catch (e) {
+      // Nothing was credited (houseReward credits last): free the marker so a later run pays.
+      if (c.paidZat === 0) await kv().del(K.paid(result.key, c.pid)).catch(() => {});
+      console.error("tournament payout", result.key, c.pid, (e as Error).message);
       break;
     }
-    await kv().set(K.paid(result.key, c.pid), zat);
-    c.paidZat = zat;
-    await notify(c.pid, { kind: "tourney", text: `You finished ${ordinal(c.place)} this week 🏆 +${usd} of test ZEC`, amountZat: zat }).catch(() => {});
   }
   result.allPaid = result.champions.every((c) => c.paidZat !== 0);
   await kv().set(K.result(result.key), result);
@@ -211,19 +218,28 @@ export async function creditPendingPrizes(account: PlayerRecord): Promise<number
     for (const id of ids) {
       const owed = await kv().lrange<OwedPrize>(K.owed(id), 0, -1);
       if (!owed.length) continue;
-      await kv().del(K.owed(id));
+      const left: OwedPrize[] = []; // what stays owed after this pass (house empty, or an error)
       for (const o of owed) {
+        // One prize per person per week: a guest who held several places (or the account itself) collects once.
+        const already = Number(await kv().get<number>(K.paid(o.key, account.id))) || 0;
+        if (already > 0) continue;
         if (!(await kv().set(K.owedPaid(o.key, id), 1, { nx: true }))) continue; // paid on an earlier sign-in
         const usd = fmtUsd(o.prizeUsd);
-        const zat = await houseReward(account.id, o.prizeUsd, `Weekly tournament ${ordinal(o.place)} 🏆`, `Tournament prize → ${account.handle}`);
+        let zat = 0;
+        try {
+          zat = await houseReward(account.id, o.prizeUsd, `Weekly tournament ${ordinal(o.place)} 🏆`, `Tournament prize → ${account.handle}`);
+        } catch (e) {
+          console.error("tournament pending prize", o.key, (e as Error).message);
+        }
         if (!zat) {
-          // The house is empty: put the prize back for the next sign-in.
+          // The house is empty (or the KV hiccuped): the prize stays owed for the next sign-in.
           await kv().del(K.owedPaid(o.key, id));
-          await kv().rpush(K.owed(id), o);
+          left.push(o);
           continue;
         }
         total += zat;
         await kv().set(K.paid(o.key, id), zat);
+        await kv().set(K.paid(o.key, account.id), zat);
         const result = await kv().get<TournamentResult>(K.result(o.key));
         const c = result?.champions.find((x) => x.pid === id);
         if (result && c) {
@@ -232,6 +248,9 @@ export async function creditPendingPrizes(account: PlayerRecord): Promise<number
         }
         await notify(account.id, { kind: "tourney", text: `Your tournament prize landed 🏆 You finished ${ordinal(o.place)}: +${usd} of test ZEC`, amountZat: zat }).catch(() => {});
       }
+      // Rewrite the list with what's still owed (the KV has no lrem): paid and skipped entries drop out.
+      await kv().del(K.owed(id));
+      for (const o of left) await kv().rpush(K.owed(id), o);
     }
   } catch (e) {
     console.error("tournament pending prizes", (e as Error).message);
@@ -245,9 +264,11 @@ export async function tournamentAdmin(week?: string): Promise<{ week: string; re
   return { week: w.key, result: await kv().get<TournamentResult>(K.result(w.key)) };
 }
 
-/** Owner: settle a week now (default: the current one), for ops and tests. */
-export async function settleNow(week?: string): Promise<TournamentResult> {
-  const w = parseWeek(week, weekBounds());
+/** Owner: settle a week now (default: last week), for ops and tests. A week that is still running is only
+ *  settled with force=true: paying out mid-week would freeze the board early and pay the wrong people. */
+export async function settleNow(week?: string, force = false): Promise<TournamentResult> {
+  const w = parseWeek(week, previousWeek(weekBounds()));
+  if (Date.parse(w.endsAt) > Date.now() && !force) throw new HttpError(409, `${w.key} is still running (ends ${w.endsAt}). Pass force=1 to settle it anyway`);
   const result = await settle(w, { force: true });
   if (!result) throw new HttpError(409, "That week is being settled right now. Try again in a minute");
   return result;

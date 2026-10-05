@@ -19,6 +19,8 @@
 //   gifts:day:<pid>:<day>     sends today (20)
 //   gifts:opens:<pid>:<day>   opens today (50, anti-farm)
 //   gifts:sweep               nx 60 s throttle for maybeSweepGifts
+//   gifts:claimat:<id>        ms when the claim key was taken (a claim that died halfway is stale after 2 min)
+//   gifts:wrong:<id>          wrong answers from everyone, 1 h window (30 → "out of tries" for all)
 import type { GiftOpenResult, PublicGift, WalletInfo } from "@/lib/types";
 import { networkName } from "@/lib/zcash/engine";
 import { kv } from "./kv";
@@ -73,14 +75,20 @@ const K = {
   day: (pid: string, d: string) => `gifts:day:${pid}:${d}`,
   opens: (pid: string, d: string) => `gifts:opens:${pid}:${d}`,
   sweep: "gifts:sweep",
+  claimAt: (id: string) => `gifts:claimat:${id}`, // when the claim key was taken (ms), to spot a claim that died halfway
+  wrong: (id: string) => `gifts:wrong:${id}`, // wrong answers from everyone, 1 h window (a lock can't be brute-forced from fresh cookies)
 };
+const GLOBAL_WRONG_MAX = 30;
+const STALE_CLAIM_MS = 2 * 60_000;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const zecStr = (zat: number) => (zat / 1e8).toFixed(4).replace(/(\.\d{2}\d*?)0+$/, "$1");
+const usdStr = (n: number) => (Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 const clean = (s: string | undefined, max: number) => (s || "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, max + 1);
 
 const loadGift = (id: string) => kv().get<GiftRecord>(K.gift(id));
-const saveGift = (g: GiftRecord) => kv().set(K.gift(g.id), g, { exSeconds: RECORD_TTL_S });
+// A gift a guest opened but hasn't collected yet (sign-up pending) is kept for good; everything else 90 days.
+const saveGift = (g: GiftRecord) => kv().set(K.gift(g.id), g, g.status === "claimed" && g.credited === false ? undefined : { exSeconds: RECORD_TTL_S });
 
 async function mustLoad(id: string): Promise<GiftRecord> {
   const g = /^[0-9A-Za-z]{4,12}$/.test(id || "") ? await loadGift(id) : null;
@@ -129,7 +137,26 @@ async function toPublicGift(g: GiftRecord, viewer: PlayerRecord): Promise<Public
  * (or a return already happened) nothing moves and the current record is returned.
  */
 async function returnGift(g: GiftRecord, reason: "expired" | "cancelled"): Promise<GiftRecord> {
-  if (!(await kv().set(K.claim(g.id), `returned:${reason}`, { nx: true }))) return (await loadGift(g.id)) || g;
+  if (!(await kv().set(K.claim(g.id), `returned:${reason}`, { nx: true }))) {
+    // Someone holds the claim. Normally that means the gift was opened (or already returned). If the record
+    // is still "open" the opener's request died halfway: paid → finish their claim; unpaid for 2+ min → stale.
+    const owner = await kv().get<string>(K.claim(g.id));
+    const fresh = (await loadGift(g.id)) || g;
+    if (!owner || owner.startsWith("returned:") || fresh.status !== "open") return fresh;
+    if (await kv().get<string>(K.credited(g.id))) {
+      fresh.status = "claimed";
+      fresh.claimedBy = owner;
+      fresh.claimedAt = fresh.claimedAt || nowIso();
+      fresh.credited = true;
+      await saveGift(fresh);
+      await kv().zrem(K.expiring, g.id);
+      return fresh;
+    }
+    const at = Number(await kv().get<number>(K.claimAt(g.id))) || 0;
+    if (Date.now() - at < STALE_CLAIM_MS) return fresh;
+    await kv().del(K.claim(g.id));
+    if (!(await kv().set(K.claim(g.id), `returned:${reason}`, { nx: true }))) return (await loadGift(g.id)) || g;
+  }
   await credit(g.fromId, g.amountZat, "gift", reason === "expired" ? "Gift came back · nobody opened it 🎁" : "Took a gift back 🎁", { giftId: g.id });
   g.status = reason === "cancelled" ? "cancelled" : "returned";
   g.returnedAt = nowIso();
@@ -152,7 +179,7 @@ async function tick(g: GiftRecord): Promise<GiftRecord> {
 export async function createGift(p: PlayerRecord, body: GiftBody): Promise<{ gift: PublicGift; wallet: WalletInfo }> {
   if (!isAccount(p)) throw new HttpError(401, "Sign up to send a gift");
   const usd = Math.round(Number(body?.usd) * 100) / 100;
-  if (!(usd >= GIFT_MIN_USD && usd <= GIFT_MAX_USD)) throw new HttpError(400, `Gifts are between $${GIFT_MIN_USD} and $${GIFT_MAX_USD}`);
+  if (!(usd >= GIFT_MIN_USD && usd <= GIFT_MAX_USD)) throw new HttpError(400, `Gifts are between ${usdStr(GIFT_MIN_USD)} and ${usdStr(GIFT_MAX_USD)}`);
   const message = clean(body?.message, MESSAGE_MAX);
   if (message.length > MESSAGE_MAX) throw new HttpError(400, `Messages are up to ${MESSAGE_MAX} characters`);
 
@@ -168,7 +195,7 @@ export async function createGift(p: PlayerRecord, body: GiftBody): Promise<{ gif
     lock = { question: q, salt, answerHashes: alts.map((x) => hashAnswer(x, salt)) };
   }
 
-  if ((await dayCount(K.day(p.id, today()))) > GIFTS_PER_DAY) throw new HttpError(429, "That's a lot of gifts for one day. Try again tomorrow");
+  if ((Number(await kv().get<number>(K.day(p.id, today()))) || 0) >= GIFTS_PER_DAY) throw new HttpError(429, "That's a lot of gifts for one day. Try again tomorrow");
 
   const rate = await zecUsd();
   const amountZat = Math.max(10_000, Math.round(((usd / rate) * 1e8) / 10_000) * 10_000);
@@ -177,6 +204,7 @@ export async function createGift(p: PlayerRecord, body: GiftBody): Promise<{ gif
   // Money first (atomic: a short wallet throws 402 and nothing else happens), then the record. If the
   // record can't be saved, the ZEC goes straight back.
   await debit(p.id, amountZat, "gift", "Sent a gift 🎁", { giftId: id });
+  await dayCount(K.day(p.id, today())); // counted once the ZEC has actually moved
   const rec: GiftRecord = {
     id,
     fromId: p.id,
@@ -194,7 +222,7 @@ export async function createGift(p: PlayerRecord, body: GiftBody): Promise<{ gif
     await kv().zadd(K.expiring, now + GIFT_TTL_MS, id);
     await kv().rpush(K.byPlayer(p.id), id);
   } catch (e) {
-    await credit(p.id, amountZat, "gift", "Gift didn't send · ZEC back", { giftId: id });
+    await credit(p.id, amountZat, "gift", "Gift didn't send · ZEC back");
     throw e;
   }
   return { gift: await toPublicGift(rec, p), wallet: await walletInfo(p) };
@@ -243,9 +271,13 @@ export async function openGift(id: string, viewer: PlayerRecord, answer?: string
     if (now - t.windowStart > TRY_WINDOW_MS) t = { used: 0, windowStart: now };
     resetsAt = new Date(t.windowStart + TRY_WINDOW_MS).toISOString();
     if (t.used >= MAX_TRIES) return settled("Out of tries. Fresh tries in a few minutes.", 0, resetsAt);
+    // Tries are per player, but a cookie-less script gets a fresh guest per request: the gift itself also
+    // stops answering after GLOBAL_WRONG_MAX wrong guesses in an hour.
+    if ((Number(await kv().get<number>(K.wrong(g.id))) || 0) >= GLOBAL_WRONG_MAX) return settled("Too many wrong guesses on this gift. Try again in an hour.", 0, resetsAt);
     if (!g.lock.answerHashes.includes(hashAnswer(a, g.lock.salt))) {
       t.used += 1;
       await kv().set(tk, t, { exSeconds: Math.ceil(TRY_WINDOW_MS / 1000) + 60 });
+      await dayCount(K.wrong(g.id)).then((n) => (n === 1 ? kv().set(K.wrong(g.id), 1, { exSeconds: 3600 }) : null));
       return settled(WRONG_VERDICTS[Math.floor(Math.random() * WRONG_VERDICTS.length)], MAX_TRIES - t.used, resetsAt);
     }
     triesLeft = MAX_TRIES - t.used;
@@ -253,30 +285,56 @@ export async function openGift(id: string, viewer: PlayerRecord, answer?: string
 
   if ((await dayCount(K.opens(viewer.id, today()))) > OPENS_PER_DAY) throw new HttpError(429, "That's a lot of gifts for one day. Try again tomorrow");
 
-  // Exactly one opener: whoever writes the claim key first.
+  // Exactly one opener: whoever writes the claim key first. Everything after the claim is idempotent, so an
+  // opener whose first request died halfway simply completes it on the next one.
   if (!(await kv().set(K.claim(g.id), viewer.id, { nx: true }))) {
+    const owner = await kv().get<string>(K.claim(g.id));
     g = (await loadGift(g.id)) || g;
-    return settled(g.status === "open" ? "Someone is opening this gift right now. Try again in a moment." : g.status === "claimed" ? "Someone already opened this gift." : "This gift went back to the sender.", triesLeft, resetsAt);
+    if (owner !== viewer.id || g.status !== "open") {
+      return settled(g.status === "open" ? "Someone is opening this gift right now. Try again in a moment." : g.status === "claimed" ? "Someone already opened this gift." : "This gift went back to the sender.", triesLeft, resetsAt);
+    }
+  } else {
+    await kv().set(K.claimAt(g.id), Date.now(), { exSeconds: 86400 });
   }
   g = (await loadGift(g.id)) || g;
   const sender = await getPlayer(g.fromId);
   const fromHandle = sender?.handle || "@someone";
-  g.status = "claimed";
-  g.claimedBy = viewer.id;
-  g.claimedAt = nowIso();
-  if (isAccount(viewer)) {
-    await credit(viewer.id, g.amountZat, "gift", `Gift from ${fromHandle} 🎁`, { giftId: g.id });
-    g.credited = true;
-  } else {
+  // 1) The record: from here the gift is theirs, whatever happens next.
+  const firstTime = g.status === "open";
+  if (firstTime) {
+    g.status = "claimed";
+    g.claimedBy = viewer.id;
+    g.claimedAt = nowIso();
     g.credited = false;
-    await kv().rpush(K.pending(viewer.id), g.id);
+    await saveGift(g);
+    await kv().zrem(K.expiring, g.id);
   }
-  await saveGift(g);
-  await kv().zrem(K.expiring, g.id);
-  // The sender hears about it (an account opener by handle; a guest stays anonymous). No amountZat on
-  // this one: it is the sender's own ZEC changing hands, not money landing for them.
-  await notify(g.fromId, { kind: "gift", text: isAccount(viewer) ? `${viewer.handle} opened your gift 🎁` : "Someone opened your gift 🎁" });
-  if (g.credited) await notify(viewer.id, { kind: "gift", amountZat: g.amountZat, text: `+${zecStr(g.amountZat)} ZEC from ${fromHandle}'s gift landed in your wallet` });
+  // 2) The money: accounts now (once, guarded by the credited key), guests when they sign up.
+  let creditedNow = 0;
+  if (!g.credited) {
+    if (isAccount(viewer)) {
+      if (await kv().set(K.credited(g.id), viewer.id, { nx: true })) {
+        try {
+          await credit(viewer.id, g.amountZat, "gift", `Gift from ${fromHandle} 🎁`, { giftId: g.id });
+        } catch (e) {
+          await kv().del(K.credited(g.id)); // nothing moved: the next attempt pays
+          throw e;
+        }
+        creditedNow = g.amountZat;
+      }
+      g.credited = true;
+      await saveGift(g);
+    } else if (!(await kv().lrange<string>(K.pending(viewer.id), 0, -1)).includes(g.id)) {
+      await kv().rpush(K.pending(viewer.id), g.id);
+    }
+  }
+  if (firstTime) {
+    // The sender hears about it (an account opener by handle; a guest stays anonymous). No amountZat on
+    // this one: it is the sender's own ZEC changing hands, not money landing for them.
+    await notify(g.fromId, { kind: "gift", text: isAccount(viewer) ? `${viewer.handle} opened your gift 🎁` : "Someone opened your gift 🎁" });
+  }
+  // The opener's own notice is for their other devices (push); no amountZat, so the screen's coin isn't doubled.
+  if (creditedNow) await notify(viewer.id, { kind: "gift", text: `+${zecStr(g.amountZat)} ZEC from ${fromHandle}'s gift landed in your wallet` });
   return { opened: true, triesLeft, resetsAt, gift: await toPublicGift(g, viewer), credited: !!g.credited, creditedZat: g.credited ? g.amountZat : 0 };
 }
 
@@ -316,7 +374,12 @@ export async function creditPendingGifts(account: PlayerRecord): Promise<number>
           if (g.credited) continue;
           if (!(await kv().set(K.credited(id), account.id, { nx: true }))) continue;
           const from = await getPlayer(g.fromId);
-          await credit(account.id, g.amountZat, "gift", `Gift from ${from?.handle || "@someone"} 🎁`, { giftId: g.id });
+          try {
+            await credit(account.id, g.amountZat, "gift", `Gift from ${from?.handle || "@someone"} 🎁`, { giftId: g.id });
+          } catch (e) {
+            await kv().del(K.credited(id)); // nothing moved: the next sign-in retries
+            throw e;
+          }
           g.claimedBy = account.id;
           g.credited = true;
           await saveGift(g);

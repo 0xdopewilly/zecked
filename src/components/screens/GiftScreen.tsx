@@ -198,7 +198,11 @@ export default function GiftScreen() {
       if (!alive.current) return;
       setConfirm(false);
       setLoad({ kind: "ready", data: { gift: r.gift } });
-      sfx("coin");
+      if (r.gift.status === "cancelled") sfx("coin");
+      else {
+        sfx("error");
+        setVerdict(r.gift.status === "open" ? "Someone is opening this gift right now. Try again in a moment." : "Too late, this gift was already opened.");
+      }
     } catch (e) {
       if (!alive.current) return;
       setConfirm(false);

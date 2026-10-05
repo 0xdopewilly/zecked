@@ -4,7 +4,7 @@
 // invites you to take it. Every player (podium, rows, your own bar) opens their public profile.
 import Link from "next/link";
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { api } from "@/lib/api";
+import { api, clearApiCache } from "@/lib/api";
 import type { LeaderRow, Leaderboard, TournamentInfo } from "@/lib/types";
 import { Avatar, Button, Countdown, Emblem, Icon, TabBar } from "@/components/zk";
 
@@ -433,15 +433,15 @@ function leftText(secs: number) {
 /** Seconds until `to`, refreshed every 30 s (the strip is coarse on purpose: days and hours, no seconds). */
 function useSecondsLeft(to: string) {
   const target = Date.parse(to);
-  const calc = () => Math.max(0, Math.ceil((target - Date.now()) / 1000));
-  const [left, setLeft] = useState(calc);
+  // The clock is state; the seconds are derived in render, so a target that arrives mid-session is right on
+  // the first paint (no "under a minute" flash) and NaN while there is no target yet.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    setLeft(calc());
-    const t = setInterval(() => setLeft(calc()), 30_000);
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
-  return left;
+  return Number.isFinite(target) ? Math.max(0, Math.ceil((target - now) / 1000)) : NaN;
 }
 
 /** "Week ends in 2d 4h · top 3 win $5 / $3 / $2 of test ZEC": a strip between the period row and the podium. */
@@ -488,7 +488,7 @@ function TournamentStrip({ info, onWeekEnd }: { info: TournamentInfo | null | un
         <div style={{ font: "var(--zk-fw-black) var(--zk-fs-13)/1.2 var(--zk-font-display)", letterSpacing: ".06em", textTransform: "uppercase", color: "var(--zk-gold)" }}>
           Weekly tournament
         </div>
-        {info ? (
+        {info && Number.isFinite(left) ? (
           <div style={{ font: "var(--zk-type-small)", color: "var(--zk-text)", textWrap: "pretty" }}>
             Week ends in <Countdown to={info.week.endsAt} text={leftText(left)} tone="gold" size="sm" onDone={onWeekEnd} />
             <span style={{ color: "var(--zk-text-muted)" }}>
@@ -690,6 +690,9 @@ export default function LeaderboardScreen() {
     if (tourneyOn && tourney === undefined) loadTourney();
   }, [tourneyOn, tourney, loadTourney]);
   const onWeekEnd = useCallback(() => {
+    // The client remembers /tournament and /leaderboard for a minute: drop that, or the new week's data
+    // would only show after the next natural refresh.
+    clearApiCache();
     loadTourney();
     load("crackers", "week");
   }, [loadTourney, load]);
@@ -704,6 +707,7 @@ export default function LeaderboardScreen() {
 
   const retry = () => {
     setErrors((e) => ({ ...e, [key]: undefined }));
+    if (tourney === null) setTourney(undefined); // a failed tournament read gets another go too
     load(board, period);
   };
 
