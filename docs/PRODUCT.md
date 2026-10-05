@@ -42,6 +42,14 @@
 - **Settlement:** the first feed or `/api/tournament` read after Monday 00:00 UTC pays last week, exactly once (a per-week lock plus a per-player paid key). An empty house leaves the week "unpaid" and the next read retries after a top-up (budget ≈ $10 of test ZEC per week). Owner tools: `GET /api/admin/tournament?week=2026-41` and `POST /api/admin/tournament/settle?week=…`.
 - **On the board:** a strip under the period row ("Week ends in 2d 4h · top 3 win $5 / $3 / $2 of test ZEC") and, once a week has settled, a "Last week's champions" row with avatars, handles and prizes. The house and seeded demo players never win.
 
+## Gifts
+ZEC for one person, sent from the Wallet (**Gift 🎁**, next to Add ZEC and Withdraw) and opened from a link (`/g/<id>`).
+- **Send.** Pick an amount ($0.50–$20, `ZECKED_GIFT_MIN_USD` / `_MAX_USD`), add a note (up to 140 characters), optionally **lock it with a question** (up to 80 characters) whose answer (up to 60, `|` separates alternatives) only they know. Check it over, send: the ZEC leaves the sender's in-app balance at once. Then share the link (WhatsApp, X, Telegram, the share sheet, copy).
+- **Open.** The link shows who it's from, the amount and the note (the amount is visible before opening; the lock protects the ZEC, not the number). Locked gifts need the answer, normalized like riddle answers, 5 tries per 10 minutes per player; the answer is never revealed. The first correct opener wins, exactly once. Accounts are credited on the spot; guests see "Sign up to keep it" and the ZEC lands in their wallet on sign-up (same as wins).
+- **Back to the sender.** Unopened after 7 days, or when the sender taps **Take it back**, the ZEC returns to the sender's wallet and the link stops working.
+- **Quiet.** Gifts are not stashes: never in the feed, the ticker, the leaderboards or public profiles; no XP, badges or stats. The only places a gift shows are its own link, the sender's and opener's Wallet activity (rows open the gift), and a notice to the sender when it's opened. The link preview says "You've got a ZECKED gift" and who it's from, never the amount, note or question (chat apps fetch previews).
+- **Caps.** 20 sends a day per sender, 50 opens a day per opener.
+
 ## Ground rules (v1)
 - **Free to enter.** Players never pay to play; the prize comes from the hider. There is no paid wagering in v1.
 - **Custody:** Zcash has no smart contracts, so the ZECKED server holds each stash until it resolves and then pays the winner. Stash sizes are capped (initially $100). Longer term, split keys (FROST) so no single party can move funds.

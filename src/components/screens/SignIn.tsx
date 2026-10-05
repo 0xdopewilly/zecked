@@ -11,7 +11,7 @@ import { useAppBack } from "@/lib/nav";
 import type { AppConfig, AuthStartResult, Player } from "@/lib/types";
 import { Button, Confetti, Icon, Input, Logo, type IconName } from "@/components/zk";
 
-type Reason = "win" | "hide" | "wallet" | "default";
+type Reason = "win" | "hide" | "wallet" | "gift" | "default";
 type Step = "methods" | "email" | "code" | "done";
 type Note = { text: string; tone: "error" | "success" | "muted" };
 
@@ -43,6 +43,12 @@ const REASONS: Record<Reason, { title: string; sub: string; bg: string; hero: He
     bg: "var(--zk-bg-hero-mint)",
     hero: { icon: "wallet", grad: "var(--zk-grad-tile-mint)", deep: "var(--zk-mint-deep)", ink: "var(--zk-mint-ink)" },
   },
+  gift: {
+    title: "Sign up to keep your gift",
+    sub: "One tap and it lands in your own ZECKED wallet. No passwords.",
+    bg: "var(--zk-bg-hero-gold)",
+    hero: { icon: "sparkle", grad: "var(--zk-grad-tile-gold)", deep: "var(--zk-gold-deep)", ink: "var(--zk-gold-ink)" },
+  },
   default: {
     title: "Welcome to ZECKED",
     sub: "One tap. No passwords, no seed phrases.",
@@ -54,7 +60,7 @@ const REASONS: Record<Reason, { title: string; sub: string; bg: string; hero: He
 const CODE_HERO: Hero = { icon: "bell", grad: "var(--zk-grad-tile-sky)", deep: "var(--zk-sky-shade)", ink: "var(--zk-sky-ink)" };
 
 function readReason(raw: string | null): Reason {
-  return raw === "win" || raw === "hide" || raw === "wallet" ? raw : "default";
+  return raw === "win" || raw === "hide" || raw === "wallet" || raw === "gift" ? raw : "default";
 }
 
 /** Only same-origin paths: never `//host`, `javascript:`, or a loop back to /signin. */
