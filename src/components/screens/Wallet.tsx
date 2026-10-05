@@ -10,7 +10,7 @@ import { api, formatUsd, formatZec } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import { ZAT } from "@/lib/types";
 import type { WalletInfo, WalletTx, WalletTxKind } from "@/lib/types";
-import { Button, Chip, Confetti, CountUp, Icon, Input, Logo, TabBar, Toast } from "@/components/zk";
+import { Button, Chip, Confetti, CountUp, Icon, Input, Logo, TabBar, Toast, SystemBanner } from "@/components/zk";
 import type { IconName, ToastVariant } from "@/components/zk";
 
 /* ───────────────────────── constants ───────────────────────── */
@@ -1143,7 +1143,7 @@ function WithdrawPanel({
       if (status === 401) {
         onSignedOut();
       } else if (status === 503) {
-        onToast("The prize vault is being topped up. Your ZEC is safe here. Try again in a few minutes.", "error", "hourglass");
+        onToast(m || "The prize vault is being topped up. Your ZEC is safe here. Try again in a few minutes.", "error", "hourglass");
       } else if (status === 502) {
         // Outcome not known yet (the server keeps it as "pending" and settles it): show it in the activity list.
         onToast("Your withdrawal is processing. It’ll show in your activity in a minute.", "default", "hourglass");
@@ -1720,6 +1720,7 @@ export default function Wallet() {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const [count, setCount] = useState({ from: 0, to: 0, run: 0 });
   const [simulating, setSimulating] = useState<number | null>(null);
@@ -1787,8 +1788,9 @@ export default function Wallet() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [me, w] = await Promise.allSettled([api.me(), api.wallet()]);
+      const [me, w, cfg] = await Promise.allSettled([api.me(), api.wallet(), api.config()]);
       if (cancelled) return;
+      if (cfg.status === "fulfilled") setBanner(cfg.value.banner ?? null);
       if (me.status === "fulfilled" && me.value.player.account && !me.value.player.account.signedIn) {
         setLoad({ kind: "guest" });
       } else if (w.status === "fulfilled") {
@@ -1969,6 +1971,7 @@ export default function Wallet() {
     <main className="zk-screen has-tabs" style={{ background: "var(--zk-bg-hero-gold)", gap: "var(--zk-space-14)" }}>
       <style>{SCOPED_CSS}</style>
       <Header />
+      <SystemBanner text={banner} />
       {body}
       {toast ? (
         <div

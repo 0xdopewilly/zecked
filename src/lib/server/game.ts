@@ -103,6 +103,7 @@ const K = {
   unlisted: "stashes:private", // private (link-only) stashes: swept for settlement like the index, never shown
   byPlayer: (pid: string) => `pstash:${pid}`,
   tries: (id: string) => `stash:${id}:tries`,
+  wrong: (id: string) => `stash:${id}:wrong`, // wrong guesses in the last hour, across everyone
   myTries: (id: string, pid: string) => `tries:${id}:${pid}`,
   win: (id: string) => `win:${id}`,
   calls: (id: string) => `calls:${id}`,
@@ -113,6 +114,13 @@ const K = {
   tick: (id: string) => `tick:${id}`,
   ticker: "ticker",
 };
+
+/** Tries are per player, but a cookie-less script gets a fresh guest per request: a stash also stops
+ *  answering after this many wrong guesses in an hour (room for ~100 real players using all 3 tries). */
+const STASH_WRONG_MAX = Number(process.env.ZECKED_STASH_WRONG_MAX || 300);
+
+/** Operator notice for the top of Home and Wallet (env ZECKED_BANNER); empty = none. */
+export const systemBanner = () => process.env.ZECKED_BANNER?.trim() || null;
 
 const getStash = (id: string) => kv().get<StashRecord>(K.stash(id));
 const saveStash = (s: StashRecord) => kv().set(K.stash(s.id), s);
@@ -127,6 +135,7 @@ export async function appConfig(): Promise<AppConfig> {
     maxStashUsd: MAX_USD,
     minStashUsd: MIN_USD,
     auth: { google: googleEnabled(), passkey: true, email: emailSignInAvailable() },
+    banner: systemBanner(),
   };
 }
 
@@ -536,6 +545,9 @@ export async function guess(s: StashRecord, p: PlayerRecord, answer: string): Pr
   if (t.used >= MAX_TRIES) {
     return { correct: false, triesLeft: 0, resetsAt: new Date(t.windowStart + TRY_WINDOW_MS).toISOString(), verdict: "Out of tries. Breathe. Think. Come back." };
   }
+  if ((Number(await kv().get<number>(K.wrong(s.id))) || 0) >= STASH_WRONG_MAX) {
+    return { correct: false, triesLeft: 0, resetsAt: new Date(now + 3600_000).toISOString(), verdict: "This one is cooling off. Try again in a bit." };
+  }
   await kv().incr(K.tries(s.id));
   const correct = s.riddle!.answerHashes.includes(hashAnswer(a, s.riddle!.salt));
   touchPlay(p);
@@ -550,6 +562,7 @@ export async function guess(s: StashRecord, p: PlayerRecord, answer: string): Pr
   }
   t.used += 1;
   await kv().set(tk, t, { exSeconds: Math.ceil(TRY_WINDOW_MS / 1000) + 60 });
+  await kv().incr(K.wrong(s.id)).then((n) => (n === 1 ? kv().set(K.wrong(s.id), 1, { exSeconds: 3600 }) : null));
   await savePlayer(p);
   return {
     correct: false,

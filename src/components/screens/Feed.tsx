@@ -14,7 +14,7 @@ import { api, formatZec, type FeedFilter } from "@/lib/api";
 import { sfx } from "@/lib/sfx";
 import { warmStash } from "@/lib/stashCache";
 import type { LeaderRow, Player, PublicStash, TickerItem } from "@/lib/types";
-import { Avatar, Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault } from "@/components/zk";
+import { Avatar, Button, Chip, Countdown, Icon, Logo, StashCard, TabBar, Vault, SystemBanner } from "@/components/zk";
 import { formatDuration } from "@/components/zk/StashCard";
 import { InstallNudge } from "@/components/zk/Install";
 import { QrCode } from "@/components/zk/QrCode";
@@ -998,6 +998,7 @@ export default function Feed() {
   const [player, setPlayer] = useState<Player | null>(() => mem.player);
   const [ticker, setTicker] = useState<TickerState>(() => mem.ticker);
   const [house, setHouse] = useState<HouseStatus | null>(() => mem.house);
+  const [banner, setBanner] = useState<string | null>(null);
   const [held, setHeld] = useState<string[]>([]); // new stashes waiting behind the pill
   const [fresh, setFresh] = useState<string[]>([]); // new stashes that animate in
   const [scrolled, setScrolled] = useState(false); // past the greeting: close its popovers
@@ -1096,9 +1097,10 @@ export default function Feed() {
       inflight.current[f] = true;
       try {
         // The feed also says when the house's next free drop lands (not in api.ts's type yet).
-        const res = (await api.feed(f)) as { stashes: PublicStash[]; house?: HouseStatus | null };
+        const res = (await api.feed(f)) as { stashes: PublicStash[]; house?: HouseStatus | null; banner?: string | null };
         const stashes = res.stashes;
         if (res.house !== undefined) setHouse(res.house);
+        setBanner(res.banner ?? null);
         const prev = listsRef.current[f];
         if (prev && f === filterRef.current) {
           const known = new Set(prev.map((s) => s.id));
@@ -1546,7 +1548,10 @@ export default function Feed() {
                   </div>
                 )}
               </div>
-              <div className="zk-home-list">{body}</div>
+              <div className="zk-home-list">
+                <SystemBanner text={banner} />
+                {body}
+              </div>
             </section>
 
             {ended && ended.length > 0 && (

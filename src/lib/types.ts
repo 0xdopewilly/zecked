@@ -306,6 +306,8 @@ export interface AppConfig {
   minStashUsd: number;
   /** Sign-in methods available on this deployment. */
   auth: { google: boolean; passkey: boolean; email: boolean };
+  /** Operator notice shown at the top of Home and Wallet (env ZECKED_BANNER), e.g. during a network upgrade. */
+  banner?: string | null;
 }
 
 /** Emoji reactions players can drop on a stash (one of each per player). */

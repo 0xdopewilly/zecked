@@ -27,6 +27,18 @@ export interface DepositStatus {
   txids: string[];
 }
 
+/** What the vault says about itself (the app's /api/health forwards a cached copy). */
+export interface VaultHealth {
+  ok: boolean; // reachable and answering
+  synced?: boolean;
+  height?: number;
+  chainTip?: number;
+  tipStalled?: boolean; // the chain tip hasn't moved for a while: the lightwalletd is behind
+  sendsPaused?: boolean; // external sends paused by the operator (network upgrade)
+  rescanning?: boolean;
+  branch?: string; // consensus branch id the lightwalletd reports (NU7 testnet = 77190ad9)
+}
+
 /** Thrown when a payout's outcome is unknown (timeout, in-flight, interrupted): the money may have been sent. Never refund on this. */
 export class PayoutUncertainError extends HttpError {
   uncertain = true;
@@ -47,6 +59,8 @@ export interface ZcashEngine {
   deposits(userId: string): Promise<DepositStatus>;
   /** Look up a keyed payout (to reconcile uncertain withdrawals). */
   payoutStatus(key: string): Promise<{ state: "sent" | "failed" | "pending" | "unknown"; txid?: string }>;
+  /** Is the money side healthy right now? Never throws. */
+  health(): Promise<VaultHealth>;
 }
 
 export const NETWORK_FEE_ZAT = 30_000; // 0.0003 ZEC buffer the hider adds on top of the prize
@@ -92,6 +106,9 @@ class SimEngine implements ZcashEngine {
   async payoutStatus() {
     return { state: "sent" as const };
   }
+  async health() {
+    return { ok: true, synced: true };
+  }
 }
 
 // ---------- vault (testnet / mainnet) ----------
@@ -107,6 +124,9 @@ class VaultEngine implements ZcashEngine {
     const j = (await r.json().catch(() => ({}))) as T & { error?: string; message?: string };
     if (!r.ok) {
       console.error("vault error", path, r.status, j.error, j.message);
+      // The operator paused external sends (network upgrade): say so, with the vault's own words.
+      if (j.error === "sends_paused")
+        throw new HttpError(503, j.message || "Payouts are paused for the Zcash network upgrade. Your ZEC is safe; try again later.");
       if (r.status === 402 || j.error === "insufficient_funds")
         throw new HttpError(503, "The prize vault is being topped up. Your win is safe. Try claiming again in a few minutes.");
       if (r.status === 400) throw new HttpError(400, j.message || "The vault rejected that request");
@@ -155,6 +175,14 @@ class VaultEngine implements ZcashEngine {
     const received = Number(d.receivedZat || 0);
     const confirmed = Number(d.confirmedZat ?? received);
     return { receivedZat: received, confirmedZat: confirmed, pendingZat: Number(d.pendingZat ?? Math.max(0, received - confirmed)), txids: d.txids || [] };
+  }
+  async health(): Promise<VaultHealth> {
+    try {
+      const h = await this.call<{ synced?: boolean; height?: number; chainTip?: number; tipStalled?: boolean; sendsPaused?: boolean; rescanning?: boolean; lightd?: { consensusBranchId?: string } }>("/health", undefined, 8_000);
+      return { ok: true, synced: !!h.synced, height: h.height, chainTip: h.chainTip, tipStalled: !!h.tipStalled, sendsPaused: !!h.sendsPaused, rescanning: !!h.rescanning, branch: h.lightd?.consensusBranchId };
+    } catch {
+      return { ok: false };
+    }
   }
 }
 

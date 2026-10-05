@@ -19,8 +19,7 @@ import {
   simulateFund,
   stashDetail,
   ticker,
-  toPublic,
-} from "@/lib/server/game";
+  toPublic, systemBanner } from "@/lib/server/game";
 import { isAccount, leaderboard, patchPlayer, setHandle, toPublicPlayer, type PlayerRecord } from "@/lib/server/players";
 import { createSession, destroySession, sessionPlayer, startEmailSignIn, verifyEmailSignIn } from "@/lib/server/auth";
 import { googleCallback, googleStart } from "@/lib/server/google";
@@ -38,7 +37,7 @@ import { cancelGift, createGift, creditPendingGifts, getGift, maybeSweepGifts, o
 import { creditPendingPrizes, maybeSettleTournament, settleNow, tournamentAdmin, tournamentInfo } from "@/lib/server/tournament";
 import { adminRemoveAvatar, readCapped, removeAvatar, serveAvatar, setAvatar } from "@/lib/server/avatars";
 import { HttpError } from "@/lib/server/util";
-import { networkName } from "@/lib/zcash/engine";
+import { networkName, zcash, type VaultHealth } from "@/lib/zcash/engine";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,6 +47,25 @@ const LEGACY_PID = "zk_pid";
 const COOKIE_OPTS = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 180 };
 
 type Ctx = { params: Promise<{ path: string[] }> };
+
+/** Health for uptime monitors: storage answers and the vault is reachable and following the chain.
+ *  The vault check is shared through KV for 30 s so a busy monitor never hammers it. 503 when not ok. */
+async function healthReport() {
+  const kvOk = await kv().get("health:ping").then(() => true, () => false);
+  let vault: VaultHealth = { ok: false };
+  try {
+    const cached = await kv().get<VaultHealth & { at: number }>("vault:health");
+    if (cached && Date.now() - cached.at < 30_000) vault = cached;
+    else {
+      vault = await zcash().health();
+      await kv().set("vault:health", { ...vault, at: Date.now() }, { exSeconds: 120 });
+    }
+  } catch {
+    vault = { ok: false };
+  }
+  const ok = kvOk && vault.ok && !vault.tipStalled;
+  return json({ ok, network: networkName(), kv: kvOk, vault }, { status: ok ? 200 : 503 });
+}
 
 async function withPlayer(req: NextRequest) {
   const { player, sid, fresh } = await sessionPlayer(req.cookies.get(SID)?.value, req.cookies.get(LEGACY_PID)?.value);
@@ -114,7 +132,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
     // Public, cookie-less reads never create a guest profile (website stats, crawlers, link previews).
     const hasSession = !!(req.cookies.get(SID)?.value || req.cookies.get(LEGACY_PID)?.value);
     if (method === "GET" && !hasSession) {
-      if (a === "health") return json({ ok: true, network: networkName() });
+      if (a === "health") return await healthReport();
       if (a === "config") return json(await appConfig());
       if (a === "ticker") return json({ items: await ticker() });
       if (a === "matches") return json({ matches: await upcomingMatches(5, networkName() === "sim") });
@@ -270,7 +288,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
       res.headers.set("cache-control", "public, s-maxage=30, stale-while-revalidate=120");
       return res;
     }
-    if (a === "health") return out({ ok: true, network: networkName() });
+    if (a === "health") return await healthReport();
 
     if (a === "me" && !b) {
       if (method === "GET") return out({ player: await pub(player) });
@@ -324,7 +342,7 @@ async function handle(req: NextRequest, ctx: Ctx) {
           jobs.forEach((r, i) => r.status === "rejected" && console.error(names[i], (r.reason as Error)?.message ?? r.reason));
         });
         const [stashes, house] = await Promise.all([feed(req.nextUrl.searchParams.get("filter") || "all", player.id), houseStatus().catch(() => null)]);
-        return out({ stashes, house });
+        return out({ stashes, house, banner: systemBanner() });
       }
       if (method === "POST") {
         const s = await createStash(player, await body(req));
@@ -333,6 +351,9 @@ async function handle(req: NextRequest, ctx: Ctx) {
     }
     if (a === "stashes" && b) {
       if (!c && method === "GET") return out(await stashDetail(b, player, { peek: req.nextUrl.searchParams.get("peek") === "1" }));
+      // Real browsers always carry a session by now (the page load set it); a cookie-less script would
+      // mint a fresh guest per request and dodge the per-player try limit.
+      if ((c === "guess" || c === "call") && method === "POST" && !hasSession) throw new HttpError(401, "Open the stash in your browser first, then try again.");
       const s = await loadStash(b);
       if (c === "guess" && method === "POST") {
         const { answer } = await body<{ answer: string }>(req);

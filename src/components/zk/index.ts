@@ -29,6 +29,7 @@ export { TabBar } from "./TabBar";
 export type { TabBarProps, TabId } from "./TabBar";
 
 export { Switch } from "./Switch";
+export { SystemBanner } from "./SystemBanner";
 export type { SwitchProps } from "./Switch";
 
 // Written by another agent in parallel.

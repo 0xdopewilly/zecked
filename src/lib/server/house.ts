@@ -16,7 +16,18 @@ export const HOUSE_ID = "house";
 /** Off in sim mode (it has its own seed and bonus) unless ZECKED_HOUSE=on, for local testing. */
 const houseOn = () => networkName() !== "sim" || process.env.ZECKED_HOUSE === "on";
 const GIFT_USD = Number(process.env.ZECKED_GIFT_USD || 2);
-const GIFTS_PER_IP_PER_DAY = 3;
+const GIFTS_PER_IP_PER_DAY = 15; // carrier NAT puts whole networks behind one address; the daily budget bounds the loss
+/** Everything the house gives away per UTC day (welcome gifts, invite rewards, tournament prizes). Scripted
+ *  accounts can't drain it in a night; the owner raises it with ZECKED_HOUSE_DAILY_USD. */
+const DAILY_USD = Number(process.env.ZECKED_HOUSE_DAILY_USD || 30);
+const spentKey = () => `house:spent:${new Date().toISOString().slice(0, 10)}`;
+const spentTodayCents = async () => Number(await kv().get<number>(spentKey())) || 0;
+const overBudget = async (usd: number) => (await spentTodayCents()) + Math.round(usd * 100) > DAILY_USD * 100;
+async function noteSpent(usd: number) {
+  const cents = Math.round(usd * 100);
+  const n = await kv().incr(spentKey(), cents);
+  if (n === cents) await kv().set(spentKey(), n, { exSeconds: 2 * 86400 });
+}
 const DROP_EVERY_MS = Number(process.env.ZECKED_DROP_HOURS || 3) * 3600_000;
 const DROP_USD = [1, 2, 2, 3];
 
@@ -94,6 +105,7 @@ export async function welcomeGift(p: PlayerRecord, ip: string): Promise<number> 
   const day = new Date().toISOString().slice(0, 10);
   if ((await kv().incr(`gift:ip:${ip}:${day}`)) > GIFTS_PER_IP_PER_DAY) return 0;
   await kv().set(`gift:ip:${ip}:${day}`, (await kv().get<number>(`gift:ip:${ip}:${day}`)) || 1, { exSeconds: 2 * 86400 });
+  if (await overBudget(GIFT_USD)) return 0;
   await refreshHouse();
   const zat = await zatFor(GIFT_USD);
   try {
@@ -102,12 +114,14 @@ export async function welcomeGift(p: PlayerRecord, ip: string): Promise<number> 
     return 0; // the house is out of test ZEC; the owner tops it up
   }
   await credit(p.id, zat, "bonus", "Welcome gift from ZECKED 🎁");
+  await noteSpent(GIFT_USD);
   return zat;
 }
 
 /** Pays a small reward from the house balance (invites). Returns the zat paid, 0 if the house is empty. */
 export async function houseReward(pid: string, usd: number, label: string, houseLabel: string): Promise<number> {
   if (!houseOn()) return 0;
+  if (await overBudget(usd)) return 0;
   await refreshHouse();
   const zat = await zatFor(usd);
   try {
@@ -116,6 +130,7 @@ export async function houseReward(pid: string, usd: number, label: string, house
     return 0; // the house is out of test ZEC; the owner tops it up
   }
   await credit(pid, zat, "bonus", label);
+  await noteSpent(usd);
   return zat;
 }
 
@@ -162,7 +177,14 @@ export async function maybeHouseDrop(force = false): Promise<StashRecord | null>
 export async function houseAdmin() {
   const house = await refreshHouse();
   const w = await walletInfo(house);
-  return { handle: house.handle, balanceZat: await balanceOf(HOUSE_ID), wallet: w, status: await houseStatus() };
+  return {
+    handle: house.handle,
+    balanceZat: await balanceOf(HOUSE_ID),
+    wallet: w,
+    status: await houseStatus(),
+    spentTodayUsd: (await spentTodayCents()) / 100,
+    dailyBudgetUsd: DAILY_USD,
+  };
 }
 
 /** Local sim testing only: put play ZEC in the house. */

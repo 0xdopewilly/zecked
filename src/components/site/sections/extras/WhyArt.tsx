@@ -390,7 +390,7 @@ export function NinjaArt() {
 
 /* ───────────── (c) Messages only the winner reads: locked envelope, memo types itself ───────────── */
 
-const MEMOS = ["GG! The map was\nright there.", "Nice crack.\nDrinks on me.", "Only you can\nread this."];
+const MEMOS = ["0.05 ZEC paid to\nutest1q8f…x2m", "Who won it?\nNobody can tell.", "Shielded. Sealed.\nNo trace of you."];
 const CHAR_W = 7.2; // Space Mono advance at 12px
 
 const GLYPHS = (() => {
@@ -448,7 +448,7 @@ export function MemoArt() {
 
   return (
     <div ref={ref} className="zkart">
-      <svg viewBox="0 0 320 240" role="img" aria-label="A locked envelope with a private victory memo typing itself">
+      <svg viewBox="0 0 320 240" role="img" aria-label="A sealed envelope: the payout to the winner is shielded, so nobody can see who won">
         <defs>
           <radialGradient id={`${id}g`}>
             <stop offset="0" stopColor={K.pink} stopOpacity=".3" />
@@ -487,7 +487,7 @@ export function MemoArt() {
             <rect x="104" y="40" width="9" height="8" rx="2" fill={K.purple} />
             <path d="M106 40V38a2.5 2.5 0 0 1 5 0v2" stroke={K.purple} strokeWidth="1.6" fill="none" />
             <text x="118" y="47.5" fill={K.purple} style={{ font: "700 8.5px var(--zk-font-mono)", letterSpacing: ".14em" }}>
-              ENCRYPTED MEMO
+              SHIELDED PAYOUT
             </text>
             <line x1="102" y1="57" x2="218" y2="57" stroke="#E6DDF7" strokeWidth="1.5" strokeDasharray="3 3" />
             <text x="104" y="80" fill={K.ink} style={mono}>

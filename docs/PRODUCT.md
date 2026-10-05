@@ -5,7 +5,7 @@
    - *Challenge a friend:* a switch on the prize step, "Only people with the link can see this", makes the stash link-only: never in the feed, the ticker or the hider's public profile (it still shows in My stashes), but anyone with the link can crack it and the crack counts fully for their stats.
 2. **Share.** Every stash gets a link and a share card for X and Telegram.
 3. **Crack.** Anyone can play without an account. The first correct answer or call wins.
-4. **Claim.** The winner picks a destination: their own Zcash wallet, or a 60-second wallet setup. The ZEC arrives shielded.
+4. **Claim.** The win lands in the winner's ZECKED wallet (its own shielded address). Withdraw it to any Zcash testnet wallet, or hide it again.
 5. **Repeat.** The next screen says "Hide your own stash."
 
 ## Stash types
@@ -25,9 +25,10 @@
 | Feature | Use |
 |---|---|
 | Shielded payments | Winners receive privately. Nobody can see who won |
-| Viewing keys | The "LIVE · verified" badge: anyone can check a stash is funded and unclaimed |
-| Encrypted memos | The hider's taunt or hint, and the winner's victory message |
+| On-chain funding check | The vault confirms the stash's ZEC arrived at its own shielded address before it goes live |
 | ZIP-321 payment URIs | The "Fund it" QR code, scannable from any Zcash wallet |
+
+**Next (not built):** viewing keys, so anyone can check for themselves that a stash is funded and unclaimed; encrypted memos for the hider's taunt or hint and the winner's victory message (payout memos are fixed strings today).
 
 ## Game layer
 - **Tiers:** Rookie → Cracker → Safecracker → Vault Breaker → Oracle → Z-Legend (earned by XP)

@@ -1,6 +1,7 @@
 "use client";
 // Sign in / sign up (one door). Step 1: Continue with Google, or a passkey (Face ID / fingerprint / screen
-// lock), or email when a sender is set up. Email: six digit boxes (auto-submit).
+// lock), or email when a sender is set up. Email leads where a passkey is unlikely to work (no WebAuthn, or an
+// in-app browser such as X / WhatsApp / Instagram). Email: six digit boxes (auto-submit).
 // Success: confetti, "You're in, @handle!", any guest wins credited, then back to `?next=`.
 // The first sign-in creates the account; the guest's XP, badges and wins carry over.
 import { useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
@@ -8,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { api, formatZec, type SignedIn } from "@/lib/api";
 import { useAppBack } from "@/lib/nav";
+import { useInstall } from "@/lib/install";
 import type { AppConfig, AuthStartResult, Player } from "@/lib/types";
 import { Button, Confetti, Icon, Input, Logo, type IconName } from "@/components/zk";
 
@@ -89,12 +91,12 @@ function passkeyError(e: unknown, creating: boolean): Note {
   const name = e instanceof Error ? e.name : "";
   const code = (e as { code?: string } | null)?.code || "";
   if (name === "NotAllowedError" || name === "AbortError" || code === "ERROR_CEREMONY_ABORTED")
-    return { text: "No worries, nothing was saved. Tap again when you’re ready.", tone: "muted" };
+    return { text: "No worries, nothing was saved. Tap again, or continue with email.", tone: "muted" };
   if (name === "InvalidStateError" || code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED")
     return { text: "This device already has a ZECKED passkey. Tap “Already have a passkey? Sign in”.", tone: "error" };
   if (name === "SecurityError") return { text: "Passkeys don’t work on this address. Open ZECKED from its main link.", tone: "error" };
   if (name === "NotSupportedError" || code === "ERROR_AUTHENTICATOR_NO_SUPPORTED_PUBKEYCREDPARAMS_ALG")
-    return { text: "This device can’t make a passkey. Try your phone, or continue with Google.", tone: "error" };
+    return { text: "This device can’t make a passkey. Continue with email instead.", tone: "error" };
   const browserSide = e instanceof DOMException || name === "WebAuthnError" || /^ERROR_/.test(code);
   const fallback = creating ? "Couldn’t create the passkey. Try again" : "Couldn’t sign in with the passkey. Try again";
   return { text: browserSide ? fallback : errText(e, fallback), tone: "error" };
@@ -473,6 +475,9 @@ export default function SignIn() {
   };
 
   const appBack = useAppBack(next);
+  // In-app browsers (X, WhatsApp, Instagram) often lack or reject WebAuthn: lead with email there.
+  const { inApp } = useInstall();
+  const emailFirst = !canPasskey || !!inApp;
   const goBack = () => {
     if (step === "code") return differentEmail();
     if (step === "email") {
@@ -735,18 +740,25 @@ export default function SignIn() {
     const googleOn = !!auth?.google;
     const emailOn = !!auth?.email;
     const busy = !!pkBusy || googleBusy;
+    // Email leads when a passkey is unlikely to work here (no WebAuthn, or an in-app browser).
+    const leadEmail = emailFirst && emailOn;
     body = (
       <>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-8)" }}>
           <h1 style={{ margin: 0, font: "var(--zk-type-h1)", letterSpacing: "-.01em" }}>{copy.title}</h1>
-          <p style={{ margin: 0, font: "var(--zk-type-body-lg)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>{copy.sub}</p>
+          <p style={{ margin: 0, font: "var(--zk-type-body-lg)", color: "var(--zk-text-muted)", textWrap: "pretty" }}>
+            {leadEmail ? "We’ll email you a 6-digit code. No passwords." : copy.sub}
+          </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-12)" }}>
+          {leadEmail && (
+            <Button label="Continue with email" iconRight="arrowRight" variant="primary" size="lg" disabled={busy} onClick={() => setStep("email")} />
+          )}
           {canPasskey && (
             <Button
               label={pkBusy === "create" ? "Creating your passkey…" : "Sign up with a passkey"}
               icon="passkey"
-              variant="primary"
+              variant={leadEmail ? "light" : "primary"}
               size="lg"
               disabled={busy}
               onClick={() => void createPasskey()}
@@ -760,7 +772,7 @@ export default function SignIn() {
             </Button>
           )}
         </div>
-        {canPasskey && (
+        {canPasskey && !leadEmail && (
           <p style={{ margin: "calc(-1 * var(--zk-space-6)) 0 0", font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", textAlign: "center", textWrap: "pretty" }}>
             A passkey is your Face ID, fingerprint or screen lock. Nothing to remember, nothing to leak.
           </p>
@@ -788,7 +800,7 @@ export default function SignIn() {
               {pkBusy === "login" ? "Checking your passkey…" : "Already have a passkey? Sign in"}
             </button>
           )}
-          {emailOn && (
+          {emailOn && !leadEmail && (
             <button type="button" onClick={() => setStep("email")} disabled={busy} style={textBtn(busy)}>
               Use email instead
             </button>

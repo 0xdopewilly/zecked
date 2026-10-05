@@ -41,7 +41,7 @@ Vault service (Railway) ── zingo-cli ── lightwalletd (testnet.zec.rocks)
 | Screens (home feed, stash, hide flow, wallet, profile, leaderboard, install) | `src/components/screens` |
 | Design system (tokens, dock, vault, cards, sounds) | `src/components/zk`, `src/styles` |
 | Game server: stash lifecycle, guesses, sealed calls, first-correct-wins, XP / tiers / badges | `src/lib/server/game.ts`, `players.ts` |
-| Sign-in: passkeys (WebAuthn), email codes (Resend), Google | `src/lib/server/passkeys.ts`, `auth.ts`, `google.ts` |
+| Sign-in: passkeys (WebAuthn), email codes (Resend); Google OAuth optional, off until configured | `src/lib/server/passkeys.ts`, `auth.ts`, `google.ts` |
 | House drops, welcome gift, invites | `src/lib/server/house.ts`, `invites.ts` |
 | Notifications: in-app notices, web push | `src/lib/server/notify.ts`, `push.ts` |
 | Live football results (ESPN public scoreboard) | `src/lib/server/sports.ts` |
@@ -66,7 +66,7 @@ With no settings, the app runs in **sim** mode: ZEC is simulated, storage is in 
 | `ZECKED_SECRET` | Server secret for hashing sign-in codes |
 | `ZECKED_RP_ID` | Passkey relying party (e.g. `zecked.com`, so passkeys work on every subdomain) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Email sign-in codes |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Sign in with Google (callback: `<origin>/api/auth/google/callback`) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Sign in with Google (callback: `<origin>/api/auth/google/callback`). Off until both are set |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web push |
 | `ZECKED_ADMIN_TOKEN` | Owner endpoints (house status, forced drops, removing a profile photo) |
 | `ZECKED_DROP_HOURS`, `ZECKED_GIFT_USD`, `ZECKED_INVITE_USD`, `ZECKED_MIN_USD`, `ZECKED_MAX_USD` | Game tuning |

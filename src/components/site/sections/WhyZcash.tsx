@@ -32,18 +32,18 @@ const FEATURES: Feature[] = [
   },
   {
     n: "03",
-    tag: "Encrypted memos",
-    icon: "lock",
+    tag: "Shielded only",
+    icon: "shieldCheck",
     rgb: "var(--zk-pink-rgb)",
     color: "var(--zk-pink)",
-    title: "Messages only the winner reads",
-    body: "Every shielded payment can carry an encrypted memo that only the receiver can open. Perfect for a victory note.",
+    title: "No transparent addresses",
+    body: "ZECKED pays out only to shielded addresses (utest1 or ztestsapling1). Nobody can watch the chain and see who won.",
     Art: MemoArt,
   },
 ];
 
 const WORDS = ["ENCRYPTED", "PRIVATE BY DEFAULT", "FIRST ONE WINS", "HIDE IT", "CRACK IT", "GET ZECKED"];
-const TAPE = ["SHIELDED PAYOUTS", "VERIFIED PRIZES", "ENCRYPTED MEMOS", "FREE TO PLAY", "FIRST ONE WINS"];
+const TAPE = ["SHIELDED PAYOUTS", "VERIFIED PRIZES", "SHIELDED ONLY", "FREE TO PLAY", "FIRST ONE WINS"];
 
 const CSS = `
 ${SPLIT_FIX_CSS}

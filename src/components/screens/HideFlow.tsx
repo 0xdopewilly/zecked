@@ -68,7 +68,10 @@ const DEFAULT_USD = 20;
 const FALLBACK_MIN_USD = 1;
 const FALLBACK_MAX_USD = 100;
 
+/** $1 and $2 are there for a new account: its welcome gift is about $2 of test ZEC. */
 const PRESETS = [
+  { label: "$1", usd: 1 },
+  { label: "$2", usd: 2 },
   { label: "$5", usd: 5 },
   { label: "$10", usd: 10 },
   { label: "$20", usd: 20 },
@@ -114,6 +117,8 @@ const DRAFT_STEPS: readonly Step[] = ["type", "riddle", "prediction", "amount"];
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 const pad2 = (n: number) => String(n).padStart(2, "0");
+/** What the server charges for a prize (same rounding as game.ts), so "fits in the wallet" here is exact. */
+const usdToZat = (usd: number, zecUsd: number) => Math.max(10_000, Math.round(((usd / zecUsd) * ZAT) / 10_000) * 10_000);
 /** Friendly copy for a failed request: never a raw "Failed to fetch" or "Request failed (500)". */
 function errMsg(e: unknown): string {
   const msg = e instanceof Error ? e.message : "";
@@ -1172,10 +1177,15 @@ function RiddleStep({
           value={draft.riddle}
           onChange={(v) => patch({ riddle: v.slice(0, RIDDLE_MAX) })}
           maxLength={RIDDLE_MAX}
-          placeholder="I have cities, but no houses. Forests, but no trees. What am I?"
+          placeholder="What has a head and a tail, but no arms or legs?"
           state={tried && issues.riddle ? "error" : undefined}
           shake={shake.riddle}
-          message={riddleMsg}
+          message={
+            <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span>{riddleMsg}</span>
+              <span style={{ color: "var(--zk-text-muted)" }}>Riddles about things only your people know are the hardest to google.</span>
+            </span>
+          }
         />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-6)" }}>
@@ -1871,7 +1881,7 @@ function AmountStep({
   const [customOpen, setCustomOpen] = useState(false);
   const [customText, setCustomText] = useState("");
 
-  const zecZat = config?.zecUsd ? Math.round((usd / config.zecUsd) * ZAT) : null;
+  const zecZat = config?.zecUsd ? usdToZat(usd, config.zecUsd) : null;
   const zec = zecZat != null ? formatZec(zecZat, 4) : "…";
   const active = customOpen ? "Custom" : (PRESETS.find((p) => p.usd === usd)?.label ?? "Custom");
   const isPrediction = draft.type === "prediction";
@@ -1955,7 +1965,8 @@ function AmountStep({
         <span>${min}</span>
         <span>${max}</span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "var(--zk-space-8)" }}>
+      {/* Five presets + Custom: two rows of three (six across is too tight for "Custom" at 390px). */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "var(--zk-space-8)" }}>
         {PRESETS.map((p) => {
           const disabled = p.usd < min || p.usd > max;
           const on = active === p.label;
@@ -2502,6 +2513,8 @@ function FundStep({
   /* ── not enough in the wallet (a first run on testnet starts at 0): test ZEC is free ── */
   if (lowPath && walletBalance != null) {
     const empty = walletBalance <= 0;
+    // Something in the wallet, just not enough: shrinking the prize is the quicker fix, so it comes first.
+    const smaller = canGoBack && !empty;
     return (
       <>
         <h1 style={H1}>Fund it.</h1>
@@ -2554,17 +2567,13 @@ function FundStep({
               </span>
             </div>
           ) : null}
+          {smaller ? <Button label="Make the prize smaller" icon="minus" variant="secondary" size="lg" onClick={onSmaller} /> : null}
           <Button label="Add free test ZEC" icon="plus" variant="primary" size="lg" href="/wallet?action=add" />
         </div>
         {qrToggle}
         {foldedQr}
         <RefundNote type={stash.type} />
-        <div style={CTA}>
-          {simulateBtn}
-          {canGoBack && walletBalance > 0 ? (
-            <Button label="Make the prize smaller" variant="ghost" size="md" onClick={onSmaller} />
-          ) : null}
-        </div>
+        <div style={CTA}>{simulateBtn}</div>
       </>
     );
   }
@@ -2994,7 +3003,12 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   const router = useRouter();
   const appBack = useAppBack("/feed");
   const [s, dispatch] = useReducer(flowReducer, INITIAL_FLOW);
-  const patch = useCallback((p: Partial<Draft>) => dispatch({ t: "patch", patch: p }), []);
+  /** The prize was picked on the prize step, seeded from the balance, or came back with a saved draft: leave it alone. */
+  const usdSetRef = useRef(false);
+  const patch = useCallback((p: Partial<Draft>) => {
+    if (p.usd !== undefined) usdSetRef.current = true;
+    dispatch({ t: "patch", patch: p });
+  }, []);
 
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [matches, setMatches] = useState<Match[] | null>(null);
@@ -3099,6 +3113,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     const saved = loadSaved();
     savedRef.current = saved;
     if (saved?.stashId && saved.stashKey) reuseRef.current = { stashId: saved.stashId, stashKey: saved.stashKey };
+    if (saved) usdSetRef.current = true;
     const { step, resume } = stepFromUrl();
     let fixUrl: string | null = null;
     if (!resume) {
@@ -3291,8 +3306,20 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     if (!config) return;
     const min = Math.max(1, Math.ceil(config.minStashUsd));
     const max = Math.max(min, Math.floor(config.maxStashUsd));
-    if (s.draft.usd < min || s.draft.usd > max) patch({ usd: clamp(s.draft.usd, min, max) });
-  }, [config, s.draft.usd, patch]);
+    // Straight to the reducer: a clamp isn't a pick.
+    if (s.draft.usd < min || s.draft.usd > max) dispatch({ t: "patch", patch: { usd: clamp(s.draft.usd, min, max) } });
+  }, [config, s.draft.usd]);
+
+  // A new draft starts at the biggest preset the wallet covers (a new account's welcome gift is about
+  // $2), so a first-timer isn't sent to the fund step at $20. An empty wallet keeps the default: the
+  // fund step hands out free test ZEC. Once seeded, or once they've picked, the prize is theirs.
+  useEffect(() => {
+    if (usdSetRef.current || !config?.zecUsd || walletBal == null || s.stash || s.resumed) return;
+    const min = Math.max(1, Math.ceil(config.minStashUsd));
+    const max = Math.max(min, Math.floor(config.maxStashUsd));
+    const fit = [...PRESETS].reverse().find((p) => p.usd >= min && p.usd <= max && usdToZat(p.usd, config.zecUsd) <= walletBal);
+    if (fit) patch({ usd: fit.usd });
+  }, [config, walletBal, s.stash, s.resumed, patch]);
 
   // Each step starts at the top.
   useEffect(() => {
@@ -3453,7 +3480,8 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
   const stashId = s.stash?.id;
   const awaiting = s.stash?.status === "awaiting_funding";
 
-  // The ZECKED wallet balance: a hint on the prize step, and on 4a it picks one-tap funding vs Add ZEC.
+  // The ZECKED wallet balance: it seeds and hints the prize step (so it's fetched a step early, while
+  // they type), and on 4a it picks one-tap funding vs Add ZEC.
   const loadWallet = useCallback(async () => {
     try {
       const w = await api.wallet();
@@ -3466,7 +3494,8 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
       setWalletLoading(false);
     }
   }, []);
-  const walletStep = s.step === "amount" || (s.step === "fund" && !!stashId && awaiting);
+  const walletStep =
+    s.step === "riddle" || s.step === "prediction" || s.step === "amount" || (s.step === "fund" && !!stashId && awaiting);
   useEffect(() => {
     if (!walletStep || auth === "out") return;
     void loadWallet();
@@ -3570,6 +3599,7 @@ export function HideFlow({ resumeId }: { resumeId?: string | null }) {
     reuseRef.current = null;
     setRestoredDraft(false);
     setFundedZat(0);
+    usdSetRef.current = false;
     writePos("replace", "/hide", curPos() ?? { i: 0, from: cameFromApp() });
     dispatch({ t: "reset" });
   };
