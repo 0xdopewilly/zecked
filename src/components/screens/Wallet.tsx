@@ -38,6 +38,10 @@ const FAUCETS = [
 const SIGNUP_HREF = "/signin?next=/wallet&reason=wallet";
 
 const FEE_EXPLAINER = "A tiny fee the Zcash network charges";
+/** A public explorer page for a transaction, so a player can see it landed even when their own wallet app is behind. */
+const explorerTxUrl = (network: Network, txid: string) => (network === "testnet" ? `https://testnet.zecblock.com/tx/${txid}` : null);
+/** NU7 went live on testnet on Oct 4, 2026, and not every testnet wallet app has caught up yet. */
+const NU7_WALLET_NOTE = "Zcash testnet just upgraded (NU7) and some testnet wallets haven’t caught up yet. If yours doesn’t show the ZEC, your receipt links to the explorer.";
 
 /* ───────────────────────── helpers ───────────────────────── */
 
@@ -1048,6 +1052,18 @@ function Receipt({
           </div>
         ))}
       </dl>
+      {explorerTxUrl(network, r.txid) ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--zk-space-6)" }}>
+          <a href={explorerTxUrl(network, r.txid)!} target="_blank" rel="noopener noreferrer" style={EXTERNAL_LINK}>
+            <Icon icon="search" size={18} stroke={2.4} />
+            <span style={{ flex: 1, font: "var(--zk-type-body-strong)" }}>View on the explorer</span>
+            <Icon icon="arrowRight" size={18} stroke={2.4} />
+          </a>
+          <span style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)" }}>
+            Not in your wallet yet? Some testnet wallets are still updating for NU7. The explorer shows it now.
+          </span>
+        </div>
+      ) : null}
       {network !== "mainnet" ? (
         <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-gold)", display: "flex", alignItems: "center", gap: "var(--zk-space-6)" }}>
           <Icon icon="flag" size={14} />
@@ -1309,6 +1325,11 @@ function WithdrawPanel({
         <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-faint)", textAlign: "center" }}>
           Test mode: sends are pretend. Nothing leaves ZECKED.
         </div>
+      ) : wallet.network === "testnet" ? (
+        <div style={{ font: "var(--zk-type-caption)", color: "var(--zk-text-muted)", display: "flex", gap: "var(--zk-space-6)" }}>
+          <Icon icon="info" size={14} stroke={2.4} style={{ flex: "none", marginTop: 2 }} />
+          <span>{NU7_WALLET_NOTE}</span>
+        </div>
       ) : null}
     </PanelShell>
   );
@@ -1356,12 +1377,14 @@ function TxRow({
   now,
   last,
   feeZat,
+  network,
   onCopy,
 }: {
   tx: WalletTx;
   now: number;
   last: boolean;
   feeZat: number;
+  network: Network;
   onCopy: (text: string, what: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
@@ -1485,6 +1508,22 @@ function TxRow({
               <CopyButton ariaLabel="Copy receipt ID" onCopy={() => onCopy(tx.txid!, "Receipt ID")} />
             </dd>
           </div>
+          {explorerTxUrl(network, tx.txid!) ? (
+            <div style={{ ...receiptRow(true), padding: "var(--zk-space-4) 0" }}>
+              <dt style={{ color: "var(--zk-text-muted)" }}>Explorer</dt>
+              <dd style={{ margin: "0 0 0 auto" }}>
+                <a
+                  href={explorerTxUrl(network, tx.txid!)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ font: "var(--zk-type-small)", fontWeight: "var(--zk-fw-bold)", color: "var(--zk-purple-light)", display: "inline-flex", alignItems: "center", gap: "var(--zk-space-4)", minHeight: 44 }}
+                >
+                  View
+                  <Icon icon="arrowRight" size={14} stroke={2.6} />
+                </a>
+              </dd>
+            </div>
+          ) : null}
         </dl>
       ) : null}
     </div>
@@ -1495,11 +1534,13 @@ function Activity({
   items,
   now,
   feeZat,
+  network,
   onCopy,
 }: {
   items: WalletTx[];
   now: number;
   feeZat: number;
+  network: Network;
   onCopy: (text: string, what: string) => Promise<boolean>;
 }) {
   return (
@@ -1511,7 +1552,7 @@ function Activity({
       {items.length > 0 ? (
         <div style={{ background: "var(--zk-surface)", borderRadius: "var(--zk-radius-xl)", overflow: "hidden" }}>
           {items.map((t, i) => (
-            <TxRow key={t.id} tx={t} now={now} last={i === items.length - 1} feeZat={feeZat} onCopy={onCopy} />
+            <TxRow key={t.id} tx={t} now={now} last={i === items.length - 1} feeZat={feeZat} network={network} onCopy={onCopy} />
           ))}
         </div>
       ) : (
@@ -1960,7 +2001,7 @@ export default function Wallet() {
             )}
           </div>
         ) : null}
-        <Activity items={wallet.activity} now={now} feeZat={wallet.withdrawFeeZat} onCopy={copy} />
+        <Activity items={wallet.activity} now={now} feeZat={wallet.withdrawFeeZat} network={wallet.network} onCopy={copy} />
       </>
     );
   } else {
