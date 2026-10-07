@@ -1,0 +1,30 @@
+# Uptime check for the live app. Every 10 minutes GitHub calls /api/health, which answers 503 when
+# storage or the Zcash vault is down, the vault's chain tip has stalled, or the vault's wallet has
+# fallen more than 500 blocks behind. Three tries 30 s apart, so a single blip doesn't alert.
+# A failed run emails the repo owner (GitHub: Settings → Notifications → Actions).
+name: Health check
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: app.zecked.com/api/health
+        run: |
+          for i in 1 2 3; do
+            out=$(curl -sS --max-time 20 -w '\n%{http_code}' https://app.zecked.com/api/health) || out=$'\n000'
+            code=$(printf '%s' "$out" | tail -n1)
+            body=$(printf '%s' "$out" | sed '$d')
+            echo "try $i: HTTP $code $body"
+            if [ "$code" = "200" ]; then exit 0; fi
+            [ "$i" -lt 3 ] && sleep 30
+          done
+          echo "::error title=ZECKED is unhealthy::HTTP $code $body"
+          exit 1
