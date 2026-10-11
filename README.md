@@ -33,7 +33,7 @@ ZECKED is a free-to-play game on [Zcash](https://z.cash). You hide ZEC behind a 
 | Shielded addresses | Every stash and every player gets its own unified address (Orchard/Ironwood + Sapling receivers, **no transparent receiver**) |
 | Funding | ZIP-321 payment URIs: scan the QR code from any Zcash wallet, or fund from your in-app balance |
 | Confirmation | A stash only goes live once the vault sees its ZEC arrive on-chain at the stash's own address |
-| Payouts | Winners, refunds and withdrawals are shielded sends |
+| Payouts | A win lands in the winner's ZECKED wallet, or goes straight to a Zcash address they paste in. Anything that leaves ZECKED (claims, refunds, withdrawals) is a shielded send |
 
 The wallet engine is [zingolib](https://github.com/zingolabs/zingolib) `zingo-cli` 6.0.0 (Ironwood / NU6.3), built with two small patches: one reports which of our addresses each note was received by, so deposits are credited per address; the other adds the NU7 testnet parameters (activation height 4,465,026, consensus branch `0x77190AD9`), so the vault keeps syncing through Zcash's next network upgrade, which went live on testnet on 2026-10-04. Details in [`vault/README.md`](vault/README.md) and [`vault/engine/nu7/README.md`](vault/engine/nu7/README.md).
 
