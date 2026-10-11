@@ -147,7 +147,9 @@ class VaultEngine implements ZcashEngine {
     try {
       return await this.call<{ txid: string }>(
         "/payout",
-        { method: "POST", body: JSON.stringify({ stashId, to, amountZat, memo, key: opts?.key }) },
+        // A keyed payout (a withdrawal) is identified by its key alone: the vault only accepts real stash ids
+        // ([A-Za-z0-9_-]) as stashId, and a withdrawal key ("withdraw:<player>:<nonce>") is not one.
+        { method: "POST", body: JSON.stringify({ stashId: opts?.key ? undefined : stashId, to, amountZat, memo, key: opts?.key }) },
         120_000
       );
     } catch (e) {
