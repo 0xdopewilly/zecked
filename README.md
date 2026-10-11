@@ -9,9 +9,21 @@ ZECKED is a free-to-play game on [Zcash](https://z.cash). You hide ZEC behind a 
 
 > **Status: testnet.** Zcash has no smart contracts, so the ZECKED server holds each stash between funding and payout. Mainnet stays switched off (`ZECKED_ALLOW_MAINNET`) until that custody has had a security review. The long-term plan is FROST threshold custody.
 
+<p align="center">
+  <img src="docs/screenshots/home.png" width="160" alt="Home: the free drop and live stashes">
+  <img src="docs/screenshots/hide-live.png" width="160" alt="A riddle stash goes live">
+  <img src="docs/screenshots/cracked.png" width="160" alt="Cracked: the win screen">
+  <img src="docs/screenshots/withdraw-receipt.png" width="160" alt="A shielded withdrawal with an explorer link">
+  <img src="docs/screenshots/gift.png" width="160" alt="A gift ready to send by link">
+  <img src="docs/screenshots/tournament.png" width="160" alt="The weekly tournament">
+</p>
+
 ## How it plays
 - **Riddle stashes:** the first exact answer wins. Answers are normalized for case, spacing, punctuation and a leading "a", "an" or "the", and hiders can accept alternatives with `|`. Each player gets 3 tries per stash every 10 minutes.
 - **Prediction stashes:** call a real football match (exact score, or winner/draw) before kickoff. Calls stay sealed until kickoff, the earliest correct call wins, and results come from a live feed. Postponed or abandoned matches refund the hider.
+- **Gifts:** send test ZEC to one person as a link, optionally locked behind a question only they can answer. Unopened gifts go back to the sender after 7 days.
+- **Challenge a friend:** a stash can be link-only, so it never shows on the feed and only people with the link can play it.
+- **Weekly tournament:** the top 3 crackers of each week (Monday to Sunday, UTC) win test ZEC from the house.
 - **Nobody pays to play.** The hider funds the prize. An uncracked stash goes back to the hider, who earns an "Uncrackable" badge.
 - **The house (@zecked)** drops a free riddle every few hours and gives new accounts a small test-ZEC welcome gift. When a friend you invited signs up and plays, you get a small reward.
 
